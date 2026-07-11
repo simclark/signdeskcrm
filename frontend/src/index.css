@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap');
+
+:root {
+  --sd-ink: #102a23;
+  --sd-forest: #0b6e4f;
+  --sd-mint: #d8f3e7;
+  --sd-sand: #f3efe6;
+  --sd-coral: #e07a5f;
+  --sd-surface: #f7f5f0;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(11, 110, 79, 0.12), transparent 40%),
+    radial-gradient(circle at top right, rgba(224, 122, 95, 0.1), transparent 35%),
+    var(--sd-surface);
+  color: var(--sd-ink);
+}
+
+.signer-shell {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f7f5f0 0%, #eef6f1 100%);
+}
