@@ -1,6 +1,8 @@
-import { Button, Group, Stack, Table, Text, Title, FileButton } from '@mantine/core'
+import { Button, Group, Stack, Text, Title, FileButton } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../shared/api'
+import { DataTable } from '../../shared/DataTable'
+import { formatDate } from '../../shared/formatDate'
 import { notifications } from '@mantine/notifications'
 
 type Document = {
@@ -45,24 +47,26 @@ export function DocumentsPage() {
           )}
         </FileButton>
       </Group>
-      <Table striped>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Title</Table.Th>
-            <Table.Th>Pages</Table.Th>
-            <Table.Th>Uploaded</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
+      <DataTable>
+        <DataTable.Thead>
+          <DataTable.Tr>
+            <DataTable.Th>Title</DataTable.Th>
+            <DataTable.Th className="sd-table-numeric">Pages</DataTable.Th>
+            <DataTable.Th>Uploaded</DataTable.Th>
+          </DataTable.Tr>
+        </DataTable.Thead>
+        <DataTable.Tbody>
           {(data?.results || []).map((d) => (
-            <Table.Tr key={d.id}>
-              <Table.Td>{d.title}</Table.Td>
-              <Table.Td>{d.current_version?.page_count ?? '—'}</Table.Td>
-              <Table.Td>{new Date(d.created_at).toLocaleString()}</Table.Td>
-            </Table.Tr>
+            <DataTable.Tr key={d.id}>
+              <DataTable.Td className="sd-table-primary">{d.title}</DataTable.Td>
+              <DataTable.Td className="sd-table-numeric sd-table-muted">
+                {d.current_version?.page_count ?? '—'}
+              </DataTable.Td>
+              <DataTable.Td className="sd-table-muted">{formatDate(d.created_at, true)}</DataTable.Td>
+            </DataTable.Tr>
           ))}
-        </Table.Tbody>
-      </Table>
+        </DataTable.Tbody>
+      </DataTable>
     </Stack>
   )
 }

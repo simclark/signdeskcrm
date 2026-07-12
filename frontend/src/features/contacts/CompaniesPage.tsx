@@ -4,7 +4,6 @@ import {
   Group,
   Modal,
   Stack,
-  Table,
   Text,
   TextInput,
   Title,
@@ -14,6 +13,7 @@ import { useForm } from '@mantine/form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconTrash } from '@tabler/icons-react'
 import { api } from '../../shared/api'
+import { DataTable } from '../../shared/DataTable'
 
 type Company = { id: number; name: string; website: string; notes: string }
 
@@ -48,28 +48,28 @@ export function CompaniesPage() {
         </div>
         <Button onClick={open}>Add company</Button>
       </Group>
-      <Table striped>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Name</Table.Th>
-            <Table.Th>Website</Table.Th>
-            <Table.Th />
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
+      <DataTable>
+        <DataTable.Thead>
+          <DataTable.Tr>
+            <DataTable.Th>Name</DataTable.Th>
+            <DataTable.Th>Website</DataTable.Th>
+            <DataTable.Th className="sd-table-actions" />
+          </DataTable.Tr>
+        </DataTable.Thead>
+        <DataTable.Tbody>
           {(data?.results || []).map((c) => (
-            <Table.Tr key={c.id}>
-              <Table.Td>{c.name}</Table.Td>
-              <Table.Td>{c.website || '—'}</Table.Td>
-              <Table.Td>
+            <DataTable.Tr key={c.id}>
+              <DataTable.Td className="sd-table-primary">{c.name}</DataTable.Td>
+              <DataTable.Td className="sd-table-muted">{c.website || '—'}</DataTable.Td>
+              <DataTable.Td className="sd-table-actions">
                 <ActionIcon color="red" variant="subtle" onClick={() => remove.mutate(c.id)}>
                   <IconTrash size={16} />
                 </ActionIcon>
-              </Table.Td>
-            </Table.Tr>
+              </DataTable.Td>
+            </DataTable.Tr>
           ))}
-        </Table.Tbody>
-      </Table>
+        </DataTable.Tbody>
+      </DataTable>
       <Modal opened={opened} onClose={close} title="New company">
         <form onSubmit={form.onSubmit((v) => create.mutate(v))}>
           <Stack>

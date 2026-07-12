@@ -1,7 +1,8 @@
-import { Button, Card, NumberInput, Stack, TextInput, Title, Text, Table } from '@mantine/core'
+import { Button, Card, NumberInput, Stack, TextInput, Title, Text } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../../shared/api'
+import { DataTable } from '../../shared/DataTable'
 import { useAuth } from '../auth/AuthContext'
 import { notifications } from '@mantine/notifications'
 
@@ -55,24 +56,28 @@ export function SettingsPage() {
         <Title order={4} mb="md">
           Members
         </Title>
-        <Table>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Name</Table.Th>
-              <Table.Th>Email</Table.Th>
-              <Table.Th>Role</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
+        <DataTable embedded>
+          <DataTable.Thead>
+            <DataTable.Tr>
+              <DataTable.Th>Name</DataTable.Th>
+              <DataTable.Th>Email</DataTable.Th>
+              <DataTable.Th>Role</DataTable.Th>
+            </DataTable.Tr>
+          </DataTable.Thead>
+          <DataTable.Tbody>
             {memberRows.map((m: any) => (
-              <Table.Tr key={m.id}>
-                <Table.Td>{m.full_name}</Table.Td>
-                <Table.Td>{m.email}</Table.Td>
-                <Table.Td>{m.role}</Table.Td>
-              </Table.Tr>
+              <DataTable.Tr key={m.id}>
+                <DataTable.Td className="sd-table-primary">{m.full_name}</DataTable.Td>
+                <DataTable.Td className="sd-table-muted">{m.email}</DataTable.Td>
+                <DataTable.Td>
+                  <Text tt="capitalize" size="sm">
+                    {m.role}
+                  </Text>
+                </DataTable.Td>
+              </DataTable.Tr>
             ))}
-          </Table.Tbody>
-        </Table>
+          </DataTable.Tbody>
+        </DataTable>
       </Card>
     </Stack>
   )

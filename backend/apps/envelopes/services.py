@@ -248,10 +248,14 @@ def flatten_envelope_pdf(envelope: Envelope) -> bytes:
     fields = list(envelope.fields.select_related("recipient"))
     for page_index in range(len(reader.pages)):
         page = reader.pages[page_index]
+        page_fields = [f for f in fields if f.page == page_index + 1]
+        if not page_fields:
+            writer.add_page(page)
+            continue
+
         width, height = _page_size(reader, page_index)
         packet = io.BytesIO()
         c = canvas.Canvas(packet, pagesize=(width, height))
-        page_fields = [f for f in fields if f.page == page_index + 1]
         for field in page_fields:
             x = field.x * width
             y = field.y * height
@@ -294,7 +298,8 @@ def flatten_envelope_pdf(envelope: Envelope) -> bytes:
         c.save()
         packet.seek(0)
         overlay = PdfReader(packet)
-        page.merge_page(overlay.pages[0])
+        if overlay.pages:
+            page.merge_page(overlay.pages[0])
         writer.add_page(page)
 
     out = io.BytesIO()

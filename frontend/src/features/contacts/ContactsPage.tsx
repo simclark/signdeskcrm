@@ -3,7 +3,6 @@ import {
   Group,
   Modal,
   Stack,
-  Table,
   Text,
   TextInput,
   Title,
@@ -15,6 +14,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconTrash } from '@tabler/icons-react'
 import { Link } from 'react-router-dom'
 import { api } from '../../shared/api'
+import { DataTable } from '../../shared/DataTable'
+import { useCreateEnvelope } from '../envelopes/CreateEnvelopeContext'
 
 type Contact = {
   id: number
@@ -31,6 +32,7 @@ type Contact = {
 export function ContactsPage() {
   const qc = useQueryClient()
   const [opened, { open, close }] = useDisclosure(false)
+  const { openCreateEnvelope } = useCreateEnvelope()
   const { data } = useQuery({
     queryKey: ['contacts'],
     queryFn: () => api<{ results: Contact[] }>('/api/contacts/'),
@@ -67,34 +69,39 @@ export function ContactsPage() {
         </div>
         <Button onClick={open}>Add contact</Button>
       </Group>
-      <Table striped highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Name</Table.Th>
-            <Table.Th>Email</Table.Th>
-            <Table.Th>Company</Table.Th>
-            <Table.Th>Title</Table.Th>
-            <Table.Th />
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
+      <DataTable>
+        <DataTable.Thead>
+          <DataTable.Tr>
+            <DataTable.Th>Name</DataTable.Th>
+            <DataTable.Th>Email</DataTable.Th>
+            <DataTable.Th>Company</DataTable.Th>
+            <DataTable.Th>Title</DataTable.Th>
+            <DataTable.Th className="sd-table-actions" />
+          </DataTable.Tr>
+        </DataTable.Thead>
+        <DataTable.Tbody>
           {(data?.results || []).map((c) => (
-            <Table.Tr key={c.id}>
-              <Table.Td>
-                <Text component={Link} to={`/app/contacts/${c.id}`} fw={500}>
+            <DataTable.Tr key={c.id}>
+              <DataTable.Td>
+                <Text component={Link} to={`/app/contacts/${c.id}`} className="sd-table-primary">
                   {c.full_name}
                 </Text>
-              </Table.Td>
-              <Table.Td>{c.email}</Table.Td>
-              <Table.Td>{c.company_name || '—'}</Table.Td>
-              <Table.Td>{c.title || '—'}</Table.Td>
-              <Table.Td>
-                <Group gap="xs" justify="flex-end">
+              </DataTable.Td>
+              <DataTable.Td className="sd-table-muted">{c.email}</DataTable.Td>
+              <DataTable.Td>{c.company_name || '—'}</DataTable.Td>
+              <DataTable.Td className="sd-table-muted">{c.title || '—'}</DataTable.Td>
+              <DataTable.Td className="sd-table-actions">
+                <Group gap="xs" justify="flex-end" wrap="nowrap">
                   <Button
                     size="xs"
                     variant="light"
-                    component={Link}
-                    to={`/app/envelopes/new?contact=${c.id}&email=${encodeURIComponent(c.email)}&name=${encodeURIComponent(c.full_name)}`}
+                    onClick={() =>
+                      openCreateEnvelope({
+                        contact: c.id,
+                        email: c.email,
+                        name: c.full_name,
+                      })
+                    }
                   >
                     Send for signature
                   </Button>
@@ -102,11 +109,11 @@ export function ContactsPage() {
                     <IconTrash size={16} />
                   </ActionIcon>
                 </Group>
-              </Table.Td>
-            </Table.Tr>
+              </DataTable.Td>
+            </DataTable.Tr>
           ))}
-        </Table.Tbody>
-      </Table>
+        </DataTable.Tbody>
+      </DataTable>
 
       <Modal opened={opened} onClose={close} title="New contact">
         <form onSubmit={form.onSubmit((v) => create.mutate(v))}>

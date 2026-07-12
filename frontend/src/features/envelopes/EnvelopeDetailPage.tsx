@@ -8,11 +8,11 @@ import {
   Title,
   Timeline,
   Anchor,
-  Table,
 } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { api } from '../../shared/api'
+import { DataTable } from '../../shared/DataTable'
 import { notifications } from '@mantine/notifications'
 
 export function EnvelopeDetailPage() {
@@ -76,9 +76,14 @@ export function EnvelopeDetailPage() {
         </div>
         <Group>
           {envelope.status === 'draft' && (
-            <Button onClick={() => send.mutate()} loading={send.isPending}>
-              Send
-            </Button>
+            <>
+              <Button component={Link} to={`/app/envelopes/${id}/prepare`} variant="light">
+                Prepare / edit fields
+              </Button>
+              <Button onClick={() => send.mutate()} loading={send.isPending}>
+                Send
+              </Button>
+            </>
           )}
           {['sent', 'in_progress'].includes(envelope.status) && (
             <>
@@ -100,28 +105,40 @@ export function EnvelopeDetailPage() {
         <Title order={4} mb="md">
           Recipients
         </Title>
-        <Table>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Name</Table.Th>
-              <Table.Th>Email</Table.Th>
-              <Table.Th>Role</Table.Th>
-              <Table.Th>Status</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {(envelope.recipients || []).map((r: any) => (
-              <Table.Tr key={r.id}>
-                <Table.Td>{r.name}</Table.Td>
-                <Table.Td>{r.email}</Table.Td>
-                <Table.Td>{r.role}</Table.Td>
-                <Table.Td>
-                  <Badge variant="light">{r.status}</Badge>
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
+        {(envelope.recipients || []).length === 0 ? (
+          <Text c="dimmed" size="sm">
+            No recipients yet. Open Prepare to add signers and place fields.
+          </Text>
+        ) : (
+          <DataTable embedded>
+            <DataTable.Thead>
+              <DataTable.Tr>
+                <DataTable.Th>Name</DataTable.Th>
+                <DataTable.Th>Email</DataTable.Th>
+                <DataTable.Th>Role</DataTable.Th>
+                <DataTable.Th>Status</DataTable.Th>
+              </DataTable.Tr>
+            </DataTable.Thead>
+            <DataTable.Tbody>
+              {(envelope.recipients || []).map((r: any) => (
+                <DataTable.Tr key={r.id}>
+                  <DataTable.Td className="sd-table-primary">{r.name}</DataTable.Td>
+                  <DataTable.Td className="sd-table-muted">{r.email}</DataTable.Td>
+                  <DataTable.Td>
+                    <Text tt="capitalize" size="sm">
+                      {r.role}
+                    </Text>
+                  </DataTable.Td>
+                  <DataTable.Td>
+                    <Badge variant="light" tt="capitalize">
+                      {r.status.replaceAll('_', ' ')}
+                    </Badge>
+                  </DataTable.Td>
+                </DataTable.Tr>
+              ))}
+            </DataTable.Tbody>
+          </DataTable>
+        )}
       </Card>
 
       <Card withBorder radius="lg" p="lg">
@@ -129,6 +146,11 @@ export function EnvelopeDetailPage() {
           Documents
         </Title>
         <Stack gap="xs">
+          {envelope.document_file_url && (
+            <Anchor href={envelope.document_file_url} target="_blank">
+              View original PDF
+            </Anchor>
+          )}
           {envelope.signed_file_url && (
             <Anchor href={envelope.signed_file_url} target="_blank">
               Download signed PDF

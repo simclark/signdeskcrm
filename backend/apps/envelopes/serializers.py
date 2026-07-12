@@ -48,6 +48,8 @@ class EnvelopeSerializer(serializers.ModelSerializer):
     fields = FieldSerializer(many=True, required=False)
     signed_file_url = serializers.SerializerMethodField()
     certificate_file_url = serializers.SerializerMethodField()
+    document_file_url = serializers.SerializerMethodField()
+    page_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Envelope
@@ -68,6 +70,8 @@ class EnvelopeSerializer(serializers.ModelSerializer):
             "post_sign_sha256",
             "signed_file_url",
             "certificate_file_url",
+            "document_file_url",
+            "page_count",
             "recipients",
             "fields",
             "created_at",
@@ -84,9 +88,14 @@ class EnvelopeSerializer(serializers.ModelSerializer):
             "post_sign_sha256",
             "signed_file_url",
             "certificate_file_url",
+            "document_file_url",
+            "page_count",
             "created_at",
             "updated_at",
         )
+
+    def _document_version(self, obj):
+        return obj.document_version or (obj.document.current_version if obj.document_id else None)
 
     def get_signed_file_url(self, obj):
         request = self.context.get("request")
@@ -99,6 +108,19 @@ class EnvelopeSerializer(serializers.ModelSerializer):
         if obj.certificate_file and request:
             return request.build_absolute_uri(obj.certificate_file.url)
         return None
+
+    def get_document_file_url(self, obj):
+        version = self._document_version(obj)
+        if not version or not version.file:
+            return None
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(version.file.url)
+        return version.file.url
+
+    def get_page_count(self, obj):
+        version = self._document_version(obj)
+        return version.page_count if version else 1
 
     def create(self, validated_data):
         recipients_data = validated_data.pop("recipients", [])

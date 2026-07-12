@@ -11,10 +11,15 @@ import {
   Title,
 } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import dayjs from 'dayjs'
 import { useParams } from 'react-router-dom'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import SignatureCanvas from 'react-signature-canvas'
 import { api } from '../../shared/api'
+
+function todayIsoDate() {
+  return dayjs().format('YYYY-MM-DD')
+}
 
 export function SigningPage() {
   const { token } = useParams()
@@ -22,11 +27,19 @@ export function SigningPage() {
   const [consented, setConsented] = useState(false)
   const [activeIdx, setActiveIdx] = useState(0)
   const [typedName, setTypedName] = useState('')
+  const [textValue, setTextValue] = useState('')
+  const [dateValue, setDateValue] = useState(todayIsoDate())
   const sigRef = useRef<SignatureCanvas | null>(null)
 
   const { data, error, isLoading } = useQuery({
     queryKey: ['sign', token],
     queryFn: () => api<any>(`/api/sign/${token}/`),
+    refetchInterval: (query) => {
+      const session = query.state.data
+      const waitingForPdf =
+        session?.recipient?.status === 'signed' && !session?.downloads_ready
+      return waitingForPdf ? 1500 : false
+    },
   })
 
   const consent = useMutation({
@@ -70,6 +83,16 @@ export function SigningPage() {
     [data],
   )
 
+  useEffect(() => {
+    if (!current) return
+    setTypedName('')
+    setTextValue(current.value || '')
+    if (current.field_type === 'date') {
+      setDateValue(current.value || todayIsoDate())
+    }
+    sigRef.current?.clear()
+  }, [current?.id])
+
   if (isLoading) return null
   if (error) {
     return (
@@ -81,15 +104,49 @@ export function SigningPage() {
   }
 
   if (done) {
+    const isCc = data.recipient.role === 'cc'
     return (
       <div className="signer-shell">
         <Container size={640} py={80}>
           <Card withBorder radius="lg" p="xl">
-            <Title order={2}>You're all set</Title>
+            <Title order={2}>{isCc ? 'Document complete' : "You're all set"}</Title>
             <Text mt="sm">
-              Thanks, {data.recipient.name}. Your signature on <strong>{data.envelope.title}</strong>{' '}
-              has been recorded.
+              {isCc ? (
+                <>
+                  <strong>{data.envelope.title}</strong> has been signed by all parties.
+                </>
+              ) : (
+                <>
+                  Thanks, {data.recipient.name}. Your signature on{' '}
+                  <strong>{data.envelope.title}</strong> has been recorded.
+                </>
+              )}
             </Text>
+            {data.downloads_ready ? (
+              <Stack mt="xl" gap="sm">
+                <Text size="sm" c="dimmed">
+                  Download your copy — no account needed.
+                </Text>
+                <Group>
+                  <Button
+                    component="a"
+                    href={data.signed_download_url}
+                    style={{ background: accent }}
+                  >
+                    Download signed PDF
+                  </Button>
+                  {data.certificate_download_url && (
+                    <Button component="a" href={data.certificate_download_url} variant="default">
+                      Download certificate
+                    </Button>
+                  )}
+                </Group>
+              </Stack>
+            ) : (
+              <Text mt="xl" size="sm" c="dimmed">
+                Preparing your signed document…
+              </Text>
+            )}
           </Card>
         </Container>
       </div>
@@ -130,6 +187,8 @@ export function SigningPage() {
     )
   }
 
+  const goNext = () => setActiveIdx((i) => Math.min(i + 1, fields.length - 1))
+
   return (
     <div className="signer-shell">
       <Container size={720} py={40}>
@@ -158,7 +217,13 @@ export function SigningPage() {
               <iframe
                 title="document"
                 src={data.document.file_url}
-                style={{ width: '100%', height: 420, border: 'none', borderRadius: 12 }}
+                style={{
+                  width: '100%',
+                  height: '80vh',
+                  minHeight: 640,
+                  border: 'none',
+                  borderRadius: 12,
+                }}
               />
             </Card>
           )}
@@ -193,6 +258,7 @@ export function SigningPage() {
                     </Button>
                     <Button
                       style={{ background: accent }}
+                      loading={completeField.isPending}
                       onClick={async () => {
                         const image_data = sigRef.current?.isEmpty()
                           ? undefined
@@ -202,7 +268,7 @@ export function SigningPage() {
                           value: typedName || data.recipient.name,
                           image_data,
                         })
-                        setActiveIdx((i) => Math.min(i + 1, fields.length - 1))
+                        goNext()
                       }}
                     >
                       Apply & next
@@ -212,24 +278,63 @@ export function SigningPage() {
               ) : current.field_type === 'checkbox' ? (
                 <Checkbox
                   label={current.label || 'I agree'}
+                  checked={current.value === 'true' || textValue === 'true'}
                   onChange={async (e) => {
+                    const checked = e.currentTarget.checked
+                    setTextValue(checked ? 'true' : 'false')
                     await completeField.mutateAsync({
                       fieldId: current.id,
-                      value: e.currentTarget.checked ? 'true' : 'false',
+                      value: checked ? 'true' : 'false',
                     })
-                    setActiveIdx((i) => Math.min(i + 1, fields.length - 1))
+                    if (checked) goNext()
                   }}
                 />
+              ) : current.field_type === 'date' ? (
+                <Stack>
+                  <TextInput
+                    type="date"
+                    label={current.label || 'Date'}
+                    value={dateValue}
+                    onChange={(e) => setDateValue(e.currentTarget.value)}
+                  />
+                  <Text size="xs" c="dimmed">
+                    Defaults to today — change if needed.
+                  </Text>
+                  <Button
+                    style={{ background: accent }}
+                    loading={completeField.isPending}
+                    onClick={async () => {
+                      await completeField.mutateAsync({
+                        fieldId: current.id,
+                        value: dateValue || todayIsoDate(),
+                      })
+                      goNext()
+                    }}
+                  >
+                    Apply & next
+                  </Button>
+                </Stack>
               ) : (
-                <TextInput
-                  label={current.label || 'Value'}
-                  onBlur={async (e) => {
-                    await completeField.mutateAsync({
-                      fieldId: current.id,
-                      value: e.currentTarget.value,
-                    })
-                  }}
-                />
+                <Stack>
+                  <TextInput
+                    label={current.label || 'Value'}
+                    value={textValue}
+                    onChange={(e) => setTextValue(e.currentTarget.value)}
+                  />
+                  <Button
+                    style={{ background: accent }}
+                    loading={completeField.isPending}
+                    onClick={async () => {
+                      await completeField.mutateAsync({
+                        fieldId: current.id,
+                        value: textValue,
+                      })
+                      goNext()
+                    }}
+                  >
+                    Apply & next
+                  </Button>
+                </Stack>
               )}
             </Card>
           )}

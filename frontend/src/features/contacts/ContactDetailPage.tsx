@@ -1,10 +1,12 @@
 import { Badge, Button, Card, Group, Stack, Text, Title, Timeline } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { api } from '../../shared/api'
+import { useCreateEnvelope } from '../envelopes/CreateEnvelopeContext'
 
 export function ContactDetailPage() {
   const { id } = useParams()
+  const { openCreateEnvelope } = useCreateEnvelope()
   const { data: contact } = useQuery({
     queryKey: ['contact', id],
     queryFn: () => api<any>(`/api/contacts/${id}/`),
@@ -25,8 +27,13 @@ export function ContactDetailPage() {
           <Text c="dimmed">{contact.email}</Text>
         </div>
         <Button
-          component={Link}
-          to={`/app/envelopes/new?contact=${contact.id}&email=${encodeURIComponent(contact.email)}&name=${encodeURIComponent(contact.full_name)}`}
+          onClick={() =>
+            openCreateEnvelope({
+              contact: contact.id,
+              email: contact.email,
+              name: contact.full_name,
+            })
+          }
         >
           Send for signature
         </Button>

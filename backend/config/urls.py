@@ -11,6 +11,7 @@ from apps.envelopes.views import DashboardViewSet, EnvelopeViewSet
 from apps.signing.views import (
     SigningConsentView,
     SigningDeclineView,
+    SigningDownloadView,
     SigningFieldCompleteView,
     SigningSessionView,
     SigningSubmitView,
@@ -59,6 +60,11 @@ urlpatterns = [
     ),
     path("api/sign/<str:token>/submit/", SigningSubmitView.as_view(), name="sign-submit"),
     path("api/sign/<str:token>/decline/", SigningDeclineView.as_view(), name="sign-decline"),
+    path(
+        "api/sign/<str:token>/download/",
+        SigningDownloadView.as_view(),
+        name="sign-download",
+    ),
     path("api/", include(router.urls)),
 ]
 

@@ -1,17 +1,34 @@
-import { AppShell, Burger, Group, NavLink, Text, Button, Avatar, Menu } from '@mantine/core'
-import { useDisclosure } from '@mantine/hooks'
 import {
-  IconLayoutDashboard,
-  IconUsers,
+  ActionIcon,
+  AppShell,
+  Avatar,
+  Burger,
+  Button,
+  Group,
+  Menu,
+  NavLink,
+  Text,
+  Tooltip,
+} from '@mantine/core'
+import { useDisclosure, useLocalStorage } from '@mantine/hooks'
+import {
+  IconBuilding,
   IconFileText,
+  IconLayoutDashboard,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand,
+  IconLogout,
   IconSend,
   IconSettings,
-  IconBuilding,
-  IconLogout,
   IconTemplate,
+  IconUsers,
 } from '@tabler/icons-react'
-import { Link, Outlet, useLocation, Navigate } from 'react-router-dom'
+import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../features/auth/AuthContext'
+import { CreateEnvelopeProvider, useCreateEnvelope } from '../features/envelopes/CreateEnvelopeContext'
+
+const NAV_EXPANDED = 260
+const NAV_COLLAPSED = 76
 
 const links = [
   { to: '/app', label: 'Dashboard', icon: IconLayoutDashboard },
@@ -23,19 +40,27 @@ const links = [
   { to: '/app/settings', label: 'Settings', icon: IconSettings },
 ]
 
-export function AppLayout() {
-  const [opened, { toggle }] = useDisclosure()
-  const { user, tenant, loading, logout } = useAuth()
+function AppShellContent() {
+  const [mobileOpened, { toggle: toggleMobile }] = useDisclosure()
+  const [desktopCollapsed, setDesktopCollapsed] = useLocalStorage({
+    key: 'sd-nav-collapsed',
+    defaultValue: false,
+  })
+  const { user, tenant, logout } = useAuth()
   const location = useLocation()
-
-  if (loading) return null
-  if (!user || !tenant) return <Navigate to="/login" replace />
+  const { openCreateEnvelope } = useCreateEnvelope()
 
   return (
     <AppShell
       header={{ height: 64 }}
-      navbar={{ width: 260, breakpoint: 'sm', collapsed: { mobile: !opened } }}
+      navbar={{
+        width: desktopCollapsed ? NAV_COLLAPSED : NAV_EXPANDED,
+        breakpoint: 'sm',
+        collapsed: { mobile: !mobileOpened },
+      }}
       padding="md"
+      transitionDuration={200}
+      transitionTimingFunction="ease"
     >
       <AppShell.Header
         style={{
@@ -45,30 +70,45 @@ export function AppLayout() {
         }}
       >
         <Group h="100%" px="md" justify="space-between">
-          <Group>
-            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-            <Text
-              fw={700}
-              style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 22 }}
+          <Group gap="sm">
+            <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" />
+            <Tooltip
+              label={desktopCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+              position="bottom"
             >
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                visibleFrom="sm"
+                onClick={() => setDesktopCollapsed((value) => !value)}
+                aria-label={desktopCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+              >
+                {desktopCollapsed ? (
+                  <IconLayoutSidebarLeftExpand size={18} stroke={1.5} />
+                ) : (
+                  <IconLayoutSidebarLeftCollapse size={18} stroke={1.5} />
+                )}
+              </ActionIcon>
+            </Tooltip>
+            <Text fw={700} style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 22 }}>
               SignDesk
             </Text>
-            <Text c="dimmed" size="sm">
-              {tenant.name}
+            <Text c="dimmed" size="sm" visibleFrom="sm">
+              {tenant!.name}
             </Text>
           </Group>
           <Group>
-            <Button component={Link} to="/app/envelopes/new" variant="filled">
+            <Button variant="filled" onClick={() => openCreateEnvelope()}>
               Send for signature
             </Button>
             <Menu>
               <Menu.Target>
                 <Avatar radius="xl" color="forest" style={{ cursor: 'pointer' }}>
-                  {user.full_name.slice(0, 1).toUpperCase()}
+                  {user!.full_name.slice(0, 1).toUpperCase()}
                 </Avatar>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Label>{user.email}</Menu.Label>
+                <Menu.Label>{user!.email}</Menu.Label>
                 <Menu.Item leftSection={<IconLogout size={14} />} onClick={logout}>
                   Log out
                 </Menu.Item>
@@ -78,26 +118,68 @@ export function AppLayout() {
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar p="md" style={{ background: 'transparent' }}>
-        {links.map((link) => (
-          <NavLink
-            key={link.to}
-            component={Link}
-            to={link.to}
-            label={link.label}
-            leftSection={<link.icon size={18} />}
-            active={
-              location.pathname === link.to ||
-              (link.to !== '/app' && location.pathname.startsWith(link.to))
-            }
-            mb={4}
-          />
-        ))}
+      <AppShell.Navbar
+        p={desktopCollapsed ? 'sm' : 'md'}
+        style={{ background: 'transparent' }}
+        className={desktopCollapsed ? 'sd-nav-collapsed' : undefined}
+      >
+        {links.map((link) => {
+          const active =
+            location.pathname === link.to ||
+            (link.to !== '/app' && location.pathname.startsWith(link.to))
+
+          const item = (
+            <NavLink
+              component={Link}
+              to={link.to}
+              label={desktopCollapsed ? undefined : link.label}
+              leftSection={<link.icon size={20} stroke={1.5} />}
+              active={active}
+              mb={4}
+              aria-label={link.label}
+              styles={
+                desktopCollapsed
+                  ? {
+                      root: {
+                        padding: '10px',
+                        justifyContent: 'center',
+                        borderRadius: 10,
+                      },
+                      section: { marginInlineEnd: 0 },
+                    }
+                  : undefined
+              }
+            />
+          )
+
+          if (!desktopCollapsed) {
+            return <div key={link.to}>{item}</div>
+          }
+
+          return (
+            <Tooltip key={link.to} label={link.label} position="right" withArrow offset={10}>
+              {item}
+            </Tooltip>
+          )
+        })}
       </AppShell.Navbar>
 
       <AppShell.Main>
         <Outlet />
       </AppShell.Main>
     </AppShell>
+  )
+}
+
+export function AppLayout() {
+  const { user, tenant, loading } = useAuth()
+
+  if (loading) return null
+  if (!user || !tenant) return <Navigate to="/login" replace />
+
+  return (
+    <CreateEnvelopeProvider>
+      <AppShellContent />
+    </CreateEnvelopeProvider>
   )
 }

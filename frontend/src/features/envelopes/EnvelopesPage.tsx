@@ -1,7 +1,10 @@
-import { Badge, Button, Group, Stack, Table, Text, Title } from '@mantine/core'
+import { Badge, Button, Group, Stack, Text, Title } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../../shared/api'
+import { DataTable } from '../../shared/DataTable'
+import { formatDate } from '../../shared/formatDate'
+import { useCreateEnvelope } from './CreateEnvelopeContext'
 
 type Envelope = {
   id: number
@@ -12,6 +15,7 @@ type Envelope = {
 }
 
 export function EnvelopesPage() {
+  const { openCreateEnvelope } = useCreateEnvelope()
   const { data } = useQuery({
     queryKey: ['envelopes'],
     queryFn: () => api<{ results: Envelope[] }>('/api/envelopes/'),
@@ -24,36 +28,36 @@ export function EnvelopesPage() {
           <Title order={2}>Envelopes</Title>
           <Text c="dimmed">Draft, send, and track signature requests.</Text>
         </div>
-        <Button component={Link} to="/app/envelopes/new">
-          New envelope
-        </Button>
+        <Button onClick={() => openCreateEnvelope()}>New envelope</Button>
       </Group>
-      <Table striped highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Title</Table.Th>
-            <Table.Th>Status</Table.Th>
-            <Table.Th>Recipients</Table.Th>
-            <Table.Th>Created</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
+      <DataTable>
+        <DataTable.Thead>
+          <DataTable.Tr>
+            <DataTable.Th>Title</DataTable.Th>
+            <DataTable.Th>Status</DataTable.Th>
+            <DataTable.Th className="sd-table-numeric">Recipients</DataTable.Th>
+            <DataTable.Th>Created</DataTable.Th>
+          </DataTable.Tr>
+        </DataTable.Thead>
+        <DataTable.Tbody>
           {(data?.results || []).map((e) => (
-            <Table.Tr key={e.id}>
-              <Table.Td>
-                <Text component={Link} to={`/app/envelopes/${e.id}`} fw={500}>
+            <DataTable.Tr key={e.id}>
+              <DataTable.Td>
+                <Text component={Link} to={`/app/envelopes/${e.id}`} className="sd-table-primary">
                   {e.title}
                 </Text>
-              </Table.Td>
-              <Table.Td>
-                <Badge variant="light">{e.status}</Badge>
-              </Table.Td>
-              <Table.Td>{e.recipient_count}</Table.Td>
-              <Table.Td>{new Date(e.created_at).toLocaleString()}</Table.Td>
-            </Table.Tr>
+              </DataTable.Td>
+              <DataTable.Td>
+                <Badge variant="light" tt="capitalize">
+                  {e.status.replaceAll('_', ' ')}
+                </Badge>
+              </DataTable.Td>
+              <DataTable.Td className="sd-table-numeric sd-table-muted">{e.recipient_count}</DataTable.Td>
+              <DataTable.Td className="sd-table-muted">{formatDate(e.created_at, true)}</DataTable.Td>
+            </DataTable.Tr>
           ))}
-        </Table.Tbody>
-      </Table>
+        </DataTable.Tbody>
+      </DataTable>
     </Stack>
   )
 }

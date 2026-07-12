@@ -1,22 +1,24 @@
 import base64
-import os
+import mimetypes
 import uuid
 
-from django.conf import settings
 from django.core.files.base import ContentFile
+from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import status, views
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
+from apps.audit.models import AuditEvent
 from apps.envelopes.models import Envelope, Field, Recipient, SignatureAsset
-from apps.envelopes.serializers import EnvelopeSerializer, FieldSerializer
+from apps.envelopes.serializers import FieldSerializer
 from apps.envelopes.services import (
     CONSENT_VERSION,
     accept_consent,
     complete_recipient_signing,
     mark_viewed,
+    record_audit,
 )
 from apps.documents.serializers import DocumentVersionSerializer
 
@@ -29,6 +31,13 @@ def get_recipient_by_token(token: str) -> Recipient:
     return Recipient.objects.select_related(
         "envelope", "envelope__document", "envelope__document_version", "tenant"
     ).get(access_token=token)
+
+
+def _download_paths(token: str) -> dict:
+    return {
+        "signed_download_url": f"/api/sign/{token}/download/?kind=signed",
+        "certificate_download_url": f"/api/sign/{token}/download/?kind=certificate",
+    }
 
 
 class SigningSessionView(views.APIView):
@@ -51,47 +60,115 @@ class SigningSessionView(views.APIView):
                 {"detail": f"This envelope is {envelope.status}."},
                 status=status.HTTP_410_GONE,
             )
-        if envelope.expires_at and envelope.expires_at < timezone.now():
+        if (
+            envelope.status != Envelope.Status.COMPLETED
+            and envelope.expires_at
+            and envelope.expires_at < timezone.now()
+        ):
             envelope.status = Envelope.Status.EXPIRED
             envelope.save(update_fields=["status", "updated_at"])
             return Response({"detail": "This envelope has expired."}, status=410)
 
-        mark_viewed(recipient, request)
+        if envelope.status != Envelope.Status.COMPLETED:
+            mark_viewed(recipient, request)
+
         version = envelope.document_version
-        return Response(
-            {
-                "consent_version": CONSENT_VERSION,
-                "consent_text": (
-                    "By continuing, you agree to conduct this transaction electronically, "
-                    "to receive records electronically, and that your electronic signature "
-                    "is legally binding. You may request a paper copy and withdraw consent "
-                    "by contacting the sender."
-                ),
-                "recipient": {
-                    "id": recipient.id,
-                    "name": recipient.name,
-                    "email": recipient.email,
-                    "status": recipient.status,
-                    "role": recipient.role,
-                },
-                "envelope": {
-                    "id": envelope.id,
-                    "title": envelope.title,
-                    "message": envelope.message,
-                    "status": envelope.status,
-                    "tenant_name": envelope.tenant.name,
-                    "accent_color": envelope.tenant.accent_color,
-                },
-                "document": DocumentVersionSerializer(
-                    version, context={"request": request}
-                ).data
-                if version
-                else None,
-                "fields": FieldSerializer(
-                    envelope.fields.filter(recipient=recipient), many=True
-                ).data,
-            }
+        completed = envelope.status == Envelope.Status.COMPLETED and bool(envelope.signed_file)
+        payload = {
+            "consent_version": CONSENT_VERSION,
+            "consent_text": (
+                "By continuing, you agree to conduct this transaction electronically, "
+                "to receive records electronically, and that your electronic signature "
+                "is legally binding. You may request a paper copy and withdraw consent "
+                "by contacting the sender."
+            ),
+            "recipient": {
+                "id": recipient.id,
+                "name": recipient.name,
+                "email": recipient.email,
+                "status": recipient.status,
+                "role": recipient.role,
+            },
+            "envelope": {
+                "id": envelope.id,
+                "title": envelope.title,
+                "message": envelope.message,
+                "status": envelope.status,
+                "tenant_name": envelope.tenant.name,
+                "accent_color": envelope.tenant.accent_color,
+            },
+            "document": DocumentVersionSerializer(
+                version, context={"request": request}
+            ).data
+            if version
+            else None,
+            "fields": FieldSerializer(
+                envelope.fields.filter(recipient=recipient), many=True
+            ).data,
+            "downloads_ready": completed,
+        }
+        if completed:
+            payload.update(_download_paths(token))
+        return Response(payload)
+
+
+class SigningDownloadView(views.APIView):
+    """Public token-based download of the completed signed PDF or certificate."""
+
+    permission_classes = [AllowAny]
+    throttle_classes = [SigningThrottle]
+
+    def get(self, request, token):
+        try:
+            recipient = get_recipient_by_token(token)
+        except Recipient.DoesNotExist:
+            return Response({"detail": "Invalid link."}, status=status.HTTP_404_NOT_FOUND)
+
+        envelope = recipient.envelope
+        if envelope.status != Envelope.Status.COMPLETED:
+            return Response(
+                {"detail": "The signed document is not ready yet."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        kind = request.query_params.get("kind", "signed")
+        if kind == "certificate":
+            file_field = envelope.certificate_file
+            filename = f"{envelope.title}-certificate.pdf"
+        elif kind == "signed":
+            file_field = envelope.signed_file
+            filename = f"{envelope.title}-signed.pdf"
+        else:
+            return Response({"detail": "Unknown download kind."}, status=400)
+
+        if not file_field:
+            return Response(
+                {"detail": "File not available."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        meta = {}
+        xff = request.META.get("HTTP_X_FORWARDED_FOR")
+        meta["ip_address"] = (
+            xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR")
         )
+        meta["user_agent"] = request.META.get("HTTP_USER_AGENT", "")[:1000]
+        record_audit(
+            tenant=recipient.tenant,
+            envelope=envelope,
+            event_type=AuditEvent.EventType.DOWNLOADED,
+            recipient=recipient,
+            actor_email=recipient.email,
+            actor_name=recipient.name,
+            payload={"kind": kind},
+            **meta,
+        )
+
+        safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in filename)
+        content_type = mimetypes.guess_type(safe_name)[0] or "application/pdf"
+        response = FileResponse(file_field.open("rb"), content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{safe_name}"'
+        return response
 
 
 class SigningConsentView(views.APIView):

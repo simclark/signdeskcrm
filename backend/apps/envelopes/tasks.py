@@ -27,15 +27,14 @@ def send_recipient_invite(recipient_id: int):
 @shared_task
 def send_completion_emails(envelope_id: int):
     envelope = Envelope.objects.select_related("tenant").get(pk=envelope_id)
-    download_note = (
-        f"The signed document is available in the {envelope.tenant.name} workspace."
-    )
     for recipient in envelope.recipients.all():
+        download_url = envelope.tenant.frontend_url(f"/sign/{recipient.access_token}")
         subject = f"Completed: {envelope.title}"
         body = (
             f"Hello {recipient.name},\n\n"
-            f"The document '{envelope.title}' has been completed.\n"
-            f"{download_note}\n\n"
+            f"The document '{envelope.title}' has been completed by all parties.\n\n"
+            f"Download your signed copy (no sign-in required):\n"
+            f"{download_url}\n\n"
             f"— SignDesk\n"
         )
         send_mail(

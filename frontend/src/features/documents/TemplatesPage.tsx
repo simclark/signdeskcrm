@@ -3,7 +3,6 @@ import {
   Group,
   Modal,
   Stack,
-  Table,
   Text,
   TextInput,
   Title,
@@ -13,6 +12,8 @@ import { useDisclosure } from '@mantine/hooks'
 import { useForm } from '@mantine/form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../shared/api'
+import { DataTable } from '../../shared/DataTable'
+import { formatDate } from '../../shared/formatDate'
 
 type Template = {
   id: number
@@ -51,30 +52,35 @@ export function TemplatesPage() {
         <div>
           <Title order={2}>Templates</Title>
           <Text c="dimmed">Reusable field layouts for faster sending.</Text>
+          <Text size="sm" c="dimmed" mt={4}>
+            Layout items: field_type, page, x, y, w, h, required, label, recipient_index (0-based).
+          </Text>
         </div>
         <Button onClick={open}>New template</Button>
       </Group>
       {(data?.results || []).length === 0 ? (
         <Text c="dimmed">No templates yet. Save a layout to reuse across envelopes.</Text>
       ) : (
-        <Table striped>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Name</Table.Th>
-              <Table.Th>Fields</Table.Th>
-              <Table.Th>Created</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
+        <DataTable>
+          <DataTable.Thead>
+            <DataTable.Tr>
+              <DataTable.Th>Name</DataTable.Th>
+              <DataTable.Th className="sd-table-numeric">Fields</DataTable.Th>
+              <DataTable.Th>Created</DataTable.Th>
+            </DataTable.Tr>
+          </DataTable.Thead>
+          <DataTable.Tbody>
             {(data?.results || []).map((t) => (
-              <Table.Tr key={t.id}>
-                <Table.Td>{t.name}</Table.Td>
-                <Table.Td>{Array.isArray(t.field_layout) ? t.field_layout.length : 0}</Table.Td>
-                <Table.Td>{new Date(t.created_at).toLocaleString()}</Table.Td>
-              </Table.Tr>
+              <DataTable.Tr key={t.id}>
+                <DataTable.Td className="sd-table-primary">{t.name}</DataTable.Td>
+                <DataTable.Td className="sd-table-numeric sd-table-muted">
+                  {Array.isArray(t.field_layout) ? t.field_layout.length : 0}
+                </DataTable.Td>
+                <DataTable.Td className="sd-table-muted">{formatDate(t.created_at, true)}</DataTable.Td>
+              </DataTable.Tr>
             ))}
-          </Table.Tbody>
-        </Table>
+          </DataTable.Tbody>
+        </DataTable>
       )}
       <Modal opened={opened} onClose={close} title="New template">
         <form onSubmit={form.onSubmit((v) => create.mutate(v))}>
