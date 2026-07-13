@@ -157,6 +157,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.envelopes.tasks.send_due_reminders",
         "schedule": 3600.0,
     },
+    "purge-retained-documents": {
+        "task": "apps.envelopes.tasks.purge_expired_retained_documents",
+        "schedule": 3600.0,
+    },
 }
 
 EMAIL_BACKEND = os.getenv(

@@ -1,4 +1,5 @@
 import {
+  Anchor,
   Button,
   Card,
   Checkbox,
@@ -407,6 +408,37 @@ export function SigningPage() {
             >
               {data.consent_text}
             </Text>
+            {(data.envelope.support_email ||
+              data.envelope.support_phone ||
+              data.envelope.paper_copy_fee_policy ||
+              data.envelope.document_retention_days) && (
+              <Text size="sm" c="dimmed" mb="md">
+                {data.envelope.support_email || data.envelope.support_phone ? (
+                  <>
+                    Contact the sender
+                    {data.envelope.support_email ? (
+                      <>
+                        {' '}
+                        at{' '}
+                        <Anchor href={`mailto:${data.envelope.support_email}`}>
+                          {data.envelope.support_email}
+                        </Anchor>
+                      </>
+                    ) : null}
+                    {data.envelope.support_phone
+                      ? `${data.envelope.support_email ? ' or ' : ' at '}${data.envelope.support_phone}`
+                      : ''}
+                    .
+                  </>
+                ) : null}
+                {data.envelope.paper_copy_fee_policy
+                  ? ` ${data.envelope.paper_copy_fee_policy}`
+                  : ''}
+                {data.envelope.document_retention_days
+                  ? ` Completed records remain downloadable for ${data.envelope.document_retention_days} days.`
+                  : ''}
+              </Text>
+            )}
             <Checkbox
               label="I have read this disclosure, can access PDF documents, and agree to use electronic records and signatures"
               checked={consentChecked}

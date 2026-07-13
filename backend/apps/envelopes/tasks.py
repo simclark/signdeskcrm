@@ -1,4 +1,6 @@
 from celery import shared_task
+from datetime import timedelta
+
 from django.utils import timezone
 
 from apps.audit.models import AuditEvent
@@ -66,24 +68,83 @@ def finalize_envelope(envelope_id: int):
 @shared_task
 def send_due_reminders():
     now = timezone.now()
-    qs = Recipient.objects.filter(
-        role=Recipient.Role.SIGNER,
-        status__in=[Recipient.Status.SENT, Recipient.Status.VIEWED],
-        envelope__status__in=[Envelope.Status.SENT, Envelope.Status.IN_PROGRESS],
-        envelope__expires_at__gt=now,
-    ).select_related("envelope", "tenant")
+    qs = (
+        Recipient.objects.filter(
+            role=Recipient.Role.SIGNER,
+            status__in=[Recipient.Status.SENT, Recipient.Status.VIEWED],
+            envelope__status__in=[Envelope.Status.SENT, Envelope.Status.IN_PROGRESS],
+            envelope__expires_at__gt=now,
+            tenant__reminders_enabled=True,
+        )
+        .select_related("envelope", "tenant")
+    )
     for recipient in qs:
+        tenant = recipient.tenant
+        interval_hours = max(int(tenant.reminder_interval_hours or 48), 1)
+        max_count = int(tenant.reminder_max_count or 0)
+        if max_count and recipient.reminder_count >= max_count:
+            continue
         last = recipient.last_reminded_at or recipient.sent_at
-        if last and (now - last).total_seconds() < 48 * 3600:
+        if last and (now - last).total_seconds() < interval_hours * 3600:
             continue
         send_recipient_invite.delay(recipient.id, is_reminder=True)
         recipient.last_reminded_at = now
-        recipient.save(update_fields=["last_reminded_at", "updated_at"])
+        recipient.reminder_count = (recipient.reminder_count or 0) + 1
+        recipient.save(update_fields=["last_reminded_at", "reminder_count", "updated_at"])
         record_audit(
-            tenant=recipient.tenant,
+            tenant=tenant,
             envelope=recipient.envelope,
             event_type=AuditEvent.EventType.REMINDED,
             recipient=recipient,
             actor_email="system@signdeskcrm.com",
             actor_name="System",
+            payload={"reminder_count": recipient.reminder_count},
         )
+
+
+@shared_task
+def purge_expired_retained_documents():
+    """Remove downloadable signed PDFs/certificates past each workspace retention window."""
+    now = timezone.now()
+    qs = (
+        Envelope.objects.filter(
+            status=Envelope.Status.COMPLETED,
+            retention_purged_at__isnull=True,
+            completed_at__isnull=False,
+            tenant__document_retention_days__isnull=False,
+        )
+        .select_related("tenant")
+    )
+    purged = 0
+    for envelope in qs:
+        days = envelope.tenant.document_retention_days
+        if not days:
+            continue
+        cutoff = envelope.completed_at + timedelta(days=days)
+        if cutoff > now:
+            continue
+        if envelope.signed_file:
+            envelope.signed_file.delete(save=False)
+            envelope.signed_file = None
+        if envelope.certificate_file:
+            envelope.certificate_file.delete(save=False)
+            envelope.certificate_file = None
+        envelope.retention_purged_at = now
+        envelope.save(
+            update_fields=[
+                "signed_file",
+                "certificate_file",
+                "retention_purged_at",
+                "updated_at",
+            ]
+        )
+        record_audit(
+            tenant=envelope.tenant,
+            envelope=envelope,
+            event_type=AuditEvent.EventType.RETENTION_PURGED,
+            actor_email="system@signdeskcrm.com",
+            actor_name="System",
+            payload={"retention_days": days},
+        )
+        purged += 1
+    return purged

@@ -13,11 +13,29 @@ type Tenant = {
   id: number
   name: string
   slug: string
+  legal_name: string
+  website: string
+  address_line1: string
+  address_line2: string
+  city: string
+  state: string
+  postal_code: string
+  country: string
+  primary_contact_name: string
+  primary_contact_email: string
+  primary_contact_phone: string
   accent_color: string
   timezone: string
   default_expiration_days: number
   logo: string | null
   icon: string | null
+  reminders_enabled: boolean
+  reminder_interval_hours: number
+  reminder_max_count: number
+  document_retention_days: number | null
+  sender_support_email: string
+  sender_support_phone: string
+  paper_copy_fee_policy: string
   esign_acknowledgement: string
   esign_acknowledgement_version: string
 }

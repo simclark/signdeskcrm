@@ -63,11 +63,41 @@ class Tenant(TimeStampedModel):
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE
     )
+    # Account / company identity (who ordered this tenant)
+    legal_name = models.CharField(max_length=255, blank=True)
+    website = models.CharField(max_length=255, blank=True)
+    address_line1 = models.CharField(max_length=255, blank=True)
+    address_line2 = models.CharField(max_length=255, blank=True)
+    city = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=100, blank=True)
+    postal_code = models.CharField(max_length=32, blank=True)
+    country = models.CharField(max_length=100, blank=True)
+    primary_contact_name = models.CharField(max_length=255, blank=True)
+    primary_contact_email = models.EmailField(blank=True)
+    primary_contact_phone = models.CharField(max_length=64, blank=True)
     logo = models.ImageField(upload_to="tenant_logos/", blank=True, null=True)
     icon = models.ImageField(upload_to="tenant_icons/", blank=True, null=True)
     accent_color = models.CharField(max_length=7, default="#0B6E4F")
     timezone = models.CharField(max_length=64, default="UTC")
     default_expiration_days = models.PositiveIntegerField(default=14)
+    # E-signature policies
+    reminders_enabled = models.BooleanField(default=True)
+    reminder_interval_hours = models.PositiveIntegerField(default=48)
+    reminder_max_count = models.PositiveIntegerField(
+        default=0,
+        help_text="Maximum automatic reminders per signer. 0 means unlimited.",
+    )
+    document_retention_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Days to keep signed PDFs and certificates after completion. Blank keeps forever.",
+    )
+    sender_support_email = models.EmailField(blank=True)
+    sender_support_phone = models.CharField(max_length=64, blank=True)
+    paper_copy_fee_policy = models.TextField(
+        blank=True,
+        help_text="Optional policy shown to signers about paper-copy fees.",
+    )
     esign_acknowledgement = models.TextField(default=DEFAULT_ESIGN_ACKNOWLEDGEMENT)
     esign_acknowledgement_version = models.CharField(
         max_length=32, default=DEFAULT_ESIGN_ACKNOWLEDGEMENT_VERSION

@@ -2,8 +2,9 @@ import io
 
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
+from datetime import timedelta
 from pypdf import PdfReader
 from reportlab.pdfgen import canvas
 
@@ -157,3 +158,103 @@ class NextCopyTitleTests(TestCase):
             next_copy_title("sample-service-agreement (copy) (copy)"),
             "sample-service-agreement (copy 3)",
         )
+
+
+@override_settings(CELERY_TASK_ALWAYS_EAGER=True)
+class EsignPolicySettingsTests(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(
+            name="Policy Co",
+            slug="policy-co",
+            reminders_enabled=True,
+            reminder_interval_hours=24,
+            reminder_max_count=1,
+            document_retention_days=30,
+            accent_color="#1D4ED8",
+            timezone="America/Chicago",
+            sender_support_email="legal@policy.test",
+        )
+        self.user = User.objects.create_user(email="owner@policy.test", password="password123")
+        Membership.objects.create(tenant=self.tenant, user=self.user, role=Membership.Role.OWNER)
+        pdf = SimpleUploadedFile("doc.pdf", _multi_page_pdf(1), content_type="application/pdf")
+        self.document = Document.objects.create(
+            tenant=self.tenant, title="Doc", original_filename="doc.pdf", created_by=self.user
+        )
+        self.version = DocumentVersion(
+            tenant=self.tenant, document=self.document, version_number=1, file=pdf
+        )
+        self.version.save()
+        self.version.compute_hash()
+        self.version.page_count = 1
+        self.version.save()
+        self.envelope = Envelope.objects.create(
+            tenant=self.tenant,
+            title="Agreement",
+            document=self.document,
+            document_version=self.version,
+            created_by=self.user,
+            status=Envelope.Status.SENT,
+            sent_at=timezone.now() - timedelta(days=3),
+            expires_at=timezone.now() + timedelta(days=10),
+        )
+        self.recipient = Recipient.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            name="Signer",
+            email="signer@policy.test",
+            status=Recipient.Status.SENT,
+            sent_at=timezone.now() - timedelta(days=3),
+        )
+
+    def test_reminders_respect_interval_and_max_count(self):
+        from apps.envelopes.tasks import send_due_reminders
+
+        send_due_reminders()
+        self.recipient.refresh_from_db()
+        self.assertEqual(self.recipient.reminder_count, 1)
+        self.assertIsNotNone(self.recipient.last_reminded_at)
+
+        send_due_reminders()
+        self.recipient.refresh_from_db()
+        self.assertEqual(self.recipient.reminder_count, 1)
+
+    def test_reminders_can_be_disabled(self):
+        from apps.envelopes.tasks import send_due_reminders
+
+        self.tenant.reminders_enabled = False
+        self.tenant.save(update_fields=["reminders_enabled"])
+        send_due_reminders()
+        self.recipient.refresh_from_db()
+        self.assertEqual(self.recipient.reminder_count, 0)
+
+    def test_retention_purge_removes_downloadable_files(self):
+        from apps.envelopes.tasks import purge_expired_retained_documents
+
+        self.envelope.status = Envelope.Status.COMPLETED
+        self.envelope.completed_at = timezone.now() - timedelta(days=40)
+        self.envelope.signed_file.save("signed.pdf", ContentFile(b"%PDF-1.4 signed"), save=False)
+        self.envelope.certificate_file.save("cert.pdf", ContentFile(b"%PDF-1.4 cert"), save=False)
+        self.envelope.save()
+
+        purged = purge_expired_retained_documents()
+        self.assertEqual(purged, 1)
+        self.envelope.refresh_from_db()
+        self.assertTrue(self.envelope.retention_purged_at)
+        self.assertFalse(bool(self.envelope.signed_file))
+        self.assertFalse(bool(self.envelope.certificate_file))
+
+    def test_certificate_uses_tenant_brand_and_contact(self):
+        import io
+
+        from apps.envelopes.services import generate_certificate_pdf
+
+        self.envelope.status = Envelope.Status.COMPLETED
+        self.envelope.completed_at = timezone.now()
+        self.envelope.save()
+        cert = generate_certificate_pdf(self.envelope)
+        reader = PdfReader(io.BytesIO(cert))
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        self.assertIn("Policy Co", text)
+        self.assertIn("America/Chicago", text)
+        self.assertIn("legal@policy.test", text)
+        self.assertIn("30 days", text)

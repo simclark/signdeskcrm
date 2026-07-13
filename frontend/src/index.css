@@ -407,7 +407,7 @@ body {
 }
 
 .sd-settings-panel {
-  max-width: 720px;
+  max-width: 960px;
   background: rgba(255, 255, 255, 0.86);
   border: 1px solid rgba(16, 42, 35, 0.08);
   border-radius: 16px;
@@ -417,6 +417,20 @@ body {
 
 .sd-settings-panel--wide {
   max-width: none;
+}
+
+.sd-settings-split-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--mantine-spacing-lg);
+  width: 100%;
+}
+
+@media (min-width: 900px) {
+  .sd-settings-split-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
 }
 
 .sd-settings-panel__header {
@@ -452,6 +466,8 @@ body {
   border-radius: 10px;
   background: rgba(16, 42, 35, 0.03);
   border: 1px solid rgba(16, 42, 35, 0.06);
+  max-height: 360px;
+  overflow-y: auto;
 }
 
 .sd-email-workspace {

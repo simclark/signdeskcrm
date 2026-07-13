@@ -18,6 +18,7 @@ class AuditEvent(TenantOwnedModel):
         COMPLETED = "completed", "Completed"
         REMINDED = "reminded", "Reminded"
         DOWNLOADED = "downloaded", "Downloaded"
+        RETENTION_PURGED = "retention_purged", "Retention purged"
 
     envelope = models.ForeignKey(
         "envelopes.Envelope",

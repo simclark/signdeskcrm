@@ -5,6 +5,7 @@ import io
 import os
 import re
 from datetime import timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -34,6 +35,35 @@ LIGHT_BAND = colors.HexColor("#f4f7f5")
 
 _COPY_SUFFIX_RE = re.compile(r"(?:\s*\(copy(?:\s+\d+)?\))+$", re.IGNORECASE)
 _COPY_PART_RE = re.compile(r"\(copy(?:\s+(\d+))?\)", re.IGNORECASE)
+
+
+def _tenant_zoneinfo(tenant) -> ZoneInfo:
+    name = (getattr(tenant, "timezone", None) or "UTC").strip() or "UTC"
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("UTC")
+
+
+def _tenant_brand_color(tenant) -> colors.Color:
+    raw = (getattr(tenant, "accent_color", None) or "#0b6e4f").strip()
+    if not raw.startswith("#"):
+        raw = f"#{raw}"
+    try:
+        return colors.HexColor(raw)
+    except Exception:
+        return BRAND_GREEN
+
+
+def _format_cert_datetime(value, tenant=None) -> str:
+    if not value:
+        return "—"
+    if timezone.is_aware(value):
+        if tenant is not None:
+            value = value.astimezone(_tenant_zoneinfo(tenant))
+        else:
+            value = timezone.localtime(value)
+    return value.strftime("%b %d, %Y · %I:%M:%S %p %Z")
 
 
 def next_copy_title(title: str) -> str:
@@ -396,14 +426,6 @@ def _resolve_image_path(value: str | None) -> str | None:
     return None
 
 
-def _format_cert_datetime(value) -> str:
-    if not value:
-        return "—"
-    if timezone.is_aware(value):
-        value = timezone.localtime(value)
-    return value.strftime("%b %d, %Y · %I:%M:%S %p %Z")
-
-
 def _wrap_text(text: str, max_chars: int) -> list[str]:
     text = (text or "").strip()
     if not text:
@@ -468,6 +490,8 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
     right = width - 54
     content_width = right - left
     page_num = 1
+    tenant = envelope.tenant
+    brand = _tenant_brand_color(tenant)
 
     recipients = list(
         envelope.recipients.select_related("contact").prefetch_related("signature_assets").all()
@@ -481,19 +505,19 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
         _draw_footer(c, envelope, page_num, width)
         c.showPage()
         page_num += 1
-        return _draw_continuation_header(c, envelope, width, height)
+        return _draw_continuation_header(c, envelope, width, height, brand)
 
     # ── Header band ──────────────────────────────────────────────
-    c.setFillColor(BRAND_GREEN)
+    c.setFillColor(brand)
     c.rect(0, height - 96, width, 96, fill=1, stroke=0)
     c.setFillColor(colors.white)
     c.setFont("Helvetica", 10)
-    c.drawString(left, height - 36, "SignDesk")
+    c.drawString(left, height - 36, tenant.name or "SignDesk")
     c.setFont("Helvetica-Bold", 22)
     c.drawString(left, height - 64, "Certificate of Completion")
     c.setFont("Helvetica", 9)
     c.drawRightString(right, height - 36, "Electronic Signature Record")
-    completed_label = _format_cert_datetime(envelope.completed_at or timezone.now())
+    completed_label = _format_cert_datetime(envelope.completed_at or timezone.now(), tenant)
     c.drawRightString(right, height - 52, completed_label)
 
     y = height - 124
@@ -517,9 +541,10 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
     c.setFillColor(MUTED_GRAY)
     meta_rows = [
         ("Envelope ID", str(envelope.id)),
-        ("Workspace", f"{envelope.tenant.name} ({envelope.tenant.slug})"),
+        ("Workspace", f"{tenant.name} ({tenant.slug})"),
         ("Status", (envelope.status or "").replace("_", " ").title()),
         ("Completed", completed_label),
+        ("Timezone", tenant.timezone or "UTC"),
     ]
     for label, value in meta_rows:
         c.setFont("Helvetica-Bold", 9)
@@ -569,14 +594,34 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
     y -= 16
     c.setFont("Helvetica", 8)
     c.setFillColor(colors.black)
+    retention_days = tenant.document_retention_days
+    if retention_days:
+        retention_phrase = (
+            f"Completed records are retained by the sending workspace for {retention_days} days "
+            "after completion unless a longer period is required by law."
+        )
+    else:
+        retention_phrase = (
+            "Retention of completed records on the platform is controlled by the sending workspace; "
+            "signers should keep their own copies."
+        )
+    contact_bits = []
+    if tenant.sender_support_email:
+        contact_bits.append(tenant.sender_support_email)
+    if tenant.sender_support_phone:
+        contact_bits.append(tenant.sender_support_phone)
+    contact_phrase = f" Sender contact: {', '.join(contact_bits)}." if contact_bits else ""
+    fee_phrase = (
+        f" Paper-copy policy: {tenant.paper_copy_fee_policy.strip()}"
+        if (tenant.paper_copy_fee_policy or "").strip()
+        else ""
+    )
     legal_notice = (
         "Electronic signatures on this envelope were collected under the U.S. Electronic "
         "Signatures in Global and National Commerce Act (E-SIGN Act) and the applicable "
         "Uniform Electronic Transactions Act (UETA). Each signer affirmatively consented "
         "to electronic records and signatures before signing. Document integrity is "
-        "evidenced by the SHA-256 hashes above. Completed records (signed PDF and this "
-        "certificate) are available via the signer’s invitation link and/or by request "
-        "from the sending workspace, which controls retention duration."
+        f"evidenced by the SHA-256 hashes above. {retention_phrase}{contact_phrase}{fee_phrase}"
     )
     y = _draw_wrapped(c, legal_notice, left, y, 98, 11)
     y -= 16
@@ -612,7 +657,7 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
         c.setFillColor(LIGHT_BAND)
         c.roundRect(left, card_bottom, content_width, card_top - card_bottom, 6, fill=1, stroke=0)
 
-        c.setFillColor(BRAND_GREEN)
+        c.setFillColor(brand)
         c.setFont("Helvetica-Bold", 9)
         c.drawString(left + 12, y, f"Signer {idx}")
 
@@ -630,7 +675,7 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
 
         c.setFillColor(colors.black)
         c.setFont("Helvetica", 8)
-        signed_line = f"Signed: {_format_cert_datetime(recipient.signed_at)}"
+        signed_line = f"Signed: {_format_cert_datetime(recipient.signed_at, tenant)}"
         c.drawString(left + 12, y, signed_line)
 
         # Best-effort IP from signed audit event for this actor
@@ -653,7 +698,7 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
         if has_consent:
             c.setFont("Helvetica", 7.5)
             c.setFillColor(MUTED_GRAY)
-            consent_when = _format_cert_datetime(recipient.consented_at)
+            consent_when = _format_cert_datetime(recipient.consented_at, tenant)
             consent_ver = recipient.consent_version or "—"
             c.drawString(left + 12, y, f"Consent: {consent_when} · Version {consent_ver}")
             if recipient.consent_ip:
@@ -755,17 +800,18 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
         "completed": "Completed",
         "reminded": "Reminded",
         "downloaded": "Downloaded",
+        "retention_purged": "Retention purged",
     }
 
     for event in audit_events:
         y = ensure_space(y, 16)
         c.setFont("Helvetica", 7.5)
         c.setFillColor(colors.black)
-        when = _format_cert_datetime(event.created_at)
+        when = _format_cert_datetime(event.created_at, tenant)
         # Shorter time for table density
         if event.created_at:
             local = (
-                timezone.localtime(event.created_at)
+                event.created_at.astimezone(_tenant_zoneinfo(tenant))
                 if timezone.is_aware(event.created_at)
                 else event.created_at
             )
@@ -782,10 +828,16 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
     return buffer.getvalue()
 
 
-def _draw_continuation_header(c: canvas.Canvas, envelope: Envelope, width: float, height: float) -> float:
+def _draw_continuation_header(
+    c: canvas.Canvas,
+    envelope: Envelope,
+    width: float,
+    height: float,
+    brand: colors.Color | None = None,
+) -> float:
     left = 54
     right = width - 54
-    c.setFillColor(BRAND_GREEN)
+    c.setFillColor(brand or _tenant_brand_color(envelope.tenant))
     c.rect(0, height - 40, width, 40, fill=1, stroke=0)
     c.setFillColor(colors.white)
     c.setFont("Helvetica-Bold", 11)
@@ -803,13 +855,19 @@ def _draw_footer(c: canvas.Canvas, envelope: Envelope, page_num: int, width: flo
     c.line(left, 42, right, 42)
     c.setFillColor(MUTED_GRAY)
     c.setFont("Helvetica", 7)
+    retention_days = envelope.tenant.document_retention_days
+    retention_note = (
+        f"retained for {retention_days} days after completion"
+        if retention_days
+        else "retention controlled by sending workspace"
+    )
     c.drawString(
         left,
         28,
-        "ESIGN/UETA electronic signature record · retained for accurate reproduction.",
+        f"ESIGN/UETA electronic signature record · {retention_note}.",
     )
     c.drawRightString(right, 28, f"Page {page_num}")
-    c.drawString(left, 16, f"SignDesk · Envelope #{envelope.id}")
+    c.drawString(left, 16, f"{envelope.tenant.name} · Envelope #{envelope.id}")
 
 
 def regenerate_certificate(envelope: Envelope) -> Envelope:

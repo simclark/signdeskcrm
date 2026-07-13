@@ -26,16 +26,73 @@ class TenantSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "status",
+            "legal_name",
+            "website",
+            "address_line1",
+            "address_line2",
+            "city",
+            "state",
+            "postal_code",
+            "country",
+            "primary_contact_name",
+            "primary_contact_email",
+            "primary_contact_phone",
             "accent_color",
             "timezone",
             "default_expiration_days",
             "logo",
             "icon",
+            "reminders_enabled",
+            "reminder_interval_hours",
+            "reminder_max_count",
+            "document_retention_days",
+            "sender_support_email",
+            "sender_support_phone",
+            "paper_copy_fee_policy",
             "esign_acknowledgement",
             "esign_acknowledgement_version",
             "created_at",
         )
         read_only_fields = ("id", "slug", "status", "created_at", "esign_acknowledgement_version")
+
+    def validate_timezone(self, value):
+        value = (value or "").strip() or "UTC"
+        try:
+            from zoneinfo import ZoneInfo
+
+            ZoneInfo(value)
+        except Exception as exc:
+            raise serializers.ValidationError("Enter a valid IANA timezone.") from exc
+        return value
+
+    def validate_default_expiration_days(self, value):
+        if value < 1:
+            raise serializers.ValidationError("Default expiration must be at least 1 day.")
+        if value > 3650:
+            raise serializers.ValidationError("Default expiration cannot exceed 3650 days.")
+        return value
+
+    def validate_reminder_interval_hours(self, value):
+        if value < 1:
+            raise serializers.ValidationError("Reminder interval must be at least 1 hour.")
+        if value > 24 * 30:
+            raise serializers.ValidationError("Reminder interval cannot exceed 30 days.")
+        return value
+
+    def validate_document_retention_days(self, value):
+        if value is None:
+            return value
+        if value < 1:
+            raise serializers.ValidationError("Retention must be at least 1 day, or blank to keep forever.")
+        return value
+
+    def validate_website(self, value):
+        value = (value or "").strip()
+        if not value:
+            return ""
+        if not value.startswith(("http://", "https://")):
+            value = f"https://{value}"
+        return value
 
     def update(self, instance, validated_data):
         new_text = validated_data.get("esign_acknowledgement")

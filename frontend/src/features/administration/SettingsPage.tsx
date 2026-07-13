@@ -11,6 +11,7 @@ import {
   Select,
   SimpleGrid,
   Stack,
+  Switch,
   Tabs,
   Text,
   Textarea,
@@ -38,6 +39,7 @@ import { Navigate } from 'react-router-dom'
 import { api, ApiError } from '../../shared/api'
 import { DataTable } from '../../shared/DataTable'
 import { toAppMediaUrl } from '../../shared/mediaUrl'
+import { timezoneSelectData } from '../../shared/timezones'
 import { useAuth } from '../auth/AuthContext'
 
 const ACCENT_COLOR_PRESETS = [
@@ -71,7 +73,7 @@ function SettingsSection({
         <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md">
           <div>
             <Title order={4}>{title}</Title>
-            <Text size="sm" c="dimmed" maw={520}>
+            <Text size="sm" c="dimmed" maw={wide ? 720 : 560}>
               {description}
             </Text>
           </div>
@@ -315,14 +317,37 @@ export function SettingsPage() {
     initialValues: {
       name: tenant?.name || '',
       accent_color: tenant?.accent_color || '#0B6E4F',
-      timezone: tenant?.timezone || 'UTC',
-      default_expiration_days: tenant?.default_expiration_days || 14,
+      legal_name: tenant?.legal_name || '',
+      website: tenant?.website || '',
+      address_line1: tenant?.address_line1 || '',
+      address_line2: tenant?.address_line2 || '',
+      city: tenant?.city || '',
+      state: tenant?.state || '',
+      postal_code: tenant?.postal_code || '',
+      country: tenant?.country || '',
+      primary_contact_name: tenant?.primary_contact_name || '',
+      primary_contact_email: tenant?.primary_contact_email || '',
+      primary_contact_phone: tenant?.primary_contact_phone || '',
     },
   })
 
   const acknowledgementForm = useForm({
     initialValues: {
       esign_acknowledgement: tenant?.esign_acknowledgement || '',
+    },
+  })
+
+  const esignPolicyForm = useForm({
+    initialValues: {
+      timezone: tenant?.timezone || 'UTC',
+      default_expiration_days: tenant?.default_expiration_days || 14,
+      reminders_enabled: tenant?.reminders_enabled ?? true,
+      reminder_interval_hours: tenant?.reminder_interval_hours ?? 48,
+      reminder_max_count: tenant?.reminder_max_count ?? 0,
+      document_retention_days: tenant?.document_retention_days ?? (null as number | null),
+      sender_support_email: tenant?.sender_support_email || '',
+      sender_support_phone: tenant?.sender_support_phone || '',
+      paper_copy_fee_policy: tenant?.paper_copy_fee_policy || '',
     },
   })
 
@@ -347,16 +372,62 @@ export function SettingsPage() {
     workspaceForm.setValues({
       name: tenant.name || '',
       accent_color: tenant.accent_color || '#0B6E4F',
-      timezone: tenant.timezone || 'UTC',
-      default_expiration_days: tenant.default_expiration_days || 14,
+      legal_name: tenant.legal_name || '',
+      website: tenant.website || '',
+      address_line1: tenant.address_line1 || '',
+      address_line2: tenant.address_line2 || '',
+      city: tenant.city || '',
+      state: tenant.state || '',
+      postal_code: tenant.postal_code || '',
+      country: tenant.country || '',
+      primary_contact_name: tenant.primary_contact_name || '',
+      primary_contact_email: tenant.primary_contact_email || '',
+      primary_contact_phone: tenant.primary_contact_phone || '',
     })
     acknowledgementForm.setValues({
       esign_acknowledgement: tenant.esign_acknowledgement || '',
     })
+    esignPolicyForm.setValues({
+      timezone: tenant.timezone || 'UTC',
+      default_expiration_days: tenant.default_expiration_days || 14,
+      reminders_enabled: tenant.reminders_enabled ?? true,
+      reminder_interval_hours: tenant.reminder_interval_hours ?? 48,
+      reminder_max_count: tenant.reminder_max_count ?? 0,
+      document_retention_days: tenant.document_retention_days ?? null,
+      sender_support_email: tenant.sender_support_email || '',
+      sender_support_phone: tenant.sender_support_phone || '',
+      paper_copy_fee_policy: tenant.paper_copy_fee_policy || '',
+    })
     if (!iconFile) setIconPreview(toAppMediaUrl(tenant.icon))
     if (!logoFile) setLogoPreview(toAppMediaUrl(tenant.logo))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenant?.id, tenant?.icon, tenant?.logo, tenant?.esign_acknowledgement, tenant?.name])
+  }, [
+    tenant?.id,
+    tenant?.icon,
+    tenant?.logo,
+    tenant?.esign_acknowledgement,
+    tenant?.name,
+    tenant?.legal_name,
+    tenant?.website,
+    tenant?.address_line1,
+    tenant?.address_line2,
+    tenant?.city,
+    tenant?.state,
+    tenant?.postal_code,
+    tenant?.country,
+    tenant?.primary_contact_name,
+    tenant?.primary_contact_email,
+    tenant?.primary_contact_phone,
+    tenant?.timezone,
+    tenant?.default_expiration_days,
+    tenant?.reminders_enabled,
+    tenant?.reminder_interval_hours,
+    tenant?.reminder_max_count,
+    tenant?.document_retention_days,
+    tenant?.sender_support_email,
+    tenant?.sender_support_phone,
+    tenant?.paper_copy_fee_policy,
+  ])
 
   useEffect(() => {
     if (!iconFile) return
@@ -374,17 +445,55 @@ export function SettingsPage() {
 
   const saveWorkspace = useMutation({
     mutationFn: async (values: typeof workspaceForm.values) => {
+      const identityPayload = {
+        name: values.name,
+        legal_name: values.legal_name.trim(),
+        website: values.website.trim(),
+        address_line1: values.address_line1.trim(),
+        address_line2: values.address_line2.trim(),
+        city: values.city.trim(),
+        state: values.state.trim(),
+        postal_code: values.postal_code.trim(),
+        country: values.country.trim(),
+        primary_contact_name: values.primary_contact_name.trim(),
+        primary_contact_email: values.primary_contact_email.trim(),
+        primary_contact_phone: values.primary_contact_phone.trim(),
+      }
       if (iconFile || logoFile) {
         const fd = new FormData()
         fd.append('name', values.name)
         fd.append('accent_color', values.accent_color)
-        fd.append('timezone', values.timezone)
-        fd.append('default_expiration_days', String(values.default_expiration_days))
         if (iconFile) fd.append('icon', iconFile)
         if (logoFile) fd.append('logo', logoFile)
         return api('/api/tenant/settings/', { method: 'PATCH', formData: fd })
       }
-      return api('/api/tenant/settings/', { method: 'PATCH', json: values })
+      return api('/api/tenant/settings/', { method: 'PATCH', json: identityPayload })
+    },
+    onSuccess: async () => {
+      setIconFile(null)
+      setLogoFile(null)
+      await refreshMe()
+      notifications.show({ color: 'forest', message: 'Settings saved' })
+    },
+    onError: (err) => {
+      const message = err instanceof ApiError ? String(err.message) : 'Could not save settings'
+      notifications.show({ color: 'red', message })
+    },
+  })
+
+  const saveBranding = useMutation({
+    mutationFn: async (values: typeof workspaceForm.values) => {
+      if (iconFile || logoFile) {
+        const fd = new FormData()
+        fd.append('accent_color', values.accent_color)
+        if (iconFile) fd.append('icon', iconFile)
+        if (logoFile) fd.append('logo', logoFile)
+        return api('/api/tenant/settings/', { method: 'PATCH', formData: fd })
+      }
+      return api('/api/tenant/settings/', {
+        method: 'PATCH',
+        json: { accent_color: values.accent_color },
+      })
     },
     onSuccess: async () => {
       setIconFile(null)
@@ -409,6 +518,33 @@ export function SettingsPage() {
     onError: (err) => {
       const message =
         err instanceof ApiError ? String(err.message) : 'Could not save acknowledgement'
+      notifications.show({ color: 'red', message })
+    },
+  })
+
+  const saveEsignPolicy = useMutation({
+    mutationFn: (values: typeof esignPolicyForm.values) =>
+      api('/api/tenant/settings/', {
+        method: 'PATCH',
+        json: {
+          timezone: values.timezone,
+          default_expiration_days: values.default_expiration_days,
+          reminders_enabled: values.reminders_enabled,
+          reminder_interval_hours: values.reminder_interval_hours,
+          reminder_max_count: values.reminder_max_count,
+          document_retention_days: values.document_retention_days || null,
+          sender_support_email: values.sender_support_email.trim(),
+          sender_support_phone: values.sender_support_phone.trim(),
+          paper_copy_fee_policy: values.paper_copy_fee_policy.trim(),
+        },
+      }),
+    onSuccess: async () => {
+      await refreshMe()
+      notifications.show({ color: 'forest', message: 'E-signature settings saved' })
+    },
+    onError: (err) => {
+      const message =
+        err instanceof ApiError ? String(err.message) : 'Could not save e-signature settings'
       notifications.show({ color: 'red', message })
     },
   })
@@ -566,13 +702,21 @@ export function SettingsPage() {
     iconPreview,
   ])
 
+  const memberRows = Array.isArray(members) ? members : members?.results || []
+  const inviteRows = Array.isArray(invitations) ? invitations : invitations?.results || []
+  const accountOwner = memberRows.find(
+    (m: { role: string }) => m.role === 'owner',
+  ) as { full_name?: string; email?: string; role: string } | undefined
+  const saveLabel =
+    saveWorkspace.isPending || saveBranding.isPending ? 'Saving…' : 'Save changes'
+  const timezoneOptions = useMemo(
+    () => timezoneSelectData(esignPolicyForm.values.timezone || tenant?.timezone),
+    [esignPolicyForm.values.timezone, tenant?.timezone],
+  )
+
   if (!isAdmin) {
     return <Navigate to="/app" replace />
   }
-
-  const memberRows = Array.isArray(members) ? members : members?.results || []
-  const inviteRows = Array.isArray(invitations) ? invitations : invitations?.results || []
-  const saveLabel = saveWorkspace.isPending ? 'Saving…' : 'Save changes'
 
   return (
     <Stack gap="lg">
@@ -602,47 +746,114 @@ export function SettingsPage() {
 
         <Tabs.Panel value="workspace" pt="lg">
           <form onSubmit={workspaceForm.onSubmit((v) => saveWorkspace.mutate(v))}>
-            <SettingsSection
-              title="Workspace"
-              description="Core identity and defaults used across envelopes and notifications."
-              actions={
-                <Button type="submit" loading={saveWorkspace.isPending}>
-                  {saveLabel}
-                </Button>
-              }
-            >
-              <Stack gap="md">
-                <TextInput
-                  label="Workspace name"
-                  description="Shown in the app header and on signing pages"
-                  {...workspaceForm.getInputProps('name')}
-                />
-                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                  <TextInput
-                    label="Timezone"
-                    description="Used for expiration and activity timestamps"
-                    {...workspaceForm.getInputProps('timezone')}
-                  />
-                  <NumberInput
-                    label="Default expiration"
-                    description="Days until unsigned envelopes expire"
-                    min={1}
-                    suffix=" days"
-                    {...workspaceForm.getInputProps('default_expiration_days')}
-                  />
-                </SimpleGrid>
-              </Stack>
-            </SettingsSection>
+            <Stack gap="lg">
+              <div className="sd-settings-split-grid">
+                <SettingsSection
+                  wide
+                  title="Company"
+                  description="Who ordered this workspace — used for account records, not shown on the signing page unless you choose to mirror details under E-signature."
+                >
+                  <Stack gap="md">
+                    <TextInput
+                      label="Display name"
+                      description="Shown in the app header and on signing pages"
+                      {...workspaceForm.getInputProps('name')}
+                    />
+                    <TextInput
+                      label="Legal company name"
+                      description="Official registered name, if different from display name"
+                      {...workspaceForm.getInputProps('legal_name')}
+                    />
+                    <TextInput
+                      label="Website"
+                      description="Public company site shown on account records"
+                      placeholder="https://example.com"
+                      {...workspaceForm.getInputProps('website')}
+                    />
+                  </Stack>
+                </SettingsSection>
+
+                <SettingsSection
+                  wide
+                  title="Business address"
+                  description="Mailing or registered address for this company."
+                >
+                  <Stack gap="md">
+                    <TextInput
+                      label="Address line 1"
+                      {...workspaceForm.getInputProps('address_line1')}
+                    />
+                    <TextInput
+                      label="Address line 2"
+                      {...workspaceForm.getInputProps('address_line2')}
+                    />
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                      <TextInput label="City" {...workspaceForm.getInputProps('city')} />
+                      <TextInput
+                        label="State / province"
+                        {...workspaceForm.getInputProps('state')}
+                      />
+                      <TextInput
+                        label="Postal code"
+                        {...workspaceForm.getInputProps('postal_code')}
+                      />
+                      <TextInput label="Country" {...workspaceForm.getInputProps('country')} />
+                    </SimpleGrid>
+                  </Stack>
+                </SettingsSection>
+              </div>
+
+              <SettingsSection
+                wide
+                title="Primary contact"
+                description="Main person for this account. Separate from signer-facing support details under E-signature."
+                actions={
+                  <Button type="submit" loading={saveWorkspace.isPending}>
+                    {saveLabel}
+                  </Button>
+                }
+              >
+                <Stack gap="md">
+                  <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                    <TextInput
+                      label="Contact name"
+                      {...workspaceForm.getInputProps('primary_contact_name')}
+                    />
+                    <TextInput
+                      label="Contact email"
+                      {...workspaceForm.getInputProps('primary_contact_email')}
+                    />
+                    <TextInput
+                      label="Contact phone"
+                      {...workspaceForm.getInputProps('primary_contact_phone')}
+                    />
+                  </SimpleGrid>
+                  <div>
+                    <Text size="sm" fw={600}>
+                      Account owner
+                    </Text>
+                    <Text size="xs" c="dimmed" mb={6}>
+                      The owner who signed up for this workspace (not editable here)
+                    </Text>
+                    <Text size="sm">
+                      {accountOwner
+                        ? `${accountOwner.full_name || 'Owner'} · ${accountOwner.email || '—'}`
+                        : 'No owner found'}
+                    </Text>
+                  </div>
+                </Stack>
+              </SettingsSection>
+            </Stack>
           </form>
         </Tabs.Panel>
 
         <Tabs.Panel value="branding" pt="lg">
-          <form onSubmit={workspaceForm.onSubmit((v) => saveWorkspace.mutate(v))}>
+          <form onSubmit={workspaceForm.onSubmit((v) => saveBranding.mutate(v))}>
             <SettingsSection
               title="Branding"
               description="Customize how SignDesk appears to your team and signers."
               actions={
-                <Button type="submit" loading={saveWorkspace.isPending}>
+                <Button type="submit" loading={saveBranding.isPending}>
                   {saveLabel}
                 </Button>
               }
@@ -882,86 +1093,208 @@ export function SettingsPage() {
         </Tabs.Panel>
 
         <Tabs.Panel value="esign" pt="lg">
-          {editingAcknowledgement ? (
-            <form onSubmit={acknowledgementForm.onSubmit((v) => saveAcknowledgement.mutate(v))}>
-              <SettingsSection
-                title="E-signature disclosure"
-                description="Shown to signers before they can continue. Signers keep a snapshot of the exact text they accepted—later edits only apply to new consents. Saving creates a new version."
-                actions={
-                  <Group gap="sm">
-                    <Badge variant="light" color="gray" size="lg" radius="sm">
-                      Version {tenant?.esign_acknowledgement_version || '—'}
-                    </Badge>
-                    <Button
-                      type="button"
-                      variant="default"
-                      onClick={cancelAcknowledgementEdit}
-                      disabled={saveAcknowledgement.isPending}
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit" loading={saveAcknowledgement.isPending}>
-                      {saveAcknowledgement.isPending ? 'Saving…' : 'Save changes'}
-                    </Button>
-                  </Group>
-                }
-              >
-                <Textarea
-                  label="Disclosure text"
-                  description="Include ESIGN/UETA consent, hardware/software requirements, paper copies, withdrawal, and how to get records"
-                  minRows={12}
-                  autosize
-                  {...acknowledgementForm.getInputProps('esign_acknowledgement')}
-                />
-              </SettingsSection>
-            </form>
-          ) : (
-            <SettingsSection
-              title="E-signature disclosure"
-              description="Legal notice shown to signers before they can continue. Signers accept a snapshot of this text; editing here does not change disclosures already accepted."
-              actions={
-                <Group gap="sm">
-                  <Badge variant="light" color="gray" size="lg" radius="sm">
-                    Version {tenant?.esign_acknowledgement_version || '—'}
-                  </Badge>
-                  <Button
-                    variant="default"
-                    leftSection={<IconRestore size={14} />}
-                    loading={restoreAcknowledgement.isPending}
-                    onClick={() => restoreAcknowledgement.mutate()}
+          <Stack gap="lg">
+            <form onSubmit={esignPolicyForm.onSubmit((v) => saveEsignPolicy.mutate(v))}>
+              <Stack gap="lg">
+                <div className="sd-settings-split-grid">
+                  <SettingsSection
+                    wide
+                    title="Signing defaults"
+                    description="Defaults applied when envelopes are sent and when certificates show timestamps."
                   >
-                    Restore default
-                  </Button>
-                  <Button
-                    variant="light"
-                    leftSection={<IconPencil size={14} />}
-                    onClick={() => {
-                      acknowledgementForm.setValues({
-                        esign_acknowledgement: tenant?.esign_acknowledgement || '',
-                      })
-                      setEditingAcknowledgement(true)
-                    }}
+                    <Stack gap="md">
+                      <Select
+                        label="Timezone"
+                        description="Used for certificate timestamps and signing activity times"
+                        data={timezoneOptions}
+                        searchable
+                        allowDeselect={false}
+                        {...esignPolicyForm.getInputProps('timezone')}
+                      />
+                      <NumberInput
+                        label="Default expiration"
+                        description="Days until unsigned envelopes expire after send"
+                        min={1}
+                        max={3650}
+                        suffix=" days"
+                        {...esignPolicyForm.getInputProps('default_expiration_days')}
+                      />
+                      <NumberInput
+                        label="Retention period"
+                        description="Days completed PDFs stay downloadable. Leave blank to keep forever"
+                        min={1}
+                        max={3650}
+                        suffix=" days"
+                        allowDecimal={false}
+                        value={esignPolicyForm.values.document_retention_days ?? ''}
+                        onChange={(value) =>
+                          esignPolicyForm.setFieldValue(
+                            'document_retention_days',
+                            value === '' || value === null ? null : Number(value),
+                          )
+                        }
+                      />
+                    </Stack>
+                  </SettingsSection>
+
+                  <SettingsSection
+                    wide
+                    title="Reminders"
+                    description="Automatic follow-ups for signers who have not finished. Email copy is edited in the Email tab."
+                    actions={
+                      <Button type="submit" loading={saveEsignPolicy.isPending}>
+                        {saveEsignPolicy.isPending ? 'Saving…' : 'Save e-signature settings'}
+                      </Button>
+                    }
                   >
-                    Edit
-                  </Button>
-                </Group>
-              }
-            >
-              <Stack gap="xs">
-                <Text size="sm" fw={600}>
-                  Disclosure text
-                </Text>
-                <Text
-                  size="sm"
-                  className="sd-acknowledgement-preview"
-                  c={tenant?.esign_acknowledgement?.trim() ? undefined : 'dimmed'}
-                  style={{ whiteSpace: 'pre-wrap' }}
-                >
-                  {acknowledgementText}
-                </Text>
+                    <Stack gap="md">
+                      <Switch
+                        label="Send automatic reminders"
+                        description="When off, only manual resends from the envelope are sent"
+                        {...esignPolicyForm.getInputProps('reminders_enabled', {
+                          type: 'checkbox',
+                        })}
+                      />
+                      <NumberInput
+                        label="Reminder interval"
+                        description="Hours between reminder emails"
+                        min={1}
+                        max={720}
+                        suffix=" hours"
+                        disabled={!esignPolicyForm.values.reminders_enabled}
+                        {...esignPolicyForm.getInputProps('reminder_interval_hours')}
+                      />
+                      <NumberInput
+                        label="Maximum reminders"
+                        description="Per signer. Use 0 for unlimited"
+                        min={0}
+                        max={50}
+                        disabled={!esignPolicyForm.values.reminders_enabled}
+                        {...esignPolicyForm.getInputProps('reminder_max_count')}
+                      />
+                    </Stack>
+                  </SettingsSection>
+                </div>
               </Stack>
-            </SettingsSection>
-          )}
+            </form>
+
+            <div className="sd-settings-split-grid">
+              <form onSubmit={esignPolicyForm.onSubmit((v) => saveEsignPolicy.mutate(v))}>
+                <SettingsSection
+                  wide
+                  title="Sender contact"
+                  description="Shown to signers for paper-copy requests, withdrawal of consent, and support."
+                  actions={
+                    <Button type="submit" loading={saveEsignPolicy.isPending}>
+                      {saveEsignPolicy.isPending ? 'Saving…' : 'Save e-signature settings'}
+                    </Button>
+                  }
+                >
+                  <Stack gap="md">
+                    <TextInput
+                      label="Support email"
+                      description="Email signers can use for copies and questions"
+                      placeholder="contracts@example.com"
+                      {...esignPolicyForm.getInputProps('sender_support_email')}
+                    />
+                    <TextInput
+                      label="Support phone"
+                      description="Optional phone number shown with the disclosure"
+                      placeholder="+1 (555) 555-0100"
+                      {...esignPolicyForm.getInputProps('sender_support_phone')}
+                    />
+                    <Textarea
+                      label="Paper-copy fee policy"
+                      description="Optional. Included on the certificate and shown to signers when set"
+                      minRows={4}
+                      autosize
+                      {...esignPolicyForm.getInputProps('paper_copy_fee_policy')}
+                    />
+                  </Stack>
+                </SettingsSection>
+              </form>
+
+              {editingAcknowledgement ? (
+                <form
+                  onSubmit={acknowledgementForm.onSubmit((v) => saveAcknowledgement.mutate(v))}
+                >
+                  <SettingsSection
+                    wide
+                    title="E-signature disclosure"
+                    description="Signers keep a snapshot of the text they accept. Saving creates a new version."
+                    actions={
+                      <Group gap="sm">
+                        <Badge variant="light" color="gray" size="lg" radius="sm">
+                          Version {tenant?.esign_acknowledgement_version || '—'}
+                        </Badge>
+                        <Button
+                          type="button"
+                          variant="default"
+                          onClick={cancelAcknowledgementEdit}
+                          disabled={saveAcknowledgement.isPending}
+                        >
+                          Cancel
+                        </Button>
+                        <Button type="submit" loading={saveAcknowledgement.isPending}>
+                          {saveAcknowledgement.isPending ? 'Saving…' : 'Save changes'}
+                        </Button>
+                      </Group>
+                    }
+                  >
+                    <Textarea
+                      label="Disclosure text"
+                      description="ESIGN/UETA consent, requirements, paper copies, withdrawal, and records"
+                      minRows={14}
+                      autosize
+                      {...acknowledgementForm.getInputProps('esign_acknowledgement')}
+                    />
+                  </SettingsSection>
+                </form>
+              ) : (
+                <SettingsSection
+                  wide
+                  title="E-signature disclosure"
+                  description="Legal notice shown before signers continue. Editing does not change disclosures already accepted."
+                  actions={
+                    <Group gap="sm">
+                      <Badge variant="light" color="gray" size="lg" radius="sm">
+                        Version {tenant?.esign_acknowledgement_version || '—'}
+                      </Badge>
+                      <Button
+                        variant="default"
+                        leftSection={<IconRestore size={14} />}
+                        loading={restoreAcknowledgement.isPending}
+                        onClick={() => restoreAcknowledgement.mutate()}
+                      >
+                        Restore default
+                      </Button>
+                      <Button
+                        variant="light"
+                        leftSection={<IconPencil size={14} />}
+                        onClick={() => {
+                          acknowledgementForm.setValues({
+                            esign_acknowledgement: tenant?.esign_acknowledgement || '',
+                          })
+                          setEditingAcknowledgement(true)
+                        }}
+                      >
+                        Edit
+                      </Button>
+                    </Group>
+                  }
+                >
+                  <Text
+                    size="sm"
+                    className="sd-acknowledgement-preview"
+                    c={tenant?.esign_acknowledgement?.trim() ? undefined : 'dimmed'}
+                    style={{ whiteSpace: 'pre-wrap' }}
+                  >
+                    {acknowledgementText}
+                  </Text>
+                </SettingsSection>
+              )}
+            </div>
+          </Stack>
         </Tabs.Panel>
 
         <Tabs.Panel value="members" pt="lg">

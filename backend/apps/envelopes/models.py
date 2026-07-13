@@ -62,6 +62,7 @@ class Envelope(TenantOwnedModel):
     certificate_file = models.FileField(upload_to="certificates/%Y/%m/", blank=True, null=True)
     pre_sign_sha256 = models.CharField(max_length=64, blank=True)
     post_sign_sha256 = models.CharField(max_length=64, blank=True)
+    retention_purged_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -101,6 +102,7 @@ class Recipient(TenantOwnedModel):
     viewed_at = models.DateTimeField(null=True, blank=True)
     signed_at = models.DateTimeField(null=True, blank=True)
     last_reminded_at = models.DateTimeField(null=True, blank=True)
+    reminder_count = models.PositiveIntegerField(default=0)
     # Immutable ESIGN/UETA consent snapshot (set once on accept)
     consented_at = models.DateTimeField(null=True, blank=True)
     consent_version = models.CharField(max_length=32, blank=True)

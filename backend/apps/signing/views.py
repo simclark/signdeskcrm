@@ -86,7 +86,11 @@ class SigningSessionView(views.APIView):
             mark_viewed(recipient, request)
 
         version = envelope.document_version
-        completed = envelope.status == Envelope.Status.COMPLETED and bool(envelope.signed_file)
+        completed = (
+            envelope.status == Envelope.Status.COMPLETED
+            and bool(envelope.signed_file)
+            and not envelope.retention_purged_at
+        )
         tenant = envelope.tenant
         # Show the snapshot already accepted, otherwise the live tenant disclosure.
         if recipient.consented_at and recipient.consent_text:
@@ -120,6 +124,11 @@ class SigningSessionView(views.APIView):
                 "accent_color": tenant.accent_color,
                 "logo_url": logo_url,
                 "icon_url": icon_url,
+                "support_email": tenant.sender_support_email or "",
+                "support_phone": tenant.sender_support_phone or "",
+                "paper_copy_fee_policy": tenant.paper_copy_fee_policy or "",
+                "document_retention_days": tenant.document_retention_days,
+                "retention_purged": bool(envelope.retention_purged_at),
             },
             "document": DocumentVersionSerializer(
                 version, context={"request": request}
@@ -153,6 +162,16 @@ class SigningDownloadView(views.APIView):
             return Response(
                 {"detail": "The signed document is not ready yet."},
                 status=status.HTTP_409_CONFLICT,
+            )
+        if envelope.retention_purged_at:
+            return Response(
+                {
+                    "detail": (
+                        "These records are no longer available online under the "
+                        "sender’s retention policy. Contact the sender for a copy."
+                    )
+                },
+                status=status.HTTP_410_GONE,
             )
 
         kind = request.query_params.get("kind", "signed")
