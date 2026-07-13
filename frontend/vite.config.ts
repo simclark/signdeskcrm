@@ -6,6 +6,8 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    // Allow tenant subdomains on the local BASE_DOMAIN (*.signdeskcrm.test).
+    allowedHosts: ['.signdeskcrm.test', '.localhost'],
     proxy: {
       '/api': {
         target: process.env.VITE_API_URL || 'http://localhost:8000',

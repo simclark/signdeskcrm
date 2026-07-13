@@ -47,10 +47,10 @@ class TenantIsolationTests(TestCase):
 
     def test_contacts_are_tenant_scoped(self):
         res_a = self.client_a.get(
-            "/api/contacts/", HTTP_HOST="acme-esign.localhost", HTTP_X_TENANT_SLUG="acme-esign"
+            "/api/contacts/", HTTP_HOST="acme-esign.signdeskcrm.test", HTTP_X_TENANT_SLUG="acme-esign"
         )
         res_b = self.client_b.get(
-            "/api/contacts/", HTTP_HOST="globex.localhost", HTTP_X_TENANT_SLUG="globex"
+            "/api/contacts/", HTTP_HOST="globex.signdeskcrm.test", HTTP_X_TENANT_SLUG="globex"
         )
         self.assertEqual(res_a.status_code, 200)
         self.assertEqual(res_b.status_code, 200)
@@ -61,7 +61,7 @@ class TenantIsolationTests(TestCase):
 
     def test_cross_tenant_member_denied(self):
         res = self.client_a.get(
-            "/api/contacts/", HTTP_HOST="globex.localhost", HTTP_X_TENANT_SLUG="globex"
+            "/api/contacts/", HTTP_HOST="globex.signdeskcrm.test", HTTP_X_TENANT_SLUG="globex"
         )
         self.assertEqual(res.status_code, 403)
 
@@ -108,7 +108,7 @@ class InvitationTests(TestCase):
         )
         self.client.force_authenticate(self.owner)
         self.headers = {
-            "HTTP_HOST": "acme-esign.localhost",
+            "HTTP_HOST": "acme-esign.signdeskcrm.test",
             "HTTP_X_TENANT_SLUG": "acme-esign",
         }
 
@@ -244,3 +244,121 @@ class EnvelopeStateTests(TestCase):
         self.assertTrue(self.envelope.signed_file)
         self.assertTrue(self.envelope.certificate_file)
         self.assertTrue(self.envelope.audit_events.filter(event_type="completed").exists())
+
+
+@override_settings(
+    CELERY_TASK_ALWAYS_EAGER=True,
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class EmailTemplateTests(TestCase):
+    def setUp(self):
+        from apps.tenants.email_templates import EmailTemplateKey
+        from apps.tenants.models import EmailTemplate, ensure_email_templates
+
+        self.EmailTemplateKey = EmailTemplateKey
+        self.EmailTemplate = EmailTemplate
+        self.ensure_email_templates = ensure_email_templates
+
+        self.tenant = Tenant.objects.create(name="Acme", slug="acme-mail")
+        self.user = User.objects.create_user(email="owner@acme-mail.test", password="password123")
+        Membership.objects.create(tenant=self.tenant, user=self.user, role=Membership.Role.OWNER)
+        ensure_email_templates(self.tenant)
+
+        self.member = User.objects.create_user(email="member@acme-mail.test", password="password123")
+        Membership.objects.create(
+            tenant=self.tenant, user=self.member, role=Membership.Role.MEMBER
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.host = {"HTTP_HOST": "acme-mail.signdeskcrm.test", "HTTP_X_TENANT_SLUG": "acme-mail"}
+
+    def test_list_email_templates(self):
+        res = self.client.get("/api/tenant/email-templates/", **self.host)
+        self.assertEqual(res.status_code, 200)
+        keys = [row["key"] for row in res.data]
+        self.assertEqual(
+            keys,
+            [
+                "workspace_invite",
+                "signing_invite",
+                "signing_reminder",
+                "completion",
+            ],
+        )
+        self.assertIn("available_placeholders", res.data[0])
+
+    def test_member_cannot_edit_templates(self):
+        member_client = APIClient()
+        member_client.force_authenticate(self.member)
+        res = member_client.get("/api/tenant/email-templates/", **self.host)
+        self.assertEqual(res.status_code, 403)
+
+    def test_update_and_restore_template(self):
+        key = self.EmailTemplateKey.SIGNING_INVITE
+        res = self.client.patch(
+            f"/api/tenant/email-templates/{key}/",
+            {"subject": "Custom: {{envelope_title}}", "body": "Please sign {{envelope_title}}."},
+            format="json",
+            **self.host,
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["subject"], "Custom: {{envelope_title}}")
+
+        restored = self.client.post(f"/api/tenant/email-templates/{key}/restore/", **self.host)
+        self.assertEqual(restored.status_code, 200)
+        self.assertIn("Please sign:", restored.data["subject"])
+
+    def test_send_uses_custom_template_and_html(self):
+        from django.core import mail
+
+        from apps.tenants.mail import send_templated_email
+
+        template = self.EmailTemplate.objects.get(
+            tenant=self.tenant, key=self.EmailTemplateKey.SIGNING_INVITE
+        )
+        template.subject = "Sign now: {{envelope_title}}"
+        template.body = "Hello {{recipient_name}}, please sign {{envelope_title}}."
+        template.save()
+
+        send_templated_email(
+            tenant=self.tenant,
+            key=self.EmailTemplateKey.SIGNING_INVITE,
+            to_email="signer@example.com",
+            context={
+                "recipient_name": "Ada",
+                "tenant_name": self.tenant.name,
+                "envelope_title": "NDA",
+                "envelope_message": "",
+                "action_url": "https://example.com/sign",
+            },
+            action_url="https://example.com/sign",
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        self.assertEqual(message.subject, "Sign now: NDA")
+        self.assertIn("Ada", message.body)
+        self.assertTrue(message.alternatives)
+        html = message.alternatives[0][0]
+        self.assertIn("Acme", html)
+        self.assertIn("Review and sign", html)
+
+    def test_signup_seeds_email_templates(self):
+        client = APIClient()
+        res = client.post(
+            "/api/auth/signup/",
+            {
+                "company_name": "Mail Co",
+                "slug": "mail-co",
+                "email": "owner@mail-co.test",
+                "password": "password123",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        tenant = Tenant.objects.get(slug="mail-co")
+        self.assertEqual(
+            self.EmailTemplate.objects.filter(tenant=tenant).count(),
+            4,
+        )

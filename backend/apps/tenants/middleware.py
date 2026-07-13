@@ -28,15 +28,9 @@ def extract_subdomain(host: str, base_domain: str) -> str | None:
     suffix = f".{base}"
     if host.endswith(suffix):
         sub = host[: -len(suffix)]
-        if "." in sub:
+        if not sub or "." in sub:
             return None
-        return sub or None
-    # *.localhost support
-    if host.endswith(".localhost"):
-        sub = host[: -len(".localhost")]
-        if "." in sub:
-            return None
-        return sub or None
+        return sub
     return None
 
 

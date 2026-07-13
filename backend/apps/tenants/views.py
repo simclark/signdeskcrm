@@ -10,17 +10,27 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from apps.accounts.serializers import EmailTokenObtainPairSerializer
-from apps.tenants.models import INVITE_EXPIRY_DAYS, Invitation, Membership, Tenant
+from apps.tenants.models import (
+    INVITE_EXPIRY_DAYS,
+    EmailTemplate,
+    Invitation,
+    Membership,
+    Tenant,
+    ensure_email_templates,
+)
 from apps.tenants.permissions import IsTenantAdmin, IsTenantMember
 from apps.tenants.serializers import (
     AcceptInvitationSerializer,
     CreateInvitationSerializer,
+    EmailTemplateSerializer,
+    EmailTemplateUpdateSerializer,
     InvitationSerializer,
     MembershipSerializer,
     SignupSerializer,
     TenantSerializer,
 )
 from apps.tenants.esign_disclosure import DEFAULT_ESIGN_ACKNOWLEDGEMENT
+from apps.tenants.email_templates import EmailTemplateKey, get_default
 
 User = get_user_model()
 
@@ -163,6 +173,65 @@ class RestoreEsignAcknowledgementView(views.APIView):
             ]
         )
         return Response(TenantSerializer(tenant, context={"request": request}).data)
+
+
+class EmailTemplateListView(views.APIView):
+    permission_classes = [IsAuthenticated, IsTenantAdmin]
+
+    def get(self, request):
+        ensure_email_templates(request.tenant)
+        templates = EmailTemplate.objects.filter(
+            tenant=request.tenant, key__in=EmailTemplateKey.ALL
+        )
+        by_key = {row.key: row for row in templates}
+        ordered = [by_key[key] for key in EmailTemplateKey.ALL if key in by_key]
+        return Response(EmailTemplateSerializer(ordered, many=True).data)
+
+
+class EmailTemplateDetailView(views.APIView):
+    permission_classes = [IsAuthenticated, IsTenantAdmin]
+
+    def _get_template(self, request, key: str):
+        if key not in EmailTemplateKey.ALL:
+            return None
+        ensure_email_templates(request.tenant)
+        try:
+            return EmailTemplate.objects.get(tenant=request.tenant, key=key)
+        except EmailTemplate.DoesNotExist:
+            return None
+
+    def get(self, request, key: str):
+        template = self._get_template(request, key)
+        if template is None:
+            return Response({"detail": "Email template not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(EmailTemplateSerializer(template).data)
+
+    def patch(self, request, key: str):
+        template = self._get_template(request, key)
+        if template is None:
+            return Response({"detail": "Email template not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = EmailTemplateUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        template.subject = serializer.validated_data["subject"]
+        template.body = serializer.validated_data["body"]
+        template.save(update_fields=["subject", "body", "updated_at"])
+        return Response(EmailTemplateSerializer(template).data)
+
+
+class EmailTemplateRestoreView(views.APIView):
+    permission_classes = [IsAuthenticated, IsTenantAdmin]
+
+    def post(self, request, key: str):
+        if key not in EmailTemplateKey.ALL:
+            return Response({"detail": "Email template not found."}, status=status.HTTP_404_NOT_FOUND)
+        ensure_email_templates(request.tenant)
+        default = get_default(key)
+        template, _ = EmailTemplate.objects.update_or_create(
+            tenant=request.tenant,
+            key=key,
+            defaults={"subject": default["subject"], "body": default["body"]},
+        )
+        return Response(EmailTemplateSerializer(template).data)
 
 
 class MembershipListView(generics.ListAPIView):

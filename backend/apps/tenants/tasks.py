@@ -1,7 +1,8 @@
 from celery import shared_task
-from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
+
+from apps.tenants.email_templates import EmailTemplateKey
+from apps.tenants.mail import send_templated_email
 
 User = get_user_model()
 
@@ -18,21 +19,23 @@ def send_member_invitation(invitation_id: int):
     role_label = invitation.get_role_display().lower()
     user_exists = User.objects.filter(email__iexact=invitation.email).exists()
 
-    subject = f"You're invited to join {tenant.name} on SignDesk"
     if user_exists:
-        action = f"Open this link to join the workspace:\n{invite_url}"
+        action_instruction = "Open this link to join the workspace:"
     else:
-        action = (
-            f"Open this link to create your password and activate your account:\n"
-            f"{invite_url}"
+        action_instruction = (
+            "Open this link to create your password and activate your account:"
         )
 
-    body = (
-        f"Hello,\n\n"
-        f"{inviter_name} has invited you to join {tenant.name} on SignDesk "
-        f"as a {role_label}.\n\n"
-        f"{action}\n\n"
-        f"This invitation expires in 7 days.\n\n"
-        f"— SignDesk\n"
+    send_templated_email(
+        tenant=tenant,
+        key=EmailTemplateKey.WORKSPACE_INVITE,
+        to_email=invitation.email,
+        context={
+            "tenant_name": tenant.name,
+            "inviter_name": inviter_name,
+            "role_label": role_label,
+            "action_instruction": action_instruction,
+            "action_url": invite_url,
+        },
+        action_url=invite_url,
     )
-    send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [invitation.email], fail_silently=False)

@@ -45,7 +45,7 @@ class DocumentLibraryApiTests(TestCase):
         )
 
     def _kw(self):
-        return {"HTTP_HOST": "acme-docs.localhost", "HTTP_X_TENANT_SLUG": "acme-docs"}
+        return {"HTTP_HOST": "acme-docs.signdeskcrm.test", "HTTP_X_TENANT_SLUG": "acme-docs"}
 
     def test_list_includes_usage_counts(self):
         Template.objects.create(

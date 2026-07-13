@@ -5,7 +5,15 @@ from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import serializers
 
-from apps.tenants.models import Invitation, Membership, Tenant, validate_tenant_slug
+from apps.tenants.email_templates import DEFAULT_TEMPLATES, EmailTemplateKey
+from apps.tenants.models import (
+    EmailTemplate,
+    Invitation,
+    Membership,
+    Tenant,
+    ensure_email_templates,
+    validate_tenant_slug,
+)
 
 User = get_user_model()
 
@@ -85,6 +93,7 @@ class SignupSerializer(serializers.Serializer):
             user=user,
             role=Membership.Role.OWNER,
         )
+        ensure_email_templates(tenant)
         return {"tenant": tenant, "user": user}
 
 
@@ -221,3 +230,78 @@ class AcceptInvitationSerializer(serializers.Serializer):
         invitation.accepted_at = timezone.now()
         invitation.save(update_fields=["accepted_at", "updated_at"])
         return {"user": user, "membership": membership, "tenant": invitation.tenant}
+
+
+class EmailTemplateSerializer(serializers.ModelSerializer):
+    label = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
+    available_placeholders = serializers.SerializerMethodField()
+    cta_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EmailTemplate
+        fields = (
+            "key",
+            "label",
+            "description",
+            "subject",
+            "body",
+            "available_placeholders",
+            "cta_label",
+            "updated_at",
+        )
+        read_only_fields = (
+            "key",
+            "label",
+            "description",
+            "available_placeholders",
+            "cta_label",
+            "updated_at",
+        )
+
+    def get_label(self, obj) -> str:
+        return DEFAULT_TEMPLATES[obj.key]["label"]
+
+    def get_description(self, obj) -> str:
+        return DEFAULT_TEMPLATES[obj.key]["description"]
+
+    def get_available_placeholders(self, obj) -> list[str]:
+        return list(DEFAULT_TEMPLATES[obj.key]["placeholders"])
+
+    def get_cta_label(self, obj) -> str:
+        return DEFAULT_TEMPLATES[obj.key]["cta_label"]
+
+    def validate_subject(self, value: str) -> str:
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Subject is required.")
+        return value
+
+    def validate_body(self, value: str) -> str:
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Body is required.")
+        return value
+
+    def validate_key(self, value: str) -> str:
+        if value not in EmailTemplateKey.ALL:
+            raise serializers.ValidationError("Unknown email template.")
+        return value
+
+
+class EmailTemplateUpdateSerializer(serializers.Serializer):
+    subject = serializers.CharField(max_length=255)
+    body = serializers.CharField()
+
+    def validate_subject(self, value: str) -> str:
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Subject is required.")
+        return value
+
+    def validate_body(self, value: str) -> str:
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Body is required.")
+        return value
+

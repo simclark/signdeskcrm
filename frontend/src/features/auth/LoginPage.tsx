@@ -3,7 +3,7 @@ import { useForm } from '@mantine/form'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { notifications } from '@mantine/notifications'
 import { useAuth } from './AuthContext'
-import { getTenantSlug, isApexHost } from '../../shared/api'
+import { BASE_DOMAIN, getTenantSlug, isApexHost } from '../../shared/api'
 
 export function LoginPage() {
   const { login, user, loading } = useAuth()
@@ -21,7 +21,7 @@ export function LoginPage() {
           Log in on your workspace
         </Title>
         <Text c="dimmed" mb="lg">
-          Open <code>your-slug.localhost:5173/login</code>, or{' '}
+          Open <code>your-slug.{BASE_DOMAIN}:5173/login</code>, or{' '}
           <Anchor component={Link} to="/signup">
             create a workspace
           </Anchor>
@@ -38,7 +38,9 @@ export function LoginPage() {
           SignDesk
         </Text>
         <Title order={2}>Welcome back</Title>
-        <Text c="dimmed">{getTenantSlug()}.localhost</Text>
+        <Text c="dimmed">
+          {getTenantSlug()}.{BASE_DOMAIN}
+        </Text>
       </Stack>
       <Paper p="xl" radius="lg" withBorder style={{ background: 'rgba(255,255,255,0.85)' }}>
         <form

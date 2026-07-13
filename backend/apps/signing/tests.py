@@ -300,7 +300,7 @@ class EsignConsentComplianceTests(TestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
         res = self.client.post(
             "/api/tenant/settings/restore-esign-acknowledgement/",
-            HTTP_HOST="acme-consent.localhost",
+            HTTP_HOST="acme-consent.signdeskcrm.test",
             HTTP_X_TENANT_SLUG="acme-consent",
         )
         self.assertEqual(res.status_code, 200)

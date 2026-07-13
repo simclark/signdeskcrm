@@ -26,11 +26,17 @@ import { EnvelopePreparePage } from './features/envelopes/EnvelopePreparePage'
 import { EnvelopeDetailPage } from './features/envelopes/EnvelopeDetailPage'
 import { SettingsPage } from './features/administration/SettingsPage'
 import { SigningPage } from './features/signing/SigningPage'
+import { isApexHost } from './shared/api'
 
 const queryClient = new QueryClient()
 
+function RootEntry() {
+  if (isApexHost()) return <LandingPage />
+  return <Navigate to="/login" replace />
+}
+
 const router = createBrowserRouter([
-  { path: '/', element: <LandingPage /> },
+  { path: '/', element: <RootEntry /> },
   { path: '/signup', element: <SignupPage /> },
   { path: '/login', element: <LoginPage /> },
   { path: '/invite/:token', element: <AcceptInvitePage /> },

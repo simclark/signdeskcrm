@@ -13,7 +13,7 @@ import { useForm } from '@mantine/form'
 import { notifications } from '@mantine/notifications'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError, getTenantSlug, isApexHost, setTokens } from '../../shared/api'
+import { api, ApiError, BASE_DOMAIN, getTenantSlug, isApexHost, setTokens } from '../../shared/api'
 import { useAuth } from './AuthContext'
 
 type InviteInfo = {
@@ -109,7 +109,7 @@ export function AcceptInvitePage() {
         </Title>
         <Text c="dimmed">
           Invitations must be opened from your workspace subdomain (for example{' '}
-          <code>acme.localhost:5173/invite/…</code>).
+          <code>acme.{BASE_DOMAIN}:5173/invite/…</code>).
         </Text>
       </Container>
     )
@@ -159,7 +159,7 @@ export function AcceptInvitePage() {
           Invited as <Text span tt="capitalize" fw={600}>{invite.role}</Text> · {invite.email}
         </Text>
         <Text size="sm" c="dimmed">
-          {getTenantSlug()}.localhost
+          {getTenantSlug()}.{BASE_DOMAIN}
         </Text>
       </Stack>
       <Paper p="xl" radius="lg" withBorder style={{ background: 'rgba(255,255,255,0.85)' }}>

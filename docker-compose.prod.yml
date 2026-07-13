@@ -64,6 +64,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
+      args:
+        VITE_BASE_DOMAIN: ${VITE_BASE_DOMAIN:-signdeskcrm.com}
     volumes:
       - frontend_dist:/usr/share/nginx/html:ro
 

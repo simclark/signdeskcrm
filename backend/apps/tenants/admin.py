@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Invitation, Membership, Tenant
+from .models import EmailTemplate, Invitation, Membership, Tenant
 
 
 @admin.register(Tenant)
@@ -36,3 +36,10 @@ class InvitationAdmin(admin.ModelAdmin):
     list_filter = ("role",)
     search_fields = ("email", "tenant__slug", "token")
     readonly_fields = ("token", "accepted_at", "revoked_at")
+
+
+@admin.register(EmailTemplate)
+class EmailTemplateAdmin(admin.ModelAdmin):
+    list_display = ("tenant", "key", "subject", "updated_at")
+    list_filter = ("key",)
+    search_fields = ("tenant__slug", "subject", "body")

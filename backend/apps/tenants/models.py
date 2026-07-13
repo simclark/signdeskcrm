@@ -8,11 +8,12 @@ from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
 
+from apps.tenants.email_templates import DEFAULT_TEMPLATES, EmailTemplateKey
 from apps.tenants.esign_disclosure import (
     DEFAULT_ESIGN_ACKNOWLEDGEMENT,
     DEFAULT_ESIGN_ACKNOWLEDGEMENT_VERSION,
 )
-from apps.tenants.models_base import TimeStampedModel
+from apps.tenants.models_base import TenantOwnedModel, TimeStampedModel
 
 INVITE_EXPIRY_DAYS = 7
 
@@ -86,7 +87,8 @@ class Tenant(TimeStampedModel):
     def host(self) -> str:
         base = settings.BASE_DOMAIN
         port = settings.FRONTEND_PORT
-        if base in ("localhost", "127.0.0.1"):
+        # Local/dev hosts need an explicit frontend port in URLs.
+        if base in ("localhost", "127.0.0.1") or base.endswith(".test"):
             return f"{self.slug}.{base}:{port}"
         return f"{self.slug}.{base}"
 
@@ -167,3 +169,42 @@ class Invitation(TimeStampedModel):
     @property
     def is_usable(self) -> bool:
         return self.is_pending and not self.is_expired
+
+
+class EmailTemplate(TenantOwnedModel):
+    key = models.CharField(max_length=64, choices=EmailTemplateKey.CHOICES)
+    subject = models.CharField(max_length=255)
+    body = models.TextField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "key"], name="uniq_email_template_tenant_key"
+            )
+        ]
+        ordering = ["tenant_id", "key"]
+
+    def __str__(self) -> str:
+        return f"{self.tenant.slug}:{self.key}"
+
+
+def ensure_email_templates(tenant: Tenant) -> list[EmailTemplate]:
+    """Create any missing email templates for a tenant from platform defaults."""
+    existing = {
+        row.key: row
+        for row in EmailTemplate.objects.filter(tenant=tenant, key__in=EmailTemplateKey.ALL)
+    }
+    created: list[EmailTemplate] = []
+    for key in EmailTemplateKey.ALL:
+        if key in existing:
+            continue
+        default = DEFAULT_TEMPLATES[key]
+        created.append(
+            EmailTemplate.objects.create(
+                tenant=tenant,
+                key=key,
+                subject=default["subject"],
+                body=default["body"],
+            )
+        )
+    return list(existing.values()) + created

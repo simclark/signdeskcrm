@@ -144,6 +144,7 @@ SIMPLE_JWT = {
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https?://([\w-]+\.)?localhost(:\d+)?$",
+    r"^https?://([\w-]+\.)?signdeskcrm\.test(:\d+)?$",
     r"^https?://([\w-]+\.)?signdeskcrm\.com(:\d+)?$",
     r"^https?://127\.0\.0\.1(:\d+)?$",
 ]
@@ -166,7 +167,7 @@ EMAIL_PORT = int(os.getenv("EMAIL_PORT", "1025"))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "false").lower() == "true"
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "SignDesk <noreply@signdeskcrm.com>")
 
-BASE_DOMAIN = os.getenv("BASE_DOMAIN", "localhost")
+BASE_DOMAIN = os.getenv("BASE_DOMAIN", "signdeskcrm.test")
 FRONTEND_PORT = os.getenv("FRONTEND_PORT", "5173")
 FRONTEND_PROTOCOL = os.getenv("FRONTEND_PROTOCOL", "http")
 API_PROTOCOL = os.getenv("API_PROTOCOL", "http")

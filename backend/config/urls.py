@@ -18,6 +18,9 @@ from apps.signing.views import (
 )
 from apps.tenants.views import (
     AcceptInvitationView,
+    EmailTemplateDetailView,
+    EmailTemplateListView,
+    EmailTemplateRestoreView,
     InvitationDetailView,
     InvitationListCreateView,
     InvitationResendView,
@@ -73,6 +76,21 @@ urlpatterns = [
         "api/tenant/settings/restore-esign-acknowledgement/",
         RestoreEsignAcknowledgementView.as_view(),
         name="tenant-restore-esign-acknowledgement",
+    ),
+    path(
+        "api/tenant/email-templates/",
+        EmailTemplateListView.as_view(),
+        name="tenant-email-templates",
+    ),
+    path(
+        "api/tenant/email-templates/<str:key>/",
+        EmailTemplateDetailView.as_view(),
+        name="tenant-email-template-detail",
+    ),
+    path(
+        "api/tenant/email-templates/<str:key>/restore/",
+        EmailTemplateRestoreView.as_view(),
+        name="tenant-email-template-restore",
     ),
     path("api/tenant/members/", MembershipListView.as_view(), name="tenant-members"),
     path(
