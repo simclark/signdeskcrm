@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Allura&family=Dancing+Script:wght@400;700&family=Great+Vibes&display=swap');
 
 :root {
   --sd-ink: #102a23;
@@ -27,6 +28,221 @@ body {
 .signer-shell {
   min-height: 100vh;
   background: linear-gradient(180deg, #f7f5f0 0%, #eef6f1 100%);
+}
+
+.signing-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(247, 245, 240, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(16, 42, 35, 0.08);
+}
+
+.signing-doc-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+}
+
+.signing-page-block {
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(16, 42, 35, 0.08);
+  overflow: hidden;
+}
+
+.signing-page-block canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.signing-page-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.signing-field-overlay {
+  position: absolute;
+  pointer-events: auto;
+  border: 2px dashed;
+  border-radius: 4px;
+  background: rgba(11, 110, 79, 0.08);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.signing-field-overlay:hover {
+  background: rgba(11, 110, 79, 0.14);
+  box-shadow: 0 0 0 2px rgba(11, 110, 79, 0.15);
+}
+
+.signing-field-overlay--done {
+  background: rgba(11, 110, 79, 0.06);
+  border-style: solid;
+}
+
+.signing-field-overlay--active {
+  background: rgba(11, 110, 79, 0.16);
+  border-style: solid;
+  box-shadow: 0 0 0 3px rgba(11, 110, 79, 0.2);
+  z-index: 2;
+  cursor: pointer;
+}
+
+.signing-field-overlay--idle {
+  opacity: 0.88;
+  cursor: pointer;
+}
+
+.signing-field-inline-input {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--sd-ink);
+  font-size: clamp(10px, 2.8vw, 14px);
+  padding: 2px 6px;
+  outline: none;
+  font-family: inherit;
+}
+
+.signing-field-inline-input::placeholder {
+  color: rgba(16, 42, 35, 0.4);
+  font-size: clamp(9px, 2.2vw, 12px);
+}
+
+.signing-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(16, 42, 35, 0.72);
+  pointer-events: none;
+}
+
+.signing-field-done-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--sd-forest);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.signing-field-value {
+  font-size: clamp(9px, 2.5vw, 13px);
+  color: var(--sd-ink);
+  padding: 2px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.signing-field-checkbox-mark {
+  font-size: clamp(14px, 4vw, 22px);
+  font-weight: 700;
+  color: var(--sd-forest);
+  line-height: 1;
+}
+
+.signing-field-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.signing-doc-loading,
+.signing-doc-error {
+  text-align: center;
+  padding: 48px 24px;
+  color: rgba(16, 42, 35, 0.6);
+}
+
+.signing-pad-wrap {
+  border: 1px dashed rgba(16, 42, 35, 0.25);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.signing-pad-wrap--short {
+  max-height: 120px;
+}
+
+.signing-font-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.signing-font-card {
+  border: 2px solid rgba(16, 42, 35, 0.1);
+  border-radius: 10px;
+  padding: 12px 10px;
+  text-align: center;
+  background: #fff;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.signing-font-card:hover {
+  border-color: rgba(11, 110, 79, 0.35);
+}
+
+.signing-font-card--active {
+  border-color: var(--sd-forest);
+  background: rgba(11, 110, 79, 0.06);
+}
+
+.signing-font-preview {
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--sd-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.signing-type-preview {
+  border: 1px solid rgba(16, 42, 35, 0.1);
+  border-radius: 10px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.signing-type-preview__sig {
+  font-size: 36px;
+  line-height: 1.2;
+  color: var(--sd-ink);
+}
+
+.signing-type-preview__init {
+  font-size: 24px;
+  line-height: 1.2;
+  color: rgba(16, 42, 35, 0.75);
+  margin-top: 4px;
+}
+
+@media (max-width: 640px) {
+  .signing-font-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .signing-header .mantine-Group-root {
+    flex-wrap: wrap !important;
+  }
 }
 
 /* Professional data tables */

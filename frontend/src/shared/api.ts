@@ -46,14 +46,14 @@ export class ApiError extends Error {
 
 export async function api<T = unknown>(
   path: string,
-  options: RequestInit & { json?: unknown; formData?: FormData } = {},
+  options: RequestInit & { json?: unknown; formData?: FormData; public?: boolean } = {},
 ): Promise<T> {
   const headers = new Headers(options.headers || {})
   const slug = getTenantSlug()
   if (slug) headers.set('X-Tenant-Slug', slug)
 
   const { access } = getTokens()
-  if (access) headers.set('Authorization', `Bearer ${access}`)
+  if (access && !options.public) headers.set('Authorization', `Bearer ${access}`)
 
   let body = options.body
   if (options.json !== undefined) {

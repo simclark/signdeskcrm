@@ -1,4 +1,4 @@
-import { Anchor, Button, Container, Paper, Stack, Text, TextInput, Title } from '@mantine/core'
+import { Anchor, Button, Container, Paper, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { notifications } from '@mantine/notifications'
@@ -57,9 +57,8 @@ export function LoginPage() {
         >
           <Stack>
             <TextInput label="Email" type="email" required {...form.getInputProps('email')} />
-            <TextInput
+            <PasswordInput
               label="Password"
-              type="password"
               required
               {...form.getInputProps('password')}
             />
