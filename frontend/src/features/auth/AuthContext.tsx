@@ -16,6 +16,10 @@ type Tenant = {
   accent_color: string
   timezone: string
   default_expiration_days: number
+  logo: string | null
+  icon: string | null
+  esign_acknowledgement: string
+  esign_acknowledgement_version: string
 }
 
 type Membership = {

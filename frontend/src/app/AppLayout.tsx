@@ -21,34 +21,120 @@ import {
   IconSend,
   IconSettings,
   IconTemplate,
+  IconUser,
   IconUsers,
 } from '@tabler/icons-react'
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../features/auth/AuthContext'
+import { ProfileDialog } from '../features/auth/ProfileDialog'
 import { CreateEnvelopeProvider, useCreateEnvelope } from '../features/envelopes/CreateEnvelopeContext'
 
 const NAV_EXPANDED = 260
 const NAV_COLLAPSED = 76
 
-const links = [
+type NavItem = {
+  to: string
+  label: string
+  icon: typeof IconLayoutDashboard
+  children?: { to: string; label: string }[]
+}
+
+/** Shared workspace navigation for every member. */
+const MEMBER_LINKS: NavItem[] = [
   { to: '/app', label: 'Dashboard', icon: IconLayoutDashboard },
   { to: '/app/envelopes', label: 'Envelopes', icon: IconSend },
   { to: '/app/documents', label: 'Documents', icon: IconFileText },
   { to: '/app/templates', label: 'Templates', icon: IconTemplate },
   { to: '/app/contacts', label: 'Contacts', icon: IconUsers },
   { to: '/app/companies', label: 'Companies', icon: IconBuilding },
-  { to: '/app/settings', label: 'Settings', icon: IconSettings },
 ]
+
+/** Extra navigation only for tenant owners and admins. */
+const ADMIN_LINKS: NavItem[] = [
+  { to: '/app/administration/settings', label: 'Settings', icon: IconSettings },
+]
+
+function isPathActive(pathname: string, to: string) {
+  return pathname === to || (to !== '/app' && pathname.startsWith(to))
+}
 
 function AppShellContent() {
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure()
+  const [profileOpened, { open: openProfile, close: closeProfile }] = useDisclosure()
   const [desktopCollapsed, setDesktopCollapsed] = useLocalStorage({
     key: 'sd-nav-collapsed',
     defaultValue: false,
   })
-  const { user, tenant, logout } = useAuth()
+  const { user, tenant, membership, logout } = useAuth()
   const location = useLocation()
   const { openCreateEnvelope } = useCreateEnvelope()
+
+  const isAdmin = membership?.role === 'owner' || membership?.role === 'admin'
+
+  const renderLink = (link: NavItem) => {
+    const childActive = link.children?.some((child) => isPathActive(location.pathname, child.to))
+    const active = isPathActive(location.pathname, link.to) || Boolean(childActive)
+
+    if (link.children?.length && !desktopCollapsed) {
+      return (
+        <NavLink
+          key={link.to}
+          label={link.label}
+          leftSection={<link.icon size={20} stroke={1.5} />}
+          active={active}
+          defaultOpened={active}
+          mb={4}
+          aria-label={link.label}
+        >
+          {link.children.map((child) => (
+            <NavLink
+              key={child.to}
+              component={Link}
+              to={child.to}
+              label={child.label}
+              leftSection={<IconSettings size={16} stroke={1.5} />}
+              active={isPathActive(location.pathname, child.to)}
+            />
+          ))}
+        </NavLink>
+      )
+    }
+
+    const target = link.children?.[0]?.to || link.to
+    const item = (
+      <NavLink
+        component={Link}
+        to={target}
+        label={desktopCollapsed ? undefined : link.label}
+        leftSection={<link.icon size={20} stroke={1.5} />}
+        active={active}
+        mb={4}
+        aria-label={link.label}
+        styles={
+          desktopCollapsed
+            ? {
+                root: {
+                  padding: '10px',
+                  justifyContent: 'center',
+                  borderRadius: 10,
+                },
+                section: { marginInlineEnd: 0 },
+              }
+            : undefined
+        }
+      />
+    )
+
+    if (!desktopCollapsed) {
+      return <div key={link.to}>{item}</div>
+    }
+
+    return (
+      <Tooltip key={link.to} label={link.label} position="right" withArrow offset={10}>
+        {item}
+      </Tooltip>
+    )
+  }
 
   return (
     <AppShell
@@ -108,7 +194,18 @@ function AppShellContent() {
                 </Avatar>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Label>{user!.email}</Menu.Label>
+                <Menu.Label>
+                  <Text size="sm" fw={600} c="dark">
+                    {user!.full_name}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {user!.email}
+                  </Text>
+                </Menu.Label>
+                <Menu.Item leftSection={<IconUser size={14} />} onClick={openProfile}>
+                  Profile
+                </Menu.Item>
+                <Menu.Divider />
                 <Menu.Item leftSection={<IconLogout size={14} />} onClick={logout}>
                   Log out
                 </Menu.Item>
@@ -123,50 +220,37 @@ function AppShellContent() {
         style={{ background: 'transparent' }}
         className={desktopCollapsed ? 'sd-nav-collapsed' : undefined}
       >
-        {links.map((link) => {
-          const active =
-            location.pathname === link.to ||
-            (link.to !== '/app' && location.pathname.startsWith(link.to))
-
-          const item = (
-            <NavLink
-              component={Link}
-              to={link.to}
-              label={desktopCollapsed ? undefined : link.label}
-              leftSection={<link.icon size={20} stroke={1.5} />}
-              active={active}
-              mb={4}
-              aria-label={link.label}
-              styles={
-                desktopCollapsed
-                  ? {
-                      root: {
-                        padding: '10px',
-                        justifyContent: 'center',
-                        borderRadius: 10,
-                      },
-                      section: { marginInlineEnd: 0 },
-                    }
-                  : undefined
-              }
-            />
-          )
-
-          if (!desktopCollapsed) {
-            return <div key={link.to}>{item}</div>
-          }
-
-          return (
-            <Tooltip key={link.to} label={link.label} position="right" withArrow offset={10}>
-              {item}
-            </Tooltip>
-          )
-        })}
+        {MEMBER_LINKS.map((link) => renderLink(link))}
+        {isAdmin && (
+          <>
+            {!desktopCollapsed ? (
+              <>
+                <Text
+                  size="xs"
+                  c="dimmed"
+                  fw={600}
+                  tt="uppercase"
+                  mt="md"
+                  mb={6}
+                  px={12}
+                  style={{ letterSpacing: '0.04em' }}
+                >
+                  Administration
+                </Text>
+                {ADMIN_LINKS.map((link) => renderLink(link))}
+              </>
+            ) : (
+              ADMIN_LINKS.map((link) => renderLink(link))
+            )}
+          </>
+        )}
       </AppShell.Navbar>
 
       <AppShell.Main>
         <Outlet />
       </AppShell.Main>
+
+      <ProfileDialog opened={profileOpened} onClose={closeProfile} />
     </AppShell>
   )
 }

@@ -200,6 +200,7 @@ def mark_viewed(recipient: Recipient, request):
 
 def accept_consent(recipient: Recipient, request):
     meta = client_meta(request)
+    version = getattr(recipient.tenant, "esign_acknowledgement_version", None) or CONSENT_VERSION
     record_audit(
         tenant=recipient.tenant,
         envelope=recipient.envelope,
@@ -207,8 +208,8 @@ def accept_consent(recipient: Recipient, request):
         recipient=recipient,
         actor_email=recipient.email,
         actor_name=recipient.name,
-        consent_version=CONSENT_VERSION,
-        payload={"consent_version": CONSENT_VERSION},
+        consent_version=version,
+        payload={"consent_version": version},
         **meta,
     )
 

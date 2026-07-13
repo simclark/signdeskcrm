@@ -17,6 +17,11 @@ from apps.signing.views import (
     SigningSubmitView,
 )
 from apps.tenants.views import (
+    AcceptInvitationView,
+    InvitationDetailView,
+    InvitationListCreateView,
+    InvitationResendView,
+    InvitationRevokeView,
     MembershipListView,
     SignupView,
     SuggestSlugView,
@@ -25,6 +30,7 @@ from apps.tenants.views import (
     TenantSettingsView,
     ThrottledTokenObtainPairView,
 )
+from apps.accounts.views import ChangePasswordView, ProfileView
 from django.http import JsonResponse
 
 
@@ -48,9 +54,36 @@ urlpatterns = [
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("api/auth/slug-check/", SlugCheckView.as_view(), name="slug-check"),
     path("api/auth/suggest-slug/", SuggestSlugView.as_view(), name="suggest-slug"),
+    path("api/auth/profile/", ProfileView.as_view(), name="auth-profile"),
+    path("api/auth/change-password/", ChangePasswordView.as_view(), name="auth-change-password"),
+    path(
+        "api/auth/invitations/<str:token>/",
+        InvitationDetailView.as_view(),
+        name="invitation-detail",
+    ),
+    path(
+        "api/auth/invitations/<str:token>/accept/",
+        AcceptInvitationView.as_view(),
+        name="invitation-accept",
+    ),
     path("api/tenant/me/", TenantMeView.as_view(), name="tenant-me"),
     path("api/tenant/settings/", TenantSettingsView.as_view(), name="tenant-settings"),
     path("api/tenant/members/", MembershipListView.as_view(), name="tenant-members"),
+    path(
+        "api/tenant/invitations/",
+        InvitationListCreateView.as_view(),
+        name="tenant-invitations",
+    ),
+    path(
+        "api/tenant/invitations/<int:pk>/",
+        InvitationRevokeView.as_view(),
+        name="tenant-invitation-revoke",
+    ),
+    path(
+        "api/tenant/invitations/<int:pk>/resend/",
+        InvitationResendView.as_view(),
+        name="tenant-invitation-resend",
+    ),
     path("api/sign/<str:token>/", SigningSessionView.as_view(), name="sign-session"),
     path("api/sign/<str:token>/consent/", SigningConsentView.as_view(), name="sign-consent"),
     path(

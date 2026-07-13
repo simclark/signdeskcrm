@@ -74,14 +74,23 @@ class SigningSessionView(views.APIView):
 
         version = envelope.document_version
         completed = envelope.status == Envelope.Status.COMPLETED and bool(envelope.signed_file)
+        tenant = envelope.tenant
+        consent_version = tenant.esign_acknowledgement_version or CONSENT_VERSION
+        consent_text = tenant.esign_acknowledgement or (
+            "By continuing, you agree to conduct this transaction electronically, "
+            "to receive records electronically, and that your electronic signature "
+            "is legally binding. You may request a paper copy and withdraw consent "
+            "by contacting the sender."
+        )
+        logo_url = None
+        icon_url = None
+        if tenant.logo:
+            logo_url = request.build_absolute_uri(tenant.logo.url)
+        if tenant.icon:
+            icon_url = request.build_absolute_uri(tenant.icon.url)
         payload = {
-            "consent_version": CONSENT_VERSION,
-            "consent_text": (
-                "By continuing, you agree to conduct this transaction electronically, "
-                "to receive records electronically, and that your electronic signature "
-                "is legally binding. You may request a paper copy and withdraw consent "
-                "by contacting the sender."
-            ),
+            "consent_version": consent_version,
+            "consent_text": consent_text,
             "recipient": {
                 "id": recipient.id,
                 "name": recipient.name,
@@ -94,8 +103,10 @@ class SigningSessionView(views.APIView):
                 "title": envelope.title,
                 "message": envelope.message,
                 "status": envelope.status,
-                "tenant_name": envelope.tenant.name,
-                "accent_color": envelope.tenant.accent_color,
+                "tenant_name": tenant.name,
+                "accent_color": tenant.accent_color,
+                "logo_url": logo_url,
+                "icon_url": icon_url,
             },
             "document": DocumentVersionSerializer(
                 version, context={"request": request}
@@ -181,7 +192,8 @@ class SigningConsentView(views.APIView):
         except Recipient.DoesNotExist:
             return Response({"detail": "Invalid link."}, status=404)
         accept_consent(recipient, request)
-        return Response({"ok": True, "consent_version": CONSENT_VERSION})
+        version = recipient.tenant.esign_acknowledgement_version or CONSENT_VERSION
+        return Response({"ok": True, "consent_version": version})
 
 
 class SigningFieldCompleteView(views.APIView):

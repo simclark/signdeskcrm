@@ -12,6 +12,7 @@ import { AppLayout } from './app/AppLayout'
 import { AuthProvider } from './features/auth/AuthContext'
 import { SignupPage } from './features/auth/SignupPage'
 import { LoginPage } from './features/auth/LoginPage'
+import { AcceptInvitePage } from './features/auth/AcceptInvitePage'
 import { LandingPage } from './features/marketing/LandingPage'
 import { DashboardPage } from './features/dashboard/DashboardPage'
 import { ContactsPage } from './features/contacts/ContactsPage'
@@ -23,7 +24,7 @@ import { TemplatePreparePage } from './features/documents/TemplatePreparePage'
 import { EnvelopesPage } from './features/envelopes/EnvelopesPage'
 import { EnvelopePreparePage } from './features/envelopes/EnvelopePreparePage'
 import { EnvelopeDetailPage } from './features/envelopes/EnvelopeDetailPage'
-import { SettingsPage } from './features/settings/SettingsPage'
+import { SettingsPage } from './features/administration/SettingsPage'
 import { SigningPage } from './features/signing/SigningPage'
 
 const queryClient = new QueryClient()
@@ -32,6 +33,7 @@ const router = createBrowserRouter([
   { path: '/', element: <LandingPage /> },
   { path: '/signup', element: <SignupPage /> },
   { path: '/login', element: <LoginPage /> },
+  { path: '/invite/:token', element: <AcceptInvitePage /> },
   { path: '/sign/:token', element: <SigningPage /> },
   {
     path: '/app',
@@ -48,7 +50,14 @@ const router = createBrowserRouter([
       { path: 'envelopes/new', element: <Navigate to="/app/envelopes" replace /> },
       { path: 'envelopes/:id/prepare', element: <EnvelopePreparePage /> },
       { path: 'envelopes/:id', element: <EnvelopeDetailPage /> },
-      { path: 'settings', element: <SettingsPage /> },
+      {
+        path: 'administration',
+        children: [
+          { index: true, element: <Navigate to="/app/administration/settings" replace /> },
+          { path: 'settings', element: <SettingsPage /> },
+        ],
+      },
+      { path: 'settings', element: <Navigate to="/app/administration/settings" replace /> },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },

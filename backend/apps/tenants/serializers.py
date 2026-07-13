@@ -1,9 +1,11 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
+from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import serializers
 
-from apps.tenants.models import Membership, Tenant, validate_tenant_slug
+from apps.tenants.models import Invitation, Membership, Tenant, validate_tenant_slug
 
 User = get_user_model()
 
@@ -20,9 +22,20 @@ class TenantSerializer(serializers.ModelSerializer):
             "timezone",
             "default_expiration_days",
             "logo",
+            "icon",
+            "esign_acknowledgement",
+            "esign_acknowledgement_version",
             "created_at",
         )
-        read_only_fields = ("id", "status", "created_at")
+        read_only_fields = ("id", "slug", "status", "created_at", "esign_acknowledgement_version")
+
+    def update(self, instance, validated_data):
+        new_text = validated_data.get("esign_acknowledgement")
+        if new_text is not None and new_text != instance.esign_acknowledgement:
+            from django.utils import timezone
+
+            instance.esign_acknowledgement_version = timezone.now().strftime("%Y-%m-%d")
+        return super().update(instance, validated_data)
 
 
 class MembershipSerializer(serializers.ModelSerializer):
@@ -82,3 +95,129 @@ class SlugAvailabilitySerializer(serializers.Serializer):
         value = slugify(value)
         validate_tenant_slug(value)
         return value
+
+
+class InvitationSerializer(serializers.ModelSerializer):
+    invited_by_email = serializers.EmailField(source="invited_by.email", read_only=True, default=None)
+    is_expired = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Invitation
+        fields = (
+            "id",
+            "email",
+            "role",
+            "invited_by_email",
+            "expires_at",
+            "accepted_at",
+            "revoked_at",
+            "is_expired",
+            "created_at",
+        )
+        read_only_fields = (
+            "id",
+            "invited_by_email",
+            "expires_at",
+            "accepted_at",
+            "revoked_at",
+            "is_expired",
+            "created_at",
+        )
+
+
+class CreateInvitationSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    role = serializers.ChoiceField(
+        choices=Invitation.Role.choices,
+        default=Invitation.Role.MEMBER,
+    )
+
+    def validate_email(self, value):
+        email = value.lower().strip()
+        tenant = self.context["tenant"]
+        if Membership.objects.filter(
+            tenant=tenant, user__email__iexact=email, is_active=True
+        ).exists():
+            raise serializers.ValidationError("This person is already a member of this workspace.")
+        if Invitation.objects.filter(
+            tenant=tenant,
+            email__iexact=email,
+            accepted_at__isnull=True,
+            revoked_at__isnull=True,
+            expires_at__gt=timezone.now(),
+        ).exists():
+            raise serializers.ValidationError("A pending invitation already exists for this email.")
+        return email
+
+    def create(self, validated_data):
+        request = self.context["request"]
+        tenant = self.context["tenant"]
+        invitation = Invitation.objects.create(
+            tenant=tenant,
+            email=validated_data["email"],
+            role=validated_data["role"],
+            invited_by=request.user,
+        )
+        from apps.tenants.tasks import send_member_invitation
+
+        send_member_invitation.delay(invitation.id)
+        return invitation
+
+
+class InvitationDetailSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    role = serializers.CharField()
+    tenant_name = serializers.CharField()
+    tenant_slug = serializers.CharField()
+    expires_at = serializers.DateTimeField()
+    user_exists = serializers.BooleanField()
+
+
+class AcceptInvitationSerializer(serializers.Serializer):
+    password = serializers.CharField(min_length=8, write_only=True, required=False, allow_blank=True)
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        invitation = self.context["invitation"]
+        existing = User.objects.filter(email__iexact=invitation.email).first()
+        if existing is None:
+            password = attrs.get("password") or ""
+            if len(password) < 8:
+                raise serializers.ValidationError(
+                    {"password": "Password must be at least 8 characters."}
+                )
+            validate_password(password)
+            attrs["password"] = password
+            attrs["_existing_user"] = None
+        else:
+            attrs["_existing_user"] = existing
+        return attrs
+
+    @transaction.atomic
+    def save(self, **kwargs):
+        invitation = self.context["invitation"]
+        if not invitation.is_usable:
+            raise serializers.ValidationError("This invitation is no longer valid.")
+
+        existing = self.validated_data["_existing_user"]
+        if existing is not None:
+            user = existing
+            if Membership.objects.filter(tenant=invitation.tenant, user=user).exists():
+                raise serializers.ValidationError("You are already a member of this workspace.")
+        else:
+            user = User.objects.create_user(
+                email=invitation.email,
+                password=self.validated_data["password"],
+                first_name=self.validated_data.get("first_name", ""),
+                last_name=self.validated_data.get("last_name", ""),
+            )
+
+        membership = Membership.objects.create(
+            tenant=invitation.tenant,
+            user=user,
+            role=invitation.role,
+        )
+        invitation.accepted_at = timezone.now()
+        invitation.save(update_fields=["accepted_at", "updated_at"])
+        return {"user": user, "membership": membership, "tenant": invitation.tenant}

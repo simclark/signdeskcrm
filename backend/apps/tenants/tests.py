@@ -92,6 +92,77 @@ class SignupTests(TestCase):
 
 @override_settings(
     CELERY_TASK_ALWAYS_EAGER=True,
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class InvitationTests(TestCase):
+    def setUp(self):
+        from django.core import mail
+
+        mail.outbox.clear()
+        self.client = APIClient()
+        self.tenant = Tenant.objects.create(name="Acme", slug="acme-esign")
+        self.owner = User.objects.create_user(email="owner@acme.test", password="password123")
+        Membership.objects.create(
+            tenant=self.tenant, user=self.owner, role=Membership.Role.OWNER
+        )
+        self.client.force_authenticate(self.owner)
+        self.headers = {
+            "HTTP_HOST": "acme-esign.localhost",
+            "HTTP_X_TENANT_SLUG": "acme-esign",
+        }
+
+    def test_invite_sends_email_and_accept_creates_member(self):
+        from django.core import mail
+
+        from apps.tenants.models import Invitation
+
+        res = self.client.post(
+            "/api/tenant/invitations/",
+            {"email": "new@acme.test", "role": "member"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("create your password", mail.outbox[0].body)
+
+        invitation = Invitation.objects.get(email="new@acme.test")
+        self.assertIn(invitation.token, mail.outbox[0].body)
+
+        accept = APIClient().post(
+            f"/api/auth/invitations/{invitation.token}/accept/",
+            {
+                "password": "SecurePass123!",
+                "first_name": "New",
+                "last_name": "Member",
+            },
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(accept.status_code, 201, accept.data)
+        self.assertTrue(
+            Membership.objects.filter(
+                tenant=self.tenant,
+                user__email="new@acme.test",
+                role=Membership.Role.MEMBER,
+            ).exists()
+        )
+        invitation.refresh_from_db()
+        self.assertIsNotNone(invitation.accepted_at)
+
+    def test_cannot_invite_existing_member(self):
+        res = self.client.post(
+            "/api/tenant/invitations/",
+            {"email": "owner@acme.test", "role": "admin"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 400)
+
+
+@override_settings(
+    CELERY_TASK_ALWAYS_EAGER=True,
     PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
 )
 class EnvelopeStateTests(TestCase):
