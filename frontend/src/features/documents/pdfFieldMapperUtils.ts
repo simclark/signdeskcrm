@@ -108,6 +108,110 @@ export function boxesIntersect(
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
 }
 
+/** Union of field boxes in top-left normalized coords, with light padding. */
+export function unionFieldTopLeftBox(
+  fields: FieldDraft[],
+  pad = 0.01,
+): { left: number; top: number; width: number; height: number } | null {
+  if (!fields.length) return null
+  let left = Infinity
+  let top = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+  for (const field of fields) {
+    const box = fieldTopLeftBox(field)
+    left = Math.min(left, box.left)
+    top = Math.min(top, box.top)
+    right = Math.max(right, box.right)
+    bottom = Math.max(bottom, box.bottom)
+  }
+  left = Math.max(0, left - pad)
+  top = Math.max(0, top - pad)
+  right = Math.min(1, right + pad)
+  bottom = Math.min(1, bottom + pad)
+  return {
+    left,
+    top,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+  }
+}
+
+export const MAPPER_HISTORY_LIMIT = 50
+export const MAPPER_HISTORY_COALESCE_MS = 500
+
+export type MapperHistorySnapshot = {
+  fields: FieldDraft[]
+  roles: RoleDraft[]
+}
+
+export function cloneMapperSnapshot(
+  fields: FieldDraft[],
+  roles: RoleDraft[],
+): MapperHistorySnapshot {
+  return {
+    fields: fields.map((f) => ({ ...f })),
+    roles: roles.map((r) => ({ ...r })),
+  }
+}
+
+/** Which page wrap contains the client point, or null if none. */
+export function findPageAtClientPoint(
+  clientX: number,
+  clientY: number,
+  pageWraps: Map<number, HTMLElement>,
+): number | null {
+  for (const [pageNum, el] of pageWraps) {
+    const r = el.getBoundingClientRect()
+    if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+      return pageNum
+    }
+  }
+  return null
+}
+
+/** Nearest page wrap by vertical distance to the client point. */
+export function findNearestPageAtClientPoint(
+  clientX: number,
+  clientY: number,
+  pageWraps: Map<number, HTMLElement>,
+): number | null {
+  const hit = findPageAtClientPoint(clientX, clientY, pageWraps)
+  if (hit != null) return hit
+  let best: number | null = null
+  let bestDist = Infinity
+  for (const [pageNum, el] of pageWraps) {
+    const r = el.getBoundingClientRect()
+    const dy =
+      clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0
+    const dx =
+      clientX < r.left ? r.left - clientX : clientX > r.right ? clientX - r.right : 0
+    const dist = Math.hypot(dx, dy)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = pageNum
+    }
+  }
+  return best
+}
+
+/** Map a screen-space field top-left into PDF field coords (bottom-left origin) on a page. */
+export function screenRectToFieldCoords(
+  leftPx: number,
+  topPx: number,
+  w: number,
+  h: number,
+  pageRect: DOMRect,
+): { x: number; y: number } {
+  const x = Math.min(Math.max((leftPx - pageRect.left) / pageRect.width, 0), 1 - w)
+  const topY = Math.min(Math.max((topPx - pageRect.top) / pageRect.height, 0), 1 - h)
+  const y = 1 - topY - h
+  return { x, y }
+}
+
+export const MAPPER_VIRTUALIZE_AFTER = 10
+export const MAPPER_VIRTUALIZE_BUFFER = 1
+
 export function resizeCursor(handle: ResizeHandle | null): string {
   if (!handle) return 'grab'
   if (handle === 'e' || handle === 'w') return 'ew-resize'

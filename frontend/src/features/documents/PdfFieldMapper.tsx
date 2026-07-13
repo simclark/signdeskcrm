@@ -15,6 +15,8 @@ import {
 } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import {
+  IconArrowBackUp,
+  IconArrowForwardUp,
   IconChevronRight,
   IconCopy,
   IconForms,
@@ -46,17 +48,27 @@ import {
 } from '../envelopes/types'
 import {
   FIELD_TOOLS,
+  MAPPER_HISTORY_COALESCE_MS,
+  MAPPER_HISTORY_LIMIT,
+  MAPPER_VIRTUALIZE_AFTER,
+  MAPPER_VIRTUALIZE_BUFFER,
   MIN_FIELD_H,
   MIN_FIELD_W,
   boxesIntersect,
   clickToFieldCoords,
+  cloneMapperSnapshot,
   fieldToOverlayStyle,
   fieldTopLeftBox,
+  findNearestPageAtClientPoint,
+  findPageAtClientPoint,
   hitResizeHandle,
   resizeCursor,
   roleInitials,
   roleLabel,
+  screenRectToFieldCoords,
   toAppMediaUrl,
+  unionFieldTopLeftBox,
+  type MapperHistorySnapshot,
   type ResizeHandle,
   type RoleDraft,
 } from './pdfFieldMapperUtils'
@@ -95,97 +107,135 @@ type CanvasMenuState = {
   y: number
   clientX: number
   clientY: number
+  page: number
 }
 
-export function PdfFieldMapper({
-  documentFileUrl,
-  initialPageCount = 1,
-  roles,
+type PageSize = { width: number; height: number }
+
+type DragState = {
+  mode: 'move' | 'resize'
+  fieldId: string
+  fieldIds: string[]
+  handle?: ResizeHandle
+  startX: number
+  startY: number
+  origins: Record<string, { x: number; y: number; w: number; h: number; page: number }>
+  startRects: Record<string, { left: number; top: number; width: number; height: number }>
+  deltaX: number
+  deltaY: number
+  /** True after the first resize history snapshot is recorded for this gesture. */
+  historyPushed?: boolean
+}
+
+type MapperPageBlockProps = {
+  pdfDoc: pdfjs.PDFDocumentProxy
+  pageNum: number
+  pageSize: PageSize
+  shouldRenderCanvas: boolean
+  fields: FieldDraft[]
+  roles: RoleDraft[]
+  selectedSet: Set<string>
+  multiSelectActive: boolean
+  selectionBounds: { left: number; top: number; width: number; height: number } | null
+  dragOver: boolean
+  dragDelta: { x: number; y: number } | null
+  draggingIds: Set<string> | null
+  marqueeBox: { left: number; top: number; width: number; height: number } | null
+  onRegisterWrap: (pageNum: number, el: HTMLDivElement | null) => void
+  onRegisterBlock: (pageNum: number, el: HTMLDivElement | null) => void
+  onWrapPointerDown: (e: ReactPointerEvent, pageNum: number) => void
+  onWrapPointerMove: (e: ReactPointerEvent, pageNum: number) => void
+  onWrapPointerUp: (e: ReactPointerEvent, pageNum: number) => void
+  onContextMenu: (e: ReactMouseEvent, pageNum: number) => void
+  onDragOver: (e: ReactDragEvent, pageNum: number) => void
+  onDragLeave: (e: ReactDragEvent, pageNum: number) => void
+  onDrop: (e: ReactDragEvent, pageNum: number) => void
+  onDoubleClick: (e: ReactMouseEvent, pageNum: number) => void
+  onFieldPointerDown: (e: ReactPointerEvent, field: FieldDraft) => void
+  onFieldPointerMove: (e: ReactPointerEvent) => void
+  onFieldPointerUp: (e: ReactPointerEvent) => void
+  onFieldContextMenu: (e: ReactMouseEvent, field: FieldDraft) => void
+}
+
+function MapperPageBlock({
+  pdfDoc,
+  pageNum,
+  pageSize,
+  shouldRenderCanvas,
   fields,
-  onRolesChange,
-  onFieldsChange,
-  editableContacts = true,
-  rolesTitle = 'Signers',
-  addRoleLabel = 'Add signer',
-  sidebarActions,
-  sidebarExtra,
-}: PdfFieldMapperProps) {
+  roles,
+  selectedSet,
+  multiSelectActive,
+  selectionBounds,
+  dragOver,
+  dragDelta,
+  draggingIds,
+  marqueeBox,
+  onRegisterWrap,
+  onRegisterBlock,
+  onWrapPointerDown,
+  onWrapPointerMove,
+  onWrapPointerUp,
+  onContextMenu,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDoubleClick,
+  onFieldPointerDown,
+  onFieldPointerMove,
+  onFieldPointerUp,
+  onFieldContextMenu,
+}: MapperPageBlockProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const pageWrapRef = useRef<HTMLDivElement>(null)
-
-  const [activeSigner, setActiveSigner] = useState(0)
-  const [activeTool, setActiveTool] = useState<FieldType>('signature')
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [fieldMenu, setFieldMenu] = useState<FieldMenuState | null>(null)
-  const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState | null>(null)
-  const [labelEditOpen, setLabelEditOpen] = useState(false)
-  const [labelDraft, setLabelDraft] = useState('')
-  const [canvasFieldsFlyout, setCanvasFieldsFlyout] = useState(false)
-  const [fieldTypeFlyout, setFieldTypeFlyout] = useState(false)
-  const [dragOverPage, setDragOverPage] = useState(false)
-  const [marqueeBox, setMarqueeBox] = useState<{
-    left: number
-    top: number
-    width: number
-    height: number
-  } | null>(null)
-  const [page, setPage] = useState(1)
-  const [pageCount, setPageCount] = useState(initialPageCount)
-  const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const blockRef = useRef<HTMLDivElement>(null)
   const [displaySize, setDisplaySize] = useState<{ width: number; height: number } | null>(null)
-  const [pdfDoc, setPdfDoc] = useState<pdfjs.PDFDocumentProxy | null>(null)
-
-  const dragRef = useRef<{
-    mode: 'move' | 'resize'
-    fieldId: string
-    fieldIds: string[]
-    handle?: ResizeHandle
-    startX: number
-    startY: number
-    origins: Record<string, { x: number; y: number; w: number; h: number }>
-  } | null>(null)
-  const marqueeRef = useRef<{
-    startX: number
-    startY: number
-    additive: boolean
-    originSelected: string[]
-    moved: boolean
-  } | null>(null)
 
   useEffect(() => {
-    const fileUrl = toAppMediaUrl(documentFileUrl)
-    if (!fileUrl) return
-    let cancelled = false
-    setPageSize(null)
-    setDisplaySize(null)
-    ;(async () => {
-      try {
-        const doc = await pdfjs.getDocument({ url: fileUrl }).promise
-        if (cancelled) return
-        setPdfDoc(doc)
-        setPageCount(doc.numPages)
-      } catch {
-        notifications.show({ color: 'red', message: 'Could not load PDF preview' })
-      }
-    })()
+    onRegisterWrap(pageNum, wrapRef.current)
+    onRegisterBlock(pageNum, blockRef.current)
     return () => {
-      cancelled = true
+      onRegisterWrap(pageNum, null)
+      onRegisterBlock(pageNum, null)
     }
-  }, [documentFileUrl])
+  }, [pageNum, onRegisterWrap, onRegisterBlock])
 
   useEffect(() => {
-    if (!pdfDoc || !canvasRef.current) return
+    const wrap = wrapRef.current
+    if (!wrap || !pageSize) return
+
+    const sync = () => {
+      const width = wrap.clientWidth
+      if (width <= 0) return
+      const height = width * (pageSize.height / pageSize.width)
+      setDisplaySize((prev) => {
+        if (
+          prev &&
+          Math.abs(prev.width - width) < 0.5 &&
+          Math.abs(prev.height - height) < 0.5
+        ) {
+          return prev
+        }
+        return { width, height }
+      })
+    }
+
+    sync()
+    const ro = new ResizeObserver(sync)
+    ro.observe(wrap)
+    return () => ro.disconnect()
+  }, [pageSize])
+
+  useEffect(() => {
+    if (!shouldRenderCanvas || !pdfDoc || !canvasRef.current || !displaySize) return
 
     let cancelled = false
     let renderTask: { cancel: () => void; promise: Promise<void> } | null = null
 
     ;(async () => {
       try {
-        const pdfPage = await pdfDoc.getPage(page)
+        const pdfPage = await pdfDoc.getPage(pageNum)
         if (cancelled || !canvasRef.current) return
-
-        const baseViewport = pdfPage.getViewport({ scale: 1 })
-        setPageSize({ width: baseViewport.width, height: baseViewport.height })
 
         const viewport = pdfPage.getViewport({ scale: 2 })
         const canvas = canvasRef.current
@@ -202,7 +252,7 @@ export function PdfFieldMapper({
         if (cancelled) return
         const message = err instanceof Error ? err.message : ''
         if (/cancel/i.test(message)) return
-        notifications.show({ color: 'red', message: 'Could not render PDF page' })
+        notifications.show({ color: 'red', message: `Could not render PDF page ${pageNum}` })
       }
     })()
 
@@ -214,33 +264,385 @@ export function PdfFieldMapper({
         /* ignore */
       }
     }
-  }, [pdfDoc, page])
+  }, [pdfDoc, pageNum, shouldRenderCanvas, displaySize])
+
+  const height = displaySize?.height ?? 240
+
+  return (
+    <div className="mapper-page-block" ref={blockRef} data-mapper-page={pageNum}>
+      <div
+        ref={wrapRef}
+        className={`mapper-page-wrap${dragOver ? ' mapper-page-wrap--drag-over' : ''}${
+          !shouldRenderCanvas ? ' mapper-page-placeholder' : ''
+        }`}
+        style={{ height }}
+        onPointerDown={(e) => onWrapPointerDown(e, pageNum)}
+        onPointerMove={(e) => onWrapPointerMove(e, pageNum)}
+        onPointerUp={(e) => onWrapPointerUp(e, pageNum)}
+        onContextMenu={(e) => onContextMenu(e, pageNum)}
+        onDragOver={(e) => onDragOver(e, pageNum)}
+        onDragLeave={(e) => onDragLeave(e, pageNum)}
+        onDrop={(e) => onDrop(e, pageNum)}
+        onDoubleClick={(e) => onDoubleClick(e, pageNum)}
+      >
+        {shouldRenderCanvas ? (
+          <canvas
+            ref={canvasRef}
+            style={{
+              display: 'block',
+              width: displaySize?.width ?? '100%',
+              height: displaySize?.height ?? '100%',
+              borderRadius: 12,
+            }}
+          />
+        ) : (
+          <div style={{ width: '100%', height: '100%', borderRadius: 12 }} aria-hidden />
+        )}
+        {marqueeBox && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${marqueeBox.left * 100}%`,
+              top: `${marqueeBox.top * 100}%`,
+              width: `${marqueeBox.width * 100}%`,
+              height: `${marqueeBox.height * 100}%`,
+              border: '1px solid var(--mantine-color-forest-6)',
+              background: 'color-mix(in srgb, var(--mantine-color-forest-6) 12%, transparent)',
+              pointerEvents: 'none',
+              zIndex: 5,
+            }}
+          />
+        )}
+        {selectionBounds && (
+          <div
+            className="mapper-selection-bounds"
+            style={{
+              left: `${selectionBounds.left * 100}%`,
+              top: `${selectionBounds.top * 100}%`,
+              width: `${selectionBounds.width * 100}%`,
+              height: `${selectionBounds.height * 100}%`,
+            }}
+          />
+        )}
+        {fields.map((field) => {
+          const color = SIGNER_COLORS[field.recipientIndex % SIGNER_COLORS.length]
+          const selected = selectedSet.has(field.id)
+          const signer = roles[field.recipientIndex]
+          const isDragging = Boolean(draggingIds?.has(field.id) && dragDelta)
+          const dimmed = multiSelectActive && !selected
+          const fieldClass = [
+            'mapper-field',
+            dimmed ? 'mapper-field--dimmed' : '',
+            selected && !multiSelectActive ? 'mapper-field--selected' : '',
+            selected && multiSelectActive ? 'mapper-field--selected-group' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')
+          return (
+            <div
+              key={field.id}
+              data-field-id={field.id}
+              className={fieldClass}
+              onPointerDown={(e) => onFieldPointerDown(e, field)}
+              onPointerMove={onFieldPointerMove}
+              onPointerUp={onFieldPointerUp}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onContextMenu={(e) => onFieldContextMenu(e, field)}
+              style={{
+                ...fieldToOverlayStyle(field),
+                background: selected
+                  ? multiSelectActive
+                    ? `${color}48`
+                    : `${color}33`
+                  : `${color}22`,
+                border: selected
+                  ? `2px solid ${multiSelectActive ? 'var(--sd-forest)' : color}`
+                  : `2px dotted ${color}`,
+                color,
+                zIndex: isDragging ? 20 : selected ? 2 : 1,
+                transform: isDragging ? `translate(${dragDelta!.x}px, ${dragDelta!.y}px)` : undefined,
+                willChange: isDragging ? 'transform' : undefined,
+              }}
+            >
+              <span
+                style={{
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  background: color,
+                  color: '#fff',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 8,
+                  fontWeight: 700,
+                  flexShrink: 0,
+                  pointerEvents: 'none',
+                }}
+              >
+                {signer ? roleInitials(signer, field.recipientIndex) : field.recipientIndex + 1}
+              </span>
+              <span
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  pointerEvents: 'none',
+                }}
+              >
+                {field.label || field.field_type}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      <Text size="xs" c="dimmed" className="mapper-page-label">
+        Page {pageNum}
+      </Text>
+    </div>
+  )
+}
+
+export function PdfFieldMapper({
+  documentFileUrl,
+  initialPageCount = 1,
+  roles,
+  fields,
+  onRolesChange,
+  onFieldsChange,
+  editableContacts = true,
+  rolesTitle = 'Signers',
+  addRoleLabel = 'Add signer',
+  sidebarActions,
+  sidebarExtra,
+}: PdfFieldMapperProps) {
+  const pageWrapRefs = useRef(new Map<number, HTMLDivElement>())
+  const pageBlockRefs = useRef(new Map<number, HTMLDivElement>())
+  const stackRef = useRef<HTMLDivElement>(null)
+
+  const [activeSigner, setActiveSigner] = useState(0)
+  const [activeTool, setActiveTool] = useState<FieldType>('signature')
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [fieldMenu, setFieldMenu] = useState<FieldMenuState | null>(null)
+  const [canvasMenu, setCanvasMenu] = useState<CanvasMenuState | null>(null)
+  const [labelEditOpen, setLabelEditOpen] = useState(false)
+  const [labelDraft, setLabelDraft] = useState('')
+  const [canvasFieldsFlyout, setCanvasFieldsFlyout] = useState(false)
+  const [fieldTypeFlyout, setFieldTypeFlyout] = useState(false)
+  const [dragOverPage, setDragOverPage] = useState<number | null>(null)
+  const [marqueeBox, setMarqueeBox] = useState<{
+    page: number
+    left: number
+    top: number
+    width: number
+    height: number
+  } | null>(null)
+  const [pageCount, setPageCount] = useState(initialPageCount)
+  const [pageSizes, setPageSizes] = useState<Record<number, PageSize>>({})
+  const [pdfDoc, setPdfDoc] = useState<pdfjs.PDFDocumentProxy | null>(null)
+  const [visiblePages, setVisiblePages] = useState<Set<number>>(() => new Set([1]))
+  const [dragDelta, setDragDelta] = useState<{ x: number; y: number } | null>(null)
+  const [draggingIds, setDraggingIds] = useState<Set<string> | null>(null)
+  const [historyTick, setHistoryTick] = useState(0)
+
+  const dragRef = useRef<DragState | null>(null)
+  const pastRef = useRef<MapperHistorySnapshot[]>([])
+  const futureRef = useRef<MapperHistorySnapshot[]>([])
+  const applyingHistoryRef = useRef(false)
+  const lastRecordRef = useRef<{ at: number; key: string } | null>(null)
+  const fieldsRef = useRef(fields)
+  const rolesRef = useRef(roles)
+  fieldsRef.current = fields
+  rolesRef.current = roles
+
+  const marqueeRef = useRef<{
+    page: number
+    startX: number
+    startY: number
+    additive: boolean
+    originSelected: string[]
+    moved: boolean
+  } | null>(null)
+
+  const registerWrap = useMemo(
+    () => (pageNum: number, el: HTMLDivElement | null) => {
+      if (el) pageWrapRefs.current.set(pageNum, el)
+      else pageWrapRefs.current.delete(pageNum)
+    },
+    [],
+  )
+
+  const registerBlock = useMemo(
+    () => (pageNum: number, el: HTMLDivElement | null) => {
+      if (el) pageBlockRefs.current.set(pageNum, el)
+      else pageBlockRefs.current.delete(pageNum)
+    },
+    [],
+  )
 
   useEffect(() => {
-    const wrap = pageWrapRef.current
-    if (!wrap || !pageSize) return
+    pastRef.current = []
+    futureRef.current = []
+    lastRecordRef.current = null
+    setHistoryTick((t) => t + 1)
+  }, [documentFileUrl])
 
-    const syncDisplaySize = () => {
-      const width = wrap.clientWidth
-      if (width <= 0) return
-      const height = width * (pageSize.height / pageSize.width)
-      setDisplaySize((prev) => {
-        if (
-          prev &&
-          Math.abs(prev.width - width) < 0.5 &&
-          Math.abs(prev.height - height) < 0.5
-        ) {
-          return prev
+  const bumpHistoryUi = () => setHistoryTick((t) => t + 1)
+
+  const recordHistory = (coalesceKey?: string) => {
+    if (applyingHistoryRef.current) return
+    const now = Date.now()
+    if (
+      coalesceKey &&
+      lastRecordRef.current?.key === coalesceKey &&
+      now - lastRecordRef.current.at < MAPPER_HISTORY_COALESCE_MS
+    ) {
+      lastRecordRef.current = { at: now, key: coalesceKey }
+      return
+    }
+    pastRef.current = [
+      ...pastRef.current,
+      cloneMapperSnapshot(fieldsRef.current, rolesRef.current),
+    ].slice(-MAPPER_HISTORY_LIMIT)
+    futureRef.current = []
+    lastRecordRef.current = { at: now, key: coalesceKey ?? `op-${now}` }
+    bumpHistoryUi()
+  }
+
+  const commitFields = (next: FieldDraft[], coalesceKey?: string) => {
+    recordHistory(coalesceKey)
+    onFieldsChange(next)
+  }
+
+  const commitRoles = (next: RoleDraft[], coalesceKey?: string) => {
+    recordHistory(coalesceKey)
+    onRolesChange(next)
+  }
+
+  const commitRolesAndFields = (nextRoles: RoleDraft[], nextFields: FieldDraft[]) => {
+    recordHistory()
+    onRolesChange(nextRoles)
+    onFieldsChange(nextFields)
+  }
+
+  const undo = () => {
+    if (!pastRef.current.length) return
+    const prev = pastRef.current[pastRef.current.length - 1]
+    pastRef.current = pastRef.current.slice(0, -1)
+    futureRef.current = [
+      ...futureRef.current,
+      cloneMapperSnapshot(fieldsRef.current, rolesRef.current),
+    ]
+    applyingHistoryRef.current = true
+    onFieldsChange(prev.fields)
+    onRolesChange(prev.roles)
+    applyingHistoryRef.current = false
+    lastRecordRef.current = null
+    const ids = new Set(prev.fields.map((f) => f.id))
+    setSelectedIds((cur) => cur.filter((id) => ids.has(id)))
+    setFieldMenu(null)
+    setCanvasMenu(null)
+    bumpHistoryUi()
+  }
+
+  const redo = () => {
+    if (!futureRef.current.length) return
+    const next = futureRef.current[futureRef.current.length - 1]
+    futureRef.current = futureRef.current.slice(0, -1)
+    pastRef.current = [
+      ...pastRef.current,
+      cloneMapperSnapshot(fieldsRef.current, rolesRef.current),
+    ].slice(-MAPPER_HISTORY_LIMIT)
+    applyingHistoryRef.current = true
+    onFieldsChange(next.fields)
+    onRolesChange(next.roles)
+    applyingHistoryRef.current = false
+    lastRecordRef.current = null
+    const ids = new Set(next.fields.map((f) => f.id))
+    setSelectedIds((cur) => cur.filter((id) => ids.has(id)))
+    setFieldMenu(null)
+    setCanvasMenu(null)
+    bumpHistoryUi()
+  }
+
+  const canUndo = pastRef.current.length > 0
+  const canRedo = futureRef.current.length > 0
+  void historyTick
+
+  const multiSelectActive = selectedIds.length > 1
+
+  useEffect(() => {
+    const fileUrl = toAppMediaUrl(documentFileUrl)
+    if (!fileUrl) return
+    let cancelled = false
+    setPageSizes({})
+    setPdfDoc(null)
+    ;(async () => {
+      try {
+        const doc = await pdfjs.getDocument({ url: fileUrl }).promise
+        if (cancelled) return
+        setPdfDoc(doc)
+        setPageCount(doc.numPages)
+
+        const sizes: Record<number, PageSize> = {}
+        for (let i = 1; i <= doc.numPages; i++) {
+          const pdfPage = await doc.getPage(i)
+          if (cancelled) return
+          const baseViewport = pdfPage.getViewport({ scale: 1 })
+          sizes[i] = { width: baseViewport.width, height: baseViewport.height }
         }
-        return { width, height }
-      })
+        if (!cancelled) setPageSizes(sizes)
+      } catch {
+        notifications.show({ color: 'red', message: 'Could not load PDF preview' })
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [documentFileUrl])
+
+  useEffect(() => {
+    if (pageCount <= 0) return
+    if (Object.keys(pageSizes).length < pageCount) return
+
+    if (pageCount <= MAPPER_VIRTUALIZE_AFTER) {
+      setVisiblePages(new Set(Array.from({ length: pageCount }, (_, i) => i + 1)))
+      return
     }
 
-    syncDisplaySize()
-    const ro = new ResizeObserver(syncDisplaySize)
-    ro.observe(wrap)
-    return () => ro.disconnect()
-  }, [pageSize])
+    setVisiblePages(new Set([1, Math.min(2, pageCount), Math.min(3, pageCount)]))
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const intersecting = entries
+          .filter((e) => e.isIntersecting)
+          .map((e) => Number((e.target as HTMLElement).dataset.mapperPage))
+          .filter((n) => n >= 1)
+
+        if (!intersecting.length) return
+
+        const keep = new Set<number>()
+        for (const pageNum of intersecting) {
+          for (
+            let p = pageNum - MAPPER_VIRTUALIZE_BUFFER;
+            p <= pageNum + MAPPER_VIRTUALIZE_BUFFER;
+            p++
+          ) {
+            if (p >= 1 && p <= pageCount) keep.add(p)
+          }
+        }
+        setVisiblePages(keep)
+      },
+      { root: null, rootMargin: '240px 0px', threshold: 0.01 },
+    )
+
+    for (const el of pageBlockRefs.current.values()) {
+      observer.observe(el)
+    }
+
+    return () => observer.disconnect()
+  }, [pageCount, pageSizes, pdfDoc])
 
   useEffect(() => {
     if (!fieldMenu && !canvasMenu) return
@@ -252,7 +654,6 @@ export function PdfFieldMapper({
       setFieldTypeFlyout(false)
     }
     const timer = window.setTimeout(() => {
-      // Close only on outside click or viewport resize — keep open while scrolling.
       window.addEventListener('click', close)
       window.addEventListener('resize', close)
     }, 0)
@@ -263,7 +664,16 @@ export function PdfFieldMapper({
     }
   }, [fieldMenu, canvasMenu])
 
-  const pageFields = useMemo(() => fields.filter((f) => f.page === page), [fields, page])
+  const fieldsByPage = useMemo(() => {
+    const map = new Map<number, FieldDraft[]>()
+    for (const field of fields) {
+      const list = map.get(field.page) ?? []
+      list.push(field)
+      map.set(field.page, list)
+    }
+    return map
+  }, [fields])
+
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
   const activeSignerColor = SIGNER_COLORS[activeSigner % SIGNER_COLORS.length]
   const selectedField = selectedIds.length === 1 ? fields.find((f) => f.id === selectedIds[0]) : null
@@ -271,12 +681,11 @@ export function PdfFieldMapper({
     ? fields.find((f) => f.id === fieldMenu.anchorFieldId)
     : null
 
-  // Keep the field menu pinned to the right-clicked field while the page scrolls or the field moves.
   useEffect(() => {
     if (!fieldMenu) return
     const { anchorFieldId, offsetX, offsetY } = fieldMenu
     const sync = () => {
-      const el = pageWrapRef.current?.querySelector(
+      const el = stackRef.current?.querySelector(
         `[data-field-id="${anchorFieldId}"]`,
       ) as HTMLElement | null
       if (!el) return
@@ -288,36 +697,56 @@ export function PdfFieldMapper({
     sync()
     window.addEventListener('scroll', sync, true)
     return () => window.removeEventListener('scroll', sync, true)
-  }, [fieldMenu?.anchorFieldId, fieldMenu?.offsetX, fieldMenu?.offsetY, fieldMenuAnchor?.x, fieldMenuAnchor?.y])
-
-  useEffect(() => {
-    setSelectedIds([])
-    setFieldMenu(null)
-    setCanvasMenu(null)
-    setCanvasFieldsFlyout(false)
-    setFieldTypeFlyout(false)
-    setMarqueeBox(null)
-  }, [page])
+    // Intentionally omit fieldMenu.x/y — syncing those would rebind the listener every frame.
+  }, [
+    fieldMenu?.anchorFieldId,
+    fieldMenu?.offsetX,
+    fieldMenu?.offsetY,
+    fieldMenuAnchor?.x,
+    fieldMenuAnchor?.y,
+    fieldMenuAnchor?.page,
+    dragDelta,
+  ])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return
       const tag = (e.target as HTMLElement)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
+      const inField =
+        tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable
+      const mod = e.metaKey || e.ctrlKey
+
+      if (!inField && mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+        return
+      }
+      if (!inField && mod && ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y')) {
+        e.preventDefault()
+        redo()
+        return
+      }
+
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      if (inField) return
       if (!selectedIds.length) return
       e.preventDefault()
-      onFieldsChange(fields.filter((f) => !selectedSet.has(f.id)))
+      commitFields(fields.filter((f) => !selectedSet.has(f.id)))
       setSelectedIds([])
       setFieldMenu(null)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedIds, selectedSet, fields, onFieldsChange])
+  }, [selectedIds, selectedSet, fields, roles])
 
   const patchSelectedFields = (patch: Partial<FieldDraft>, ids = selectedIds) => {
     if (!ids.length) return
     const idSet = new Set(ids)
-    onFieldsChange(fields.map((f) => (idSet.has(f.id) ? { ...f, ...patch } : f)))
+    const coalesceKey =
+      'label' in patch || 'required' in patch ? 'field-prop-edit' : 'field-patch'
+    commitFields(
+      fields.map((f) => (idSet.has(f.id) ? { ...f, ...patch } : f)),
+      coalesceKey,
+    )
   }
 
   const addRole = () => {
@@ -325,7 +754,7 @@ export function PdfFieldMapper({
       notifications.show({ color: 'yellow', message: 'Maximum of 10 signers' })
       return
     }
-    onRolesChange([
+    commitRoles([
       ...roles,
       {
         name: editableContacts ? '' : `Signer ${roles.length + 1}`,
@@ -340,10 +769,8 @@ export function PdfFieldMapper({
 
   const removeRole = (index: number) => {
     if (roles.length <= 1) return
-    onRolesChange(
+    commitRolesAndFields(
       roles.filter((_, i) => i !== index).map((s, i) => ({ ...s, routing_order: i + 1 })),
-    )
-    onFieldsChange(
       fields
         .filter((f) => f.recipientIndex !== index)
         .map((f) => ({
@@ -373,7 +800,7 @@ export function PdfFieldMapper({
       })
     }
     if (!created.length) return
-    onFieldsChange([...fields, ...created])
+    commitFields([...fields, ...created])
     setSelectedIds(created.map((f) => f.id))
     setFieldMenu(null)
   }
@@ -381,7 +808,7 @@ export function PdfFieldMapper({
   const deleteFields = (ids: string[]) => {
     if (!ids.length) return
     const remove = new Set(ids)
-    onFieldsChange(fields.filter((f) => !remove.has(f.id)))
+    commitFields(fields.filter((f) => !remove.has(f.id)))
     setSelectedIds((prev) => prev.filter((id) => !remove.has(id)))
     setFieldMenu(null)
   }
@@ -389,9 +816,10 @@ export function PdfFieldMapper({
   const placeField = (
     clientX: number,
     clientY: number,
+    pageNum: number,
     overrides?: Partial<Pick<FieldDraft, 'field_type' | 'recipientIndex'>>,
   ) => {
-    const wrap = pageWrapRef.current
+    const wrap = pageWrapRefs.current.get(pageNum)
     if (!wrap) return
     const rect = wrap.getBoundingClientRect()
     const relX = (clientX - rect.left) / rect.width
@@ -405,7 +833,7 @@ export function PdfFieldMapper({
       id: newFieldId(),
       recipientIndex: overrides?.recipientIndex ?? activeSigner,
       field_type: tool,
-      page,
+      page: pageNum,
       x,
       y,
       w: size.w,
@@ -413,7 +841,7 @@ export function PdfFieldMapper({
       required: true,
       label: size.label,
     }
-    onFieldsChange([...fields, draft])
+    commitFields([...fields, draft])
     setSelectedIds([draft.id])
     setActiveTool(tool)
     setCanvasMenu(null)
@@ -427,24 +855,24 @@ export function PdfFieldMapper({
     setCanvasMenu(null)
   }
 
-  const onPageDragOver = (e: ReactDragEvent) => {
+  const onPageDragOver = (e: ReactDragEvent, pageNum: number) => {
     if (![...e.dataTransfer.types].includes('application/x-signdesk-field')) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
-    setDragOverPage(true)
+    setDragOverPage(pageNum)
   }
 
-  const onPageDragLeave = (e: ReactDragEvent) => {
+  const onPageDragLeave = (e: ReactDragEvent, pageNum: number) => {
     if (e.currentTarget.contains(e.relatedTarget as Node)) return
-    setDragOverPage(false)
+    setDragOverPage((prev) => (prev === pageNum ? null : prev))
   }
 
-  const onPageDrop = (e: ReactDragEvent) => {
+  const onPageDrop = (e: ReactDragEvent, pageNum: number) => {
     e.preventDefault()
-    setDragOverPage(false)
+    setDragOverPage(null)
     const type = e.dataTransfer.getData('application/x-signdesk-field') as FieldType
     if (!FIELD_TOOLS.some((t) => t.type === type)) return
-    placeField(e.clientX, e.clientY, { field_type: type })
+    placeField(e.clientX, e.clientY, pageNum, { field_type: type })
   }
 
   const onFieldContextMenu = (e: ReactMouseEvent, field: FieldDraft) => {
@@ -469,14 +897,20 @@ export function PdfFieldMapper({
     })
   }
 
-  const onCanvasContextMenu = (e: ReactMouseEvent) => {
+  const onCanvasContextMenu = (e: ReactMouseEvent, pageNum: number) => {
     if ((e.target as HTMLElement).closest('[data-field-id]')) return
     e.preventDefault()
     setFieldMenu(null)
     setLabelEditOpen(false)
     setFieldTypeFlyout(false)
     setCanvasFieldsFlyout(false)
-    setCanvasMenu({ x: e.clientX, y: e.clientY, clientX: e.clientX, clientY: e.clientY })
+    setCanvasMenu({
+      x: e.clientX,
+      y: e.clientY,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      page: pageNum,
+    })
   }
 
   const setActiveSignerAndMaybeReassign = (idx: number) => {
@@ -486,12 +920,13 @@ export function PdfFieldMapper({
     }
   }
 
-  const onWrapPointerDown = (e: ReactPointerEvent) => {
+  const onWrapPointerDown = (e: ReactPointerEvent, pageNum: number) => {
     if (e.button !== 0) return
     if ((e.target as HTMLElement).closest('[data-field-id]')) return
-    const wrap = pageWrapRef.current
+    const wrap = pageWrapRefs.current.get(pageNum)
     if (!wrap) return
     marqueeRef.current = {
+      page: pageNum,
       startX: e.clientX,
       startY: e.clientY,
       additive: e.shiftKey || e.metaKey || e.ctrlKey,
@@ -501,10 +936,10 @@ export function PdfFieldMapper({
     wrap.setPointerCapture(e.pointerId)
   }
 
-  const onWrapPointerMove = (e: ReactPointerEvent) => {
+  const onWrapPointerMove = (e: ReactPointerEvent, pageNum: number) => {
     const m = marqueeRef.current
-    const wrap = pageWrapRef.current
-    if (!m || !wrap) return
+    const wrap = pageWrapRefs.current.get(pageNum)
+    if (!m || m.page !== pageNum || !wrap) return
 
     const dist = Math.hypot(e.clientX - m.startX, e.clientY - m.startY)
     if (dist > 4) m.moved = true
@@ -519,16 +954,17 @@ export function PdfFieldMapper({
     const top = Math.min(y1, y2)
     const width = Math.abs(x2 - x1)
     const height = Math.abs(y2 - y1)
-    setMarqueeBox({ left, top, width, height })
+    setMarqueeBox({ page: pageNum, left, top, width, height })
 
     const marquee = { left, top, right: left + width, bottom: top + height }
+    const pageFields = fieldsByPage.get(pageNum) ?? []
     const hit = pageFields
       .filter((f) => boxesIntersect(fieldTopLeftBox(f), marquee))
       .map((f) => f.id)
     setSelectedIds(m.additive ? [...new Set([...m.originSelected, ...hit])] : hit)
   }
 
-  const onWrapPointerUp = () => {
+  const onWrapPointerUp = (_e: ReactPointerEvent, _pageNum: number) => {
     const m = marqueeRef.current
     marqueeRef.current = null
     setMarqueeBox(null)
@@ -564,54 +1000,108 @@ export function PdfFieldMapper({
           ? nextSelected
           : [field.id]
 
-    const origins: Record<string, { x: number; y: number; w: number; h: number }> = {}
+    const origins: DragState['origins'] = {}
+    const startRects: DragState['startRects'] = {}
     for (const f of fields) {
-      if (movingIds.includes(f.id)) {
-        origins[f.id] = { x: f.x, y: f.y, w: f.w, h: f.h }
+      if (!movingIds.includes(f.id)) continue
+      origins[f.id] = { x: f.x, y: f.y, w: f.w, h: f.h, page: f.page }
+      const el = stackRef.current?.querySelector(
+        `[data-field-id="${f.id}"]`,
+      ) as HTMLElement | null
+      if (el) {
+        const r = el.getBoundingClientRect()
+        startRects[f.id] = { left: r.left, top: r.top, width: r.width, height: r.height }
       }
     }
 
+    const mode = handle && movingIds.length === 1 ? 'resize' : 'move'
     dragRef.current = {
-      mode: handle && movingIds.length === 1 ? 'resize' : 'move',
+      mode,
       fieldId: field.id,
       fieldIds: movingIds,
       handle: handle && movingIds.length === 1 ? handle : undefined,
       startX: e.clientX,
       startY: e.clientY,
       origins,
+      startRects,
+      deltaX: 0,
+      deltaY: 0,
     }
+    setDragDelta(null)
+    setDraggingIds(mode === 'move' ? new Set(movingIds) : null)
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+
+  const commitMoveDrag = (clientX: number, clientY: number) => {
+    const drag = dragRef.current
+    if (!drag || drag.mode !== 'move') return
+
+    const targetPage =
+      findPageAtClientPoint(clientX, clientY, pageWrapRefs.current) ??
+      findNearestPageAtClientPoint(clientX, clientY, pageWrapRefs.current)
+    if (targetPage == null) return
+
+    const pageEl = pageWrapRefs.current.get(targetPage)
+    if (!pageEl) return
+    const pageRect = pageEl.getBoundingClientRect()
+    const dx = clientX - drag.startX
+    const dy = clientY - drag.startY
+
+    commitFields(
+      fields.map((f) => {
+        const orig = drag.origins[f.id]
+        const startRect = drag.startRects[f.id]
+        if (!orig || !startRect) return f
+        const { x, y } = screenRectToFieldCoords(
+          startRect.left + dx,
+          startRect.top + dy,
+          orig.w,
+          orig.h,
+          pageRect,
+        )
+        return { ...f, page: targetPage, x, y }
+      }),
+    )
   }
 
   const onFieldPointerMove = (e: ReactPointerEvent) => {
     const el = e.currentTarget as HTMLElement
     const drag = dragRef.current
-    const wrap = pageWrapRef.current
 
     if (!drag || drag.fieldId !== (el.dataset.fieldId ?? '')) {
       el.style.cursor = resizeCursor(hitResizeHandle(e.clientX, e.clientY, el))
       return
     }
 
+    if (drag.mode === 'move') {
+      const deltaX = e.clientX - drag.startX
+      const deltaY = e.clientY - drag.startY
+      drag.deltaX = deltaX
+      drag.deltaY = deltaY
+      el.style.cursor = 'grabbing'
+      setDragDelta({ x: deltaX, y: deltaY })
+      return
+    }
+
+    // Resize stays on the field's current page.
+    const originPage = drag.origins[drag.fieldId]?.page
+    if (originPage == null) return
+    const wrap = pageWrapRefs.current.get(originPage)
     if (!wrap) return
     const rect = wrap.getBoundingClientRect()
     const dx = (e.clientX - drag.startX) / rect.width
     const dy = (e.clientY - drag.startY) / rect.height
+    const handle = drag.handle!
+
+    if (!drag.historyPushed) {
+      recordHistory()
+      drag.historyPushed = true
+    }
 
     onFieldsChange(
       fields.map((f) => {
         const orig = drag.origins[f.id]
-        if (!orig) return f
-
-        if (drag.mode === 'move') {
-          el.style.cursor = 'grabbing'
-          const x = Math.min(Math.max(orig.x + dx, 0), 1 - f.w)
-          const y = Math.min(Math.max(orig.y - dy, 0), 1 - f.h)
-          return { ...f, x, y }
-        }
-
-        if (f.id !== drag.fieldId) return f
-        const handle = drag.handle!
+        if (!orig || f.id !== drag.fieldId) return f
         el.style.cursor = resizeCursor(handle)
         let { x, y, w, h } = { x: orig.x, y: orig.y, w: orig.w, h: orig.h }
 
@@ -640,12 +1130,18 @@ export function PdfFieldMapper({
   }
 
   const onFieldPointerUp = (e: ReactPointerEvent) => {
+    const drag = dragRef.current
+    if (drag?.mode === 'move' && (drag.deltaX !== 0 || drag.deltaY !== 0)) {
+      commitMoveDrag(e.clientX, e.clientY)
+    }
     dragRef.current = null
+    setDragDelta(null)
+    setDraggingIds(null)
     const el = e.currentTarget as HTMLElement
     el.style.cursor = resizeCursor(hitResizeHandle(e.clientX, e.clientY, el))
   }
 
-  const menuButtonStyle = (danger = false): CSSProperties => ({
+  const menuButtonStyle = (danger = false, disabled = false): CSSProperties => ({
     display: 'flex',
     alignItems: 'center',
     gap: 8,
@@ -655,153 +1151,139 @@ export function PdfFieldMapper({
     fontWeight: 500,
     width: '100%',
     color: danger ? 'var(--mantine-color-red-6)' : undefined,
+    opacity: disabled ? 0.4 : 1,
+    cursor: disabled ? 'default' : 'pointer',
   })
+
+  const undoRedoMenuItems = (
+    <>
+      <UnstyledButton
+        disabled={!canUndo}
+        onClick={() => {
+          if (!canUndo) return
+          undo()
+        }}
+        style={menuButtonStyle(false, !canUndo)}
+      >
+        <IconArrowBackUp size={14} />
+        Undo
+      </UnstyledButton>
+      <UnstyledButton
+        disabled={!canRedo}
+        onClick={() => {
+          if (!canRedo) return
+          redo()
+        }}
+        style={menuButtonStyle(false, !canRedo)}
+      >
+        <IconArrowForwardUp size={14} />
+        Redo
+      </UnstyledButton>
+      <Divider my={4} />
+    </>
+  )
 
   const fieldMenuFields = fieldMenu
     ? fields.filter((f) => fieldMenu.fieldIds.includes(f.id))
     : []
   const fieldMenuSingle = fieldMenuFields.length === 1 ? fieldMenuFields[0] : null
 
+  const shouldVirtualize = pageCount > MAPPER_VIRTUALIZE_AFTER
+
   return (
     <Group align="flex-start" gap="lg" wrap="nowrap" style={{ alignItems: 'stretch' }}>
       <Stack style={{ flex: 1, minWidth: 0 }}>
-        <Group justify="space-between">
-          <Text size="sm" c="dimmed">
-            Page {page} of {pageCount} · {fields.length} field{fields.length === 1 ? '' : 's'}
-            {selectedIds.length > 0 ? ` · ${selectedIds.length} selected` : ''}
-          </Text>
-          <Group gap="xs">
-            <ActionIcon
-              variant="default"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              ‹
-            </ActionIcon>
-            <ActionIcon
-              variant="default"
-              disabled={page >= pageCount}
-              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-            >
-              ›
-            </ActionIcon>
-          </Group>
-        </Group>
-
-        <Card withBorder radius="lg" p={0} style={{ overflow: 'visible' }}>
-          <div
-            ref={pageWrapRef}
-            style={{
-              position: 'relative',
-              display: 'block',
-              width: '100%',
-              height: displaySize?.height ?? 240,
-              cursor: 'crosshair',
-              outline: dragOverPage ? `2px solid ${activeSignerColor}` : undefined,
-              outlineOffset: -2,
-            }}
-            onPointerDown={onWrapPointerDown}
-            onPointerMove={onWrapPointerMove}
-            onPointerUp={onWrapPointerUp}
-            onContextMenu={onCanvasContextMenu}
-            onDragOver={onPageDragOver}
-            onDragLeave={onPageDragLeave}
-            onDrop={onPageDrop}
-            onDoubleClick={(e) => {
-              if (marqueeRef.current?.moved) return
-              placeField(e.clientX, e.clientY)
-            }}
-          >
-            <canvas
-              ref={canvasRef}
-              style={{
-                display: 'block',
-                width: displaySize?.width ?? '100%',
-                height: displaySize?.height ?? '100%',
-              }}
-            />
-            {marqueeBox && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: `${marqueeBox.left * 100}%`,
-                  top: `${marqueeBox.top * 100}%`,
-                  width: `${marqueeBox.width * 100}%`,
-                  height: `${marqueeBox.height * 100}%`,
-                  border: '1px solid var(--mantine-color-forest-6)',
-                  background: 'color-mix(in srgb, var(--mantine-color-forest-6) 12%, transparent)',
-                  pointerEvents: 'none',
-                  zIndex: 5,
-                }}
-              />
-            )}
-            {pageFields.map((field) => {
-              const color = SIGNER_COLORS[field.recipientIndex % SIGNER_COLORS.length]
-              const selected = selectedSet.has(field.id)
-              const signer = roles[field.recipientIndex]
+        {!pdfDoc ? (
+          <Card withBorder radius="lg" p="xl">
+            <Text size="sm" c="dimmed">
+              Loading document…
+            </Text>
+          </Card>
+        ) : (
+          <div className="mapper-doc-stack" ref={stackRef}>
+            {Array.from({ length: pageCount }, (_, i) => i + 1).map((pageNum) => {
+              const size = pageSizes[pageNum]
+              if (!size) {
+                return (
+                  <div key={pageNum} className="mapper-page-block" data-mapper-page={pageNum}>
+                    <div className="mapper-page-wrap mapper-page-placeholder" style={{ height: 240 }} />
+                    <Text size="xs" c="dimmed" className="mapper-page-label">
+                      Page {pageNum}
+                    </Text>
+                  </div>
+                )
+              }
+              const shouldRenderCanvas = !shouldVirtualize || visiblePages.has(pageNum)
+              const pageSelected = (fieldsByPage.get(pageNum) ?? []).filter((f) =>
+                selectedSet.has(f.id),
+              )
+              let selectionBounds =
+                multiSelectActive && pageSelected.length > 0
+                  ? unionFieldTopLeftBox(pageSelected)
+                  : null
+              if (
+                selectionBounds &&
+                dragDelta &&
+                pageSelected.some((f) => draggingIds?.has(f.id))
+              ) {
+                const wrap = pageWrapRefs.current.get(pageNum)
+                if (wrap && wrap.clientWidth > 0 && wrap.clientHeight > 0) {
+                  const dx = dragDelta.x / wrap.clientWidth
+                  const dy = dragDelta.y / wrap.clientHeight
+                  selectionBounds = {
+                    ...selectionBounds,
+                    left: selectionBounds.left + dx,
+                    top: selectionBounds.top + dy,
+                  }
+                }
+              }
               return (
-                <div
-                  key={field.id}
-                  data-field-id={field.id}
-                  onPointerDown={(e) => onFieldPointerDown(e, field)}
-                  onPointerMove={onFieldPointerMove}
-                  onPointerUp={onFieldPointerUp}
-                  onClick={(e) => e.stopPropagation()}
-                  onDoubleClick={(e) => e.stopPropagation()}
-                  onContextMenu={(e) => onFieldContextMenu(e, field)}
-                  style={{
-                    position: 'absolute',
-                    ...fieldToOverlayStyle(field),
-                    background: `${color}22`,
-                    border: selected ? `2px solid ${color}` : `2px dotted ${color}`,
-                    borderRadius: 4,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 4,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color,
-                    cursor: 'grab',
-                    userSelect: 'none',
-                    touchAction: 'none',
-                    padding: '0 4px',
-                    zIndex: selected ? 2 : 1,
+                <MapperPageBlock
+                  key={pageNum}
+                  pdfDoc={pdfDoc}
+                  pageNum={pageNum}
+                  pageSize={size}
+                  shouldRenderCanvas={shouldRenderCanvas}
+                  fields={fieldsByPage.get(pageNum) ?? []}
+                  roles={roles}
+                  selectedSet={selectedSet}
+                  multiSelectActive={multiSelectActive}
+                  selectionBounds={selectionBounds}
+                  dragOver={dragOverPage === pageNum}
+                  dragDelta={dragDelta}
+                  draggingIds={draggingIds}
+                  marqueeBox={
+                    marqueeBox?.page === pageNum
+                      ? {
+                          left: marqueeBox.left,
+                          top: marqueeBox.top,
+                          width: marqueeBox.width,
+                          height: marqueeBox.height,
+                        }
+                      : null
+                  }
+                  onRegisterWrap={registerWrap}
+                  onRegisterBlock={registerBlock}
+                  onWrapPointerDown={onWrapPointerDown}
+                  onWrapPointerMove={onWrapPointerMove}
+                  onWrapPointerUp={onWrapPointerUp}
+                  onContextMenu={onCanvasContextMenu}
+                  onDragOver={onPageDragOver}
+                  onDragLeave={onPageDragLeave}
+                  onDrop={onPageDrop}
+                  onDoubleClick={(e, p) => {
+                    if (marqueeRef.current?.moved) return
+                    placeField(e.clientX, e.clientY, p)
                   }}
-                >
-                  <span
-                    style={{
-                      width: 16,
-                      height: 16,
-                      borderRadius: '50%',
-                      background: color,
-                      color: '#fff',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 8,
-                      fontWeight: 700,
-                      flexShrink: 0,
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    {signer ? roleInitials(signer, field.recipientIndex) : field.recipientIndex + 1}
-                  </span>
-                  <span
-                    style={{
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    {field.label || field.field_type}
-                  </span>
-                </div>
+                  onFieldPointerDown={onFieldPointerDown}
+                  onFieldPointerMove={onFieldPointerMove}
+                  onFieldPointerUp={onFieldPointerUp}
+                  onFieldContextMenu={onFieldContextMenu}
+                />
               )
             })}
           </div>
-        </Card>
+        )}
       </Stack>
 
       <Card
@@ -899,7 +1381,7 @@ export function PdfFieldMapper({
                           onChange={(e) => {
                             const next = [...roles]
                             next[idx] = { ...next[idx], name: e.currentTarget.value }
-                            onRolesChange(next)
+                            commitRoles(next, `role-name-${idx}`)
                           }}
                         />
                         <TextInput
@@ -909,7 +1391,7 @@ export function PdfFieldMapper({
                           onChange={(e) => {
                             const next = [...roles]
                             next[idx] = { ...next[idx], email: e.currentTarget.value }
-                            onRolesChange(next)
+                            commitRoles(next, `role-email-${idx}`)
                           }}
                         />
                       </Stack>
@@ -922,7 +1404,7 @@ export function PdfFieldMapper({
                         onChange={(e) => {
                           const next = [...roles]
                           next[idx] = { ...next[idx], name: e.currentTarget.value }
-                          onRolesChange(next)
+                          commitRoles(next, `role-name-${idx}`)
                         }}
                       />
                     )}
@@ -1092,6 +1574,7 @@ export function PdfFieldMapper({
           onContextMenu={(e) => e.preventDefault()}
         >
           <Stack gap={2}>
+            {undoRedoMenuItems}
             <div style={{ position: 'relative' }}>
               <UnstyledButton
                 onMouseEnter={() => setFieldTypeFlyout(true)}
@@ -1231,7 +1714,7 @@ export function PdfFieldMapper({
             <UnstyledButton
               onClick={() => {
                 const idSet = new Set(fieldMenu.fieldIds)
-                onFieldsChange(
+                commitFields(
                   fields.map((f) => {
                     if (!idSet.has(f.id)) return f
                     const size = DEFAULT_FIELD_SIZE[f.field_type]
@@ -1282,6 +1765,7 @@ export function PdfFieldMapper({
           onContextMenu={(e) => e.preventDefault()}
         >
           <Stack gap={2}>
+            {undoRedoMenuItems}
             <div style={{ position: 'relative' }}>
               <UnstyledButton
                 onMouseEnter={() => setCanvasFieldsFlyout(true)}
@@ -1320,7 +1804,7 @@ export function PdfFieldMapper({
                       <UnstyledButton
                         key={tool.type}
                         onClick={() =>
-                          placeField(canvasMenu.clientX, canvasMenu.clientY, {
+                          placeField(canvasMenu.clientX, canvasMenu.clientY, canvasMenu.page, {
                             field_type: tool.type,
                           })
                         }
@@ -1342,7 +1826,7 @@ export function PdfFieldMapper({
               <UnstyledButton
                 key={idx}
                 onClick={() =>
-                  placeField(canvasMenu.clientX, canvasMenu.clientY, {
+                  placeField(canvasMenu.clientX, canvasMenu.clientY, canvasMenu.page, {
                     recipientIndex: idx,
                     field_type: activeTool,
                   })

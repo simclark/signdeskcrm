@@ -8,6 +8,10 @@ from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
 
+from apps.tenants.esign_disclosure import (
+    DEFAULT_ESIGN_ACKNOWLEDGEMENT,
+    DEFAULT_ESIGN_ACKNOWLEDGEMENT_VERSION,
+)
 from apps.tenants.models_base import TimeStampedModel
 
 INVITE_EXPIRY_DAYS = 7
@@ -63,15 +67,10 @@ class Tenant(TimeStampedModel):
     accent_color = models.CharField(max_length=7, default="#0B6E4F")
     timezone = models.CharField(max_length=64, default="UTC")
     default_expiration_days = models.PositiveIntegerField(default=14)
-    esign_acknowledgement = models.TextField(
-        default=(
-            "By continuing, you agree to conduct this transaction electronically, "
-            "to receive records electronically, and that your electronic signature "
-            "is legally binding. You may request a paper copy and withdraw consent "
-            "by contacting the sender."
-        )
+    esign_acknowledgement = models.TextField(default=DEFAULT_ESIGN_ACKNOWLEDGEMENT)
+    esign_acknowledgement_version = models.CharField(
+        max_length=32, default=DEFAULT_ESIGN_ACKNOWLEDGEMENT_VERSION
     )
-    esign_acknowledgement_version = models.CharField(max_length=32, default="2026-01")
 
     class Meta:
         ordering = ["name"]

@@ -46,6 +46,87 @@ body {
   align-items: center;
 }
 
+.mapper-doc-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+.mapper-page-block {
+  position: relative;
+  width: 100%;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid rgba(16, 42, 35, 0.1);
+  box-shadow: 0 1px 4px rgba(16, 42, 35, 0.06);
+  overflow: visible;
+}
+
+.mapper-page-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  cursor: crosshair;
+  overflow: visible;
+}
+
+.mapper-page-wrap--drag-over {
+  outline: 2px solid var(--sd-forest);
+  outline-offset: -2px;
+  border-radius: 12px;
+}
+
+.mapper-page-placeholder {
+  background: color-mix(in srgb, var(--sd-sand) 70%, #fff);
+}
+
+.mapper-page-label {
+  text-align: center;
+  padding: 6px 0 8px;
+}
+
+.mapper-field {
+  position: absolute;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  padding: 0 4px;
+  transition: opacity 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.mapper-field--dimmed {
+  opacity: 0.4;
+}
+
+.mapper-field--selected {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--sd-forest) 55%, transparent);
+}
+
+.mapper-field--selected-group {
+  border-width: 2px;
+  border-style: solid;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--sd-forest) 70%, transparent),
+    0 1px 6px rgba(16, 42, 35, 0.18);
+}
+
+.mapper-selection-bounds {
+  position: absolute;
+  border: 1.5px dashed var(--sd-forest);
+  background: color-mix(in srgb, var(--sd-forest) 10%, transparent);
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 4;
+}
+
 .signing-page-block {
   position: relative;
   width: 100%;

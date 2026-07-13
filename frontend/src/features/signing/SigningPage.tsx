@@ -4,6 +4,7 @@ import {
   Checkbox,
   Container,
   Group,
+  Image,
   Progress,
   Stack,
   Text,
@@ -14,12 +15,83 @@ import dayjs from 'dayjs'
 import { useParams } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../shared/api'
+import { setDocumentFavicon } from '../../shared/favicon'
+import { toAppMediaUrl } from '../../shared/mediaUrl'
 import { fieldTypeLabel, sortFieldsForSigning, type SignField } from './fieldOverlay'
 import { SignatureAdoptDialog, type AdoptedAssets } from './SignatureAdoptDialog'
 import { SigningDocumentViewer } from './SigningDocumentViewer'
 
 function todayIsoDate() {
   return dayjs().format('YYYY-MM-DD')
+}
+
+function BrandMark({
+  logoUrl,
+  iconUrl,
+  tenantName,
+  compact = false,
+}: {
+  logoUrl?: string | null
+  iconUrl?: string | null
+  tenantName: string
+  compact?: boolean
+}) {
+  const logo = toAppMediaUrl(logoUrl)
+  const icon = toAppMediaUrl(iconUrl)
+  if (logo) {
+    if (compact) {
+      return (
+        <Image
+          src={logo}
+          alt={tenantName}
+          h={36}
+          w="auto"
+          maw={200}
+          fit="contain"
+          style={{ display: 'block' }}
+        />
+      )
+    }
+    return (
+      <div
+        style={{
+          marginBottom: 20,
+          paddingBottom: 16,
+          borderBottom: '1px solid rgba(16, 42, 35, 0.08)',
+        }}
+      >
+        <Image
+          src={logo}
+          alt={tenantName}
+          h={64}
+          w="auto"
+          maw={340}
+          fit="contain"
+          style={{ display: 'block' }}
+        />
+      </div>
+    )
+  }
+  if (icon) {
+    return (
+      <Group
+        gap="sm"
+        mb={compact ? 0 : 'md'}
+        pb={compact ? 0 : 'md'}
+        style={compact ? undefined : { borderBottom: '1px solid rgba(16, 42, 35, 0.08)' }}
+      >
+        <Image src={icon} alt="" w={compact ? 28 : 40} h={compact ? 28 : 40} radius="md" fit="contain" />
+        <Text size="sm" c="dimmed" fw={500}>
+          {tenantName}
+        </Text>
+      </Group>
+    )
+  }
+  return (
+    <Text size="sm" c="dimmed" mb={4}>
+      {tenantName}
+    </Text>
+  )
 }
 
 function signApi<T = unknown>(
@@ -34,6 +106,7 @@ export function SigningPage() {
   const qc = useQueryClient()
   const fieldRefs = useRef<Record<number, HTMLDivElement | null>>({})
   const [consented, setConsented] = useState(false)
+  const [consentChecked, setConsentChecked] = useState(false)
   const [activeIdx, setActiveIdx] = useState(0)
   const [adopted, setAdopted] = useState<AdoptedAssets | null>(null)
   const [adoptDialogOpen, setAdoptDialogOpen] = useState(false)
@@ -57,8 +130,15 @@ export function SigningPage() {
     onSuccess: () => {
       setConsented(true)
       setActiveIdx(0)
+      qc.invalidateQueries({ queryKey: ['sign', token] })
     },
   })
+
+  useEffect(() => {
+    if (data?.has_consented) {
+      setConsented(true)
+    }
+  }, [data?.has_consented])
 
   const completeField = useMutation({
     mutationFn: async ({
@@ -117,6 +197,12 @@ export function SigningPage() {
   const activeFieldId = currentField?.id ?? null
   const isLastField = activeIdx >= fields.length - 1
   const currentComplete = Boolean(currentField?.completed_at)
+  const signingIconUrl = toAppMediaUrl(data?.envelope?.icon_url)
+
+  useEffect(() => {
+    setDocumentFavicon(signingIconUrl)
+    return () => setDocumentFavicon(null)
+  }, [signingIconUrl])
 
   const done = useMemo(
     () => data?.recipient?.status === 'signed' || data?.envelope?.status === 'completed',
@@ -296,25 +382,43 @@ export function SigningPage() {
       <div className="signer-shell">
         <Container size={640} py={80}>
           <Card withBorder radius="lg" p="xl">
-            <Text size="sm" c="dimmed" mb={4}>
-              {data.envelope.tenant_name}
-            </Text>
+            <BrandMark
+              logoUrl={data.envelope.logo_url}
+              iconUrl={data.envelope.icon_url}
+              tenantName={data.envelope.tenant_name}
+            />
             <Title order={2}>{data.envelope.title}</Title>
-            <Text mt="md" mb="lg">
+            <Text size="sm" c="dimmed" mt="xs" mb="md">
+              Electronic records and signatures disclosure
+              {data.consent_version ? ` · Version ${data.consent_version}` : ''}
+            </Text>
+            <Text
+              size="sm"
+              mb="lg"
+              style={{
+                whiteSpace: 'pre-wrap',
+                maxHeight: 280,
+                overflowY: 'auto',
+                padding: '12px 14px',
+                border: '1px solid var(--mantine-color-gray-3)',
+                borderRadius: 8,
+                background: 'var(--mantine-color-gray-0)',
+              }}
+            >
               {data.consent_text}
             </Text>
             <Checkbox
-              label="I agree to use electronic records and signatures"
-              checked={consented}
-              onChange={() => undefined}
+              label="I have read this disclosure, can access PDF documents, and agree to use electronic records and signatures"
+              checked={consentChecked}
+              onChange={(event) => setConsentChecked(event.currentTarget.checked)}
               mb="md"
               styles={{ label: { cursor: 'pointer' } }}
-              onClick={() => consent.mutate()}
             />
             <Button
               fullWidth
               style={{ background: accent }}
               loading={consent.isPending}
+              disabled={!consentChecked}
               onClick={() => consent.mutate()}
             >
               Continue to document
@@ -335,9 +439,12 @@ export function SigningPage() {
         <Container size={960} py="md">
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <div style={{ minWidth: 0 }}>
-              <Text size="sm" c="dimmed">
-                {data.envelope.tenant_name}
-              </Text>
+              <BrandMark
+                logoUrl={data.envelope.logo_url}
+                iconUrl={data.envelope.icon_url}
+                tenantName={data.envelope.tenant_name}
+                compact
+              />
               <Title order={3}>{data.envelope.title}</Title>
               <Progress value={progress} color="forest" mt="sm" size="sm" />
               <Text size="sm" mt={4}>

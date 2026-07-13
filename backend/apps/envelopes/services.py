@@ -19,9 +19,14 @@ from reportlab.pdfgen import canvas
 from apps.audit.models import AuditEvent
 from apps.contacts.models import Activity
 from apps.envelopes.models import Envelope, Field, Recipient, SignatureAsset
+from apps.tenants.esign_disclosure import (
+    DEFAULT_ESIGN_ACKNOWLEDGEMENT_VERSION,
+    resolve_acknowledgement,
+    sha256_text,
+)
 
 
-CONSENT_VERSION = "2026-01"
+CONSENT_VERSION = DEFAULT_ESIGN_ACKNOWLEDGEMENT_VERSION
 BRAND_GREEN = colors.HexColor("#0b6e4f")
 MUTED_GRAY = colors.HexColor("#5c6570")
 RULE_GRAY = colors.HexColor("#d8dde3")
@@ -199,8 +204,33 @@ def mark_viewed(recipient: Recipient, request):
 
 
 def accept_consent(recipient: Recipient, request):
+    """Record affirmative ESIGN/UETA consent with an immutable text snapshot."""
+    if recipient.consented_at:
+        return recipient
+
     meta = client_meta(request)
-    version = getattr(recipient.tenant, "esign_acknowledgement_version", None) or CONSENT_VERSION
+    text, version = resolve_acknowledgement(recipient.tenant)
+    text_hash = sha256_text(text)
+    now = timezone.now()
+
+    recipient.consented_at = now
+    recipient.consent_version = version
+    recipient.consent_text = text
+    recipient.consent_text_sha256 = text_hash
+    recipient.consent_ip = meta.get("ip_address")
+    recipient.consent_user_agent = (meta.get("user_agent") or "")[:2000]
+    recipient.save(
+        update_fields=[
+            "consented_at",
+            "consent_version",
+            "consent_text",
+            "consent_text_sha256",
+            "consent_ip",
+            "consent_user_agent",
+            "updated_at",
+        ]
+    )
+
     record_audit(
         tenant=recipient.tenant,
         envelope=recipient.envelope,
@@ -209,9 +239,22 @@ def accept_consent(recipient: Recipient, request):
         actor_email=recipient.email,
         actor_name=recipient.name,
         consent_version=version,
-        payload={"consent_version": version},
+        payload={
+            "consent_version": version,
+            "consent_text_sha256": text_hash,
+        },
         **meta,
     )
+    return recipient
+
+
+def require_consent(recipient: Recipient) -> None:
+    """Raise PermissionError if the recipient has not accepted the disclosure."""
+    if not recipient.consented_at:
+        raise PermissionError(
+            "You must accept the electronic records and signatures disclosure "
+            "before continuing."
+        )
 
 
 @transaction.atomic
@@ -515,6 +558,29 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
     y = _draw_wrapped(c, envelope.post_sign_sha256 or "—", left, y, 100, 10)
     y -= 16
 
+    # ── Legal notice (ESIGN / UETA) ───────────────────────────────
+    y = ensure_space(y, 90)
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(left, y, "Legal notice")
+    y -= 8
+    c.setStrokeColor(RULE_GRAY)
+    c.line(left, y, right, y)
+    y -= 16
+    c.setFont("Helvetica", 8)
+    c.setFillColor(colors.black)
+    legal_notice = (
+        "Electronic signatures on this envelope were collected under the U.S. Electronic "
+        "Signatures in Global and National Commerce Act (E-SIGN Act) and the applicable "
+        "Uniform Electronic Transactions Act (UETA). Each signer affirmatively consented "
+        "to electronic records and signatures before signing. Document integrity is "
+        "evidenced by the SHA-256 hashes above. Completed records (signed PDF and this "
+        "certificate) are available via the signer’s invitation link and/or by request "
+        "from the sending workspace, which controls retention duration."
+    )
+    y = _draw_wrapped(c, legal_notice, left, y, 98, 11)
+    y -= 16
+
     # ── Signers ──────────────────────────────────────────────────
     y = ensure_space(y, 40)
     c.setFillColor(colors.black)
@@ -534,7 +600,10 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
     for idx, recipient in enumerate(recipients, start=1):
         sig_path = _signer_asset_path(recipient, "signature")
         initials_path = _signer_asset_path(recipient, "initials")
+        has_consent = bool(recipient.consented_at or recipient.consent_text_sha256)
         block_height = 118 if (sig_path or initials_path) else 72
+        if has_consent:
+            block_height += 36
         y = ensure_space(y, block_height + 12)
 
         # Card background
@@ -579,7 +648,24 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
         )
         if signed_event and signed_event.ip_address:
             c.drawRightString(right - 12, y, f"IP: {signed_event.ip_address}")
-        y -= 18
+        y -= 12
+
+        if has_consent:
+            c.setFont("Helvetica", 7.5)
+            c.setFillColor(MUTED_GRAY)
+            consent_when = _format_cert_datetime(recipient.consented_at)
+            consent_ver = recipient.consent_version or "—"
+            c.drawString(left + 12, y, f"Consent: {consent_when} · Version {consent_ver}")
+            if recipient.consent_ip:
+                c.drawRightString(right - 12, y, f"Consent IP: {recipient.consent_ip}")
+            y -= 10
+            c.setFont("Courier", 6.5)
+            c.setFillColor(colors.black)
+            hash_label = f"Disclosure SHA-256: {recipient.consent_text_sha256 or '—'}"
+            y = _draw_wrapped(c, hash_label, left + 12, y, 95, 9)
+            y -= 4
+
+        y -= 6
 
         # Signature / initials images
         image_y = y - 36
@@ -720,7 +806,7 @@ def _draw_footer(c: canvas.Canvas, envelope: Envelope, page_num: int, width: flo
     c.drawString(
         left,
         28,
-        "This certificate records the electronic signature events for this envelope.",
+        "ESIGN/UETA electronic signature record · retained for accurate reproduction.",
     )
     c.drawRightString(right, 28, f"Page {page_num}")
     c.drawString(left, 16, f"SignDesk · Envelope #{envelope.id}")

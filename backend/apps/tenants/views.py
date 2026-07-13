@@ -20,6 +20,7 @@ from apps.tenants.serializers import (
     SignupSerializer,
     TenantSerializer,
 )
+from apps.tenants.esign_disclosure import DEFAULT_ESIGN_ACKNOWLEDGEMENT
 
 User = get_user_model()
 
@@ -143,6 +144,25 @@ class TenantSettingsView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.tenant
+
+
+class RestoreEsignAcknowledgementView(views.APIView):
+    """Restore the workspace ESIGN/UETA disclosure to the platform default."""
+
+    permission_classes = [IsAuthenticated, IsTenantAdmin]
+
+    def post(self, request):
+        tenant = request.tenant
+        tenant.esign_acknowledgement = DEFAULT_ESIGN_ACKNOWLEDGEMENT
+        tenant.esign_acknowledgement_version = timezone.now().strftime("%Y-%m-%d")
+        tenant.save(
+            update_fields=[
+                "esign_acknowledgement",
+                "esign_acknowledgement_version",
+                "updated_at",
+            ]
+        )
+        return Response(TenantSerializer(tenant, context={"request": request}).data)
 
 
 class MembershipListView(generics.ListAPIView):

@@ -33,8 +33,11 @@ def send_completion_emails(envelope_id: int):
         body = (
             f"Hello {recipient.name},\n\n"
             f"The document '{envelope.title}' has been completed by all parties.\n\n"
-            f"Download your signed copy (no sign-in required):\n"
+            f"Download your signed PDF and Certificate of Completion "
+            f"(no sign-in required while this link remains valid):\n"
             f"{download_url}\n\n"
+            f"You may also request copies from the sender. Keep your own copies "
+            f"for your records.\n\n"
             f"— SignDesk\n"
         )
         send_mail(

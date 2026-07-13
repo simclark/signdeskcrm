@@ -29,6 +29,7 @@ from apps.tenants.views import (
     TenantMeView,
     TenantSettingsView,
     ThrottledTokenObtainPairView,
+    RestoreEsignAcknowledgementView,
 )
 from apps.accounts.views import ChangePasswordView, ProfileView
 from django.http import JsonResponse
@@ -68,6 +69,11 @@ urlpatterns = [
     ),
     path("api/tenant/me/", TenantMeView.as_view(), name="tenant-me"),
     path("api/tenant/settings/", TenantSettingsView.as_view(), name="tenant-settings"),
+    path(
+        "api/tenant/settings/restore-esign-acknowledgement/",
+        RestoreEsignAcknowledgementView.as_view(),
+        name="tenant-restore-esign-acknowledgement",
+    ),
     path("api/tenant/members/", MembershipListView.as_view(), name="tenant-members"),
     path(
         "api/tenant/invitations/",

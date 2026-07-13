@@ -5,6 +5,7 @@ import {
   Burger,
   Button,
   Group,
+  Image,
   Menu,
   NavLink,
   Text,
@@ -25,6 +26,9 @@ import {
   IconUsers,
 } from '@tabler/icons-react'
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
+import { toAppMediaUrl } from '../shared/mediaUrl'
+import { setDocumentFavicon } from '../shared/favicon'
 import { useAuth } from '../features/auth/AuthContext'
 import { ProfileDialog } from '../features/auth/ProfileDialog'
 import { CreateEnvelopeProvider, useCreateEnvelope } from '../features/envelopes/CreateEnvelopeContext'
@@ -70,6 +74,12 @@ function AppShellContent() {
   const { openCreateEnvelope } = useCreateEnvelope()
 
   const isAdmin = membership?.role === 'owner' || membership?.role === 'admin'
+  const iconUrl = toAppMediaUrl(tenant?.icon)
+
+  useEffect(() => {
+    setDocumentFavicon(iconUrl)
+    return () => setDocumentFavicon(null)
+  }, [iconUrl])
 
   const renderLink = (link: NavItem) => {
     const childActive = link.children?.some((child) => isPathActive(location.pathname, child.to))
@@ -176,12 +186,26 @@ function AppShellContent() {
                 )}
               </ActionIcon>
             </Tooltip>
-            <Text fw={700} style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 22 }}>
-              SignDesk
-            </Text>
-            <Text c="dimmed" size="sm" visibleFrom="sm">
-              {tenant!.name}
-            </Text>
+            <Group gap="sm">
+              {iconUrl ? (
+                <Image src={iconUrl} alt="" w={28} h={28} radius="sm" fit="contain" />
+              ) : (
+                <Text fw={700} style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 22 }}>
+                  SignDesk
+                </Text>
+              )}
+              <Text
+                fw={iconUrl ? 600 : undefined}
+                c={iconUrl ? undefined : 'dimmed'}
+                size={iconUrl ? 'md' : 'sm'}
+                visibleFrom="sm"
+                style={
+                  iconUrl ? { fontFamily: 'Fraunces, Georgia, serif', fontSize: 18 } : undefined
+                }
+              >
+                {tenant!.name}
+              </Text>
+            </Group>
           </Group>
           <Group>
             <Button variant="filled" onClick={() => openCreateEnvelope()}>
@@ -220,6 +244,11 @@ function AppShellContent() {
         style={{ background: 'transparent' }}
         className={desktopCollapsed ? 'sd-nav-collapsed' : undefined}
       >
+        {desktopCollapsed && iconUrl ? (
+          <Group justify="center" mb="md">
+            <Image src={iconUrl} alt={tenant!.name} w={32} h={32} radius="sm" fit="contain" />
+          </Group>
+        ) : null}
         {MEMBER_LINKS.map((link) => renderLink(link))}
         {isAdmin && (
           <>

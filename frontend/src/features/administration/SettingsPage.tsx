@@ -2,7 +2,7 @@ import {
   Anchor,
   Badge,
   Button,
-  ColorInput,
+  ColorSwatch,
   FileButton,
   Group,
   Image,
@@ -16,6 +16,7 @@ import {
   Textarea,
   TextInput,
   Title,
+  Tooltip,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDisclosure } from '@mantine/hooks'
@@ -23,8 +24,10 @@ import { notifications } from '@mantine/notifications'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   IconBuilding,
+  IconCheck,
   IconPalette,
   IconPencil,
+  IconRestore,
   IconSignature,
   IconUsers,
 } from '@tabler/icons-react'
@@ -32,18 +35,16 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { api, ApiError } from '../../shared/api'
 import { DataTable } from '../../shared/DataTable'
+import { toAppMediaUrl } from '../../shared/mediaUrl'
 import { useAuth } from '../auth/AuthContext'
 
-function mediaPath(url: string | null | undefined): string | null {
-  if (!url) return null
-  try {
-    const parsed = new URL(url, window.location.origin)
-    if (parsed.pathname.startsWith('/media/')) return parsed.pathname
-  } catch {
-    /* ignore */
-  }
-  return url
-}
+const ACCENT_COLOR_PRESETS = [
+  { color: '#0B6E4F', name: 'Forest' },
+  { color: '#1B4D3E', name: 'Deep green' },
+  { color: '#9F1239', name: 'Rose' },
+  { color: '#1D4ED8', name: 'Blue' },
+  { color: '#B45309', name: 'Amber' },
+] as const
 
 function SettingsSection({
   title,
@@ -206,8 +207,8 @@ export function SettingsPage() {
     acknowledgementForm.setValues({
       esign_acknowledgement: tenant.esign_acknowledgement || '',
     })
-    if (!iconFile) setIconPreview(mediaPath(tenant.icon))
-    if (!logoFile) setLogoPreview(mediaPath(tenant.logo))
+    if (!iconFile) setIconPreview(toAppMediaUrl(tenant.icon))
+    if (!logoFile) setLogoPreview(toAppMediaUrl(tenant.logo))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant?.id, tenant?.icon, tenant?.logo, tenant?.esign_acknowledgement, tenant?.name])
 
@@ -262,6 +263,24 @@ export function SettingsPage() {
     onError: (err) => {
       const message =
         err instanceof ApiError ? String(err.message) : 'Could not save acknowledgement'
+      notifications.show({ color: 'red', message })
+    },
+  })
+
+  const restoreAcknowledgement = useMutation({
+    mutationFn: () =>
+      api('/api/tenant/settings/restore-esign-acknowledgement/', { method: 'POST' }),
+    onSuccess: async () => {
+      await refreshMe()
+      setEditingAcknowledgement(false)
+      notifications.show({
+        color: 'forest',
+        message: 'Restored default ESIGN/UETA disclosure',
+      })
+    },
+    onError: (err) => {
+      const message =
+        err instanceof ApiError ? String(err.message) : 'Could not restore default disclosure'
       notifications.show({ color: 'red', message })
     },
   })
@@ -331,7 +350,7 @@ export function SettingsPage() {
 
   const acknowledgementText =
     tenant?.esign_acknowledgement?.trim() ||
-    'No acknowledgement text has been set yet. Signers will see a default notice until you add one.'
+    'No disclosure text has been set yet. Signers will see the platform default ESIGN/UETA notice until you add one.'
 
   if (!isAdmin) {
     return <Navigate to="/app" replace />
@@ -412,24 +431,52 @@ export function SettingsPage() {
               }
             >
               <Stack gap="lg">
-                <ColorInput
-                  label="Accent color"
-                  description="Primary action color across the workspace"
-                  format="hex"
-                  swatches={['#0B6E4F', '#1B4D3E', '#0F766E', '#1D4ED8', '#B45309']}
-                  {...workspaceForm.getInputProps('accent_color')}
-                />
+                <Stack gap={6}>
+                  <Text size="sm" fw={500}>
+                    Accent color
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    Used for buttons and highlights on the signing page
+                  </Text>
+                  <Group gap="sm" mt={4}>
+                    {ACCENT_COLOR_PRESETS.map(({ color, name }) => {
+                      const selected =
+                        workspaceForm.values.accent_color.toLowerCase() === color.toLowerCase()
+                      return (
+                        <Tooltip key={color} label={name} withArrow>
+                          <ColorSwatch
+                            color={color}
+                            component="button"
+                            type="button"
+                            aria-label={name}
+                            aria-pressed={selected}
+                            onClick={() => workspaceForm.setFieldValue('accent_color', color)}
+                            style={{
+                              cursor: 'pointer',
+                              color: '#fff',
+                              boxShadow: selected
+                                ? `0 0 0 2px var(--mantine-color-body), 0 0 0 4px ${color}`
+                                : undefined,
+                            }}
+                          >
+                            {selected ? <IconCheck size={14} stroke={3} /> : null}
+                          </ColorSwatch>
+                        </Tooltip>
+                      )
+                    })}
+                  </Group>
+                </Stack>
                 <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
                   <AssetUpload
                     label="Icon"
-                    hint="Square mark for compact spaces"
+                    hint="Workspace header, collapsed nav, and browser tab"
                     preview={iconPreview}
                     fileName={iconFile?.name || null}
                     onChange={setIconFile}
                   />
                   <AssetUpload
                     label="Company logo"
-                    hint="Used on signing pages and emails"
+                    hint="Shown to signers on the signing page"
                     preview={logoPreview}
                     previewWide
                     fileName={logoFile?.name || null}
@@ -445,8 +492,8 @@ export function SettingsPage() {
           {editingAcknowledgement ? (
             <form onSubmit={acknowledgementForm.onSubmit((v) => saveAcknowledgement.mutate(v))}>
               <SettingsSection
-                title="E-signature acknowledgement"
-                description="Legal notice shown to signers before they can continue. Saving creates a new version."
+                title="E-signature disclosure"
+                description="Shown to signers before they can continue. Signers keep a snapshot of the exact text they accepted—later edits only apply to new consents. Saving creates a new version."
                 actions={
                   <Group gap="sm">
                     <Badge variant="light" color="gray" size="lg" radius="sm">
@@ -467,9 +514,9 @@ export function SettingsPage() {
                 }
               >
                 <Textarea
-                  label="Acknowledgement text"
-                  description="Keep this clear and specific to your compliance requirements"
-                  minRows={8}
+                  label="Disclosure text"
+                  description="Include ESIGN/UETA consent, hardware/software requirements, paper copies, withdrawal, and how to get records"
+                  minRows={12}
                   autosize
                   {...acknowledgementForm.getInputProps('esign_acknowledgement')}
                 />
@@ -477,13 +524,21 @@ export function SettingsPage() {
             </form>
           ) : (
             <SettingsSection
-              title="E-signature acknowledgement"
-              description="Legal notice shown to signers before they can continue."
+              title="E-signature disclosure"
+              description="Legal notice shown to signers before they can continue. Signers accept a snapshot of this text; editing here does not change disclosures already accepted."
               actions={
                 <Group gap="sm">
                   <Badge variant="light" color="gray" size="lg" radius="sm">
                     Version {tenant?.esign_acknowledgement_version || '—'}
                   </Badge>
+                  <Button
+                    variant="default"
+                    leftSection={<IconRestore size={14} />}
+                    loading={restoreAcknowledgement.isPending}
+                    onClick={() => restoreAcknowledgement.mutate()}
+                  >
+                    Restore default
+                  </Button>
                   <Button
                     variant="light"
                     leftSection={<IconPencil size={14} />}
@@ -501,7 +556,7 @@ export function SettingsPage() {
             >
               <Stack gap="xs">
                 <Text size="sm" fw={600}>
-                  Acknowledgement text
+                  Disclosure text
                 </Text>
                 <Text
                   size="sm"

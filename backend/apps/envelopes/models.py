@@ -101,6 +101,13 @@ class Recipient(TenantOwnedModel):
     viewed_at = models.DateTimeField(null=True, blank=True)
     signed_at = models.DateTimeField(null=True, blank=True)
     last_reminded_at = models.DateTimeField(null=True, blank=True)
+    # Immutable ESIGN/UETA consent snapshot (set once on accept)
+    consented_at = models.DateTimeField(null=True, blank=True)
+    consent_version = models.CharField(max_length=32, blank=True)
+    consent_text = models.TextField(blank=True)
+    consent_text_sha256 = models.CharField(max_length=64, blank=True)
+    consent_ip = models.GenericIPAddressField(null=True, blank=True)
+    consent_user_agent = models.TextField(blank=True)
 
     class Meta:
         ordering = ["routing_order", "id"]

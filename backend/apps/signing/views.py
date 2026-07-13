@@ -11,16 +11,17 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
 from apps.audit.models import AuditEvent
+from apps.documents.serializers import DocumentVersionSerializer
 from apps.envelopes.models import Envelope, Field, Recipient, SignatureAsset
 from apps.envelopes.serializers import FieldSerializer
 from apps.envelopes.services import (
-    CONSENT_VERSION,
     accept_consent,
     complete_recipient_signing,
     mark_viewed,
     record_audit,
+    require_consent,
 )
-from apps.documents.serializers import DocumentVersionSerializer
+from apps.tenants.esign_disclosure import resolve_acknowledgement
 
 
 class SigningThrottle(ScopedRateThrottle):
@@ -38,6 +39,18 @@ def _download_paths(token: str) -> dict:
         "signed_download_url": f"/api/sign/{token}/download/?kind=signed",
         "certificate_download_url": f"/api/sign/{token}/download/?kind=certificate",
     }
+
+
+def _consent_denied_response():
+    return Response(
+        {
+            "detail": (
+                "You must accept the electronic records and signatures disclosure "
+                "before continuing."
+            )
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
 
 
 class SigningSessionView(views.APIView):
@@ -75,13 +88,12 @@ class SigningSessionView(views.APIView):
         version = envelope.document_version
         completed = envelope.status == Envelope.Status.COMPLETED and bool(envelope.signed_file)
         tenant = envelope.tenant
-        consent_version = tenant.esign_acknowledgement_version or CONSENT_VERSION
-        consent_text = tenant.esign_acknowledgement or (
-            "By continuing, you agree to conduct this transaction electronically, "
-            "to receive records electronically, and that your electronic signature "
-            "is legally binding. You may request a paper copy and withdraw consent "
-            "by contacting the sender."
-        )
+        # Show the snapshot already accepted, otherwise the live tenant disclosure.
+        if recipient.consented_at and recipient.consent_text:
+            consent_text = recipient.consent_text
+            consent_version = recipient.consent_version
+        else:
+            consent_text, consent_version = resolve_acknowledgement(tenant)
         logo_url = None
         icon_url = None
         if tenant.logo:
@@ -91,6 +103,7 @@ class SigningSessionView(views.APIView):
         payload = {
             "consent_version": consent_version,
             "consent_text": consent_text,
+            "has_consented": bool(recipient.consented_at),
             "recipient": {
                 "id": recipient.id,
                 "name": recipient.name,
@@ -192,8 +205,15 @@ class SigningConsentView(views.APIView):
         except Recipient.DoesNotExist:
             return Response({"detail": "Invalid link."}, status=404)
         accept_consent(recipient, request)
-        version = recipient.tenant.esign_acknowledgement_version or CONSENT_VERSION
-        return Response({"ok": True, "consent_version": version})
+        recipient.refresh_from_db()
+        return Response(
+            {
+                "ok": True,
+                "consent_version": recipient.consent_version,
+                "consent_text_sha256": recipient.consent_text_sha256,
+                "has_consented": True,
+            }
+        )
 
 
 class SigningFieldCompleteView(views.APIView):
@@ -205,6 +225,10 @@ class SigningFieldCompleteView(views.APIView):
             recipient = get_recipient_by_token(token)
         except Recipient.DoesNotExist:
             return Response({"detail": "Invalid link."}, status=404)
+        try:
+            require_consent(recipient)
+        except PermissionError:
+            return _consent_denied_response()
         try:
             field = recipient.fields.get(pk=field_id)
         except Field.DoesNotExist:
@@ -240,6 +264,10 @@ class SigningSubmitView(views.APIView):
             return Response({"detail": "Invalid link."}, status=404)
         if recipient.role != Recipient.Role.SIGNER:
             return Response({"detail": "Not a signer."}, status=400)
+        try:
+            require_consent(recipient)
+        except PermissionError:
+            return _consent_denied_response()
         try:
             complete_recipient_signing(recipient, request)
         except ValueError as exc:
