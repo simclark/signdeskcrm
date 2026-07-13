@@ -34,11 +34,28 @@ class DocumentVersionSerializer(serializers.ModelSerializer):
 
 class DocumentSerializer(serializers.ModelSerializer):
     current_version = DocumentVersionSerializer(read_only=True)
+    template_count = serializers.IntegerField(read_only=True, required=False)
+    envelope_count = serializers.IntegerField(read_only=True, required=False)
 
     class Meta:
         model = Document
-        fields = ("id", "title", "original_filename", "current_version", "created_at")
-        read_only_fields = ("id", "original_filename", "current_version", "created_at")
+        fields = (
+            "id",
+            "title",
+            "original_filename",
+            "current_version",
+            "created_at",
+            "template_count",
+            "envelope_count",
+        )
+        read_only_fields = (
+            "id",
+            "original_filename",
+            "current_version",
+            "created_at",
+            "template_count",
+            "envelope_count",
+        )
 
 
 class DocumentUploadSerializer(serializers.Serializer):

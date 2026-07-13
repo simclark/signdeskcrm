@@ -2,6 +2,7 @@ import {
   Button,
   Group,
   Modal,
+  SegmentedControl,
   Select,
   Stack,
   Text,
@@ -19,6 +20,12 @@ import type { TemplateListItem } from '../documents/templateTypes'
 import { api } from '../../shared/api'
 import { applyTemplateLayout } from './applyTemplate'
 import type { CreateEnvelopePrefill } from './CreateEnvelopeContext'
+
+type DocumentRow = {
+  id: number
+  title: string
+  current_version?: { page_count: number }
+}
 
 type DocumentCreated = {
   id: number
@@ -41,12 +48,14 @@ export function CreateEnvelopeDialog({ opened, onClose, prefill }: Props) {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [file, setFile] = useState<File | null>(null)
+  const [pdfSource, setPdfSource] = useState<'upload' | 'existing'>('upload')
 
   const form = useForm({
     initialValues: {
       title: '',
       message: '',
       template: '',
+      document: '',
     },
   })
 
@@ -54,6 +63,17 @@ export function CreateEnvelopeDialog({ opened, onClose, prefill }: Props) {
     if (opened) {
       form.reset()
       setFile(null)
+      if (prefill?.documentId) {
+        setPdfSource('existing')
+        form.setValues({
+          title: prefill.title || '',
+          message: '',
+          template: '',
+          document: String(prefill.documentId),
+        })
+      } else {
+        setPdfSource('upload')
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when dialog opens
   }, [opened])
@@ -64,18 +84,37 @@ export function CreateEnvelopeDialog({ opened, onClose, prefill }: Props) {
     enabled: opened,
   })
 
+  const { data: documents } = useQuery({
+    queryKey: ['documents'],
+    queryFn: () => api<{ results: DocumentRow[] }>('/api/documents/'),
+    enabled: opened && pdfSource === 'existing',
+  })
+
   const create = useMutation({
     mutationFn: async () => {
-      if (!file) throw new Error('Choose a PDF to upload')
-      const title = form.values.title.trim() || file.name.replace(/\.pdf$/i, '')
+      let documentId: number
+      let docPages: number | undefined
+      let title: string
 
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('title', title)
-      const document = await api<DocumentCreated>('/api/documents/', {
-        method: 'POST',
-        formData: fd,
-      })
+      if (pdfSource === 'upload') {
+        if (!file) throw new Error('Choose a PDF to upload')
+        title = form.values.title.trim() || file.name.replace(/\.pdf$/i, '')
+        const fd = new FormData()
+        fd.append('file', file)
+        fd.append('title', title)
+        const document = await api<DocumentCreated>('/api/documents/', {
+          method: 'POST',
+          formData: fd,
+        })
+        documentId = document.id
+        docPages = document.current_version?.page_count
+      } else {
+        if (!form.values.document) throw new Error('Choose an existing document')
+        documentId = Number(form.values.document)
+        const selected = documents?.results.find((d) => d.id === documentId)
+        title = form.values.title.trim() || selected?.title || 'Envelope'
+        docPages = selected?.current_version?.page_count
+      }
 
       const templateId = form.values.template ? Number(form.values.template) : null
       const envelope = await api<EnvelopeCreated>('/api/envelopes/', {
@@ -83,7 +122,7 @@ export function CreateEnvelopeDialog({ opened, onClose, prefill }: Props) {
         json: {
           title,
           message: form.values.message,
-          document: document.id,
+          document: documentId,
           ...(templateId ? { template: templateId } : {}),
         },
       })
@@ -92,12 +131,11 @@ export function CreateEnvelopeDialog({ opened, onClose, prefill }: Props) {
         const template = templates?.results.find((t) => t.id === templateId)
         const layout = Array.isArray(template?.field_layout) ? template.field_layout : []
         const tplPages = template?.page_count
-        const docPages = document.current_version?.page_count
         if (tplPages && docPages && tplPages !== docPages) {
           notifications.show({
             color: 'yellow',
             title: 'Page count differs',
-            message: `Template has ${tplPages} page(s); uploaded PDF has ${docPages}. Review field placement on prepare.`,
+            message: `Template has ${tplPages} page(s); PDF has ${docPages}. Review field placement on prepare.`,
           })
         }
         await applyTemplateLayout(envelope.id, layout, {
@@ -131,12 +169,19 @@ export function CreateEnvelopeDialog({ opened, onClose, prefill }: Props) {
       notifications.show({ color: 'red', title: 'Could not create envelope', message: err.message }),
   })
 
+  const canSubmit =
+    pdfSource === 'upload' ? !!file : !!form.values.document
+
   return (
     <Modal opened={opened} onClose={onClose} title="New envelope" size="lg">
       <Stack>
         <TextInput
           label="Title"
-          placeholder="Optional — defaults to file name"
+          placeholder={
+            pdfSource === 'upload'
+              ? 'Optional — defaults to file name'
+              : 'Optional — defaults to document title'
+          }
           {...form.getInputProps('title')}
         />
         <Textarea label="Message to signers" {...form.getInputProps('message')} />
@@ -144,42 +189,65 @@ export function CreateEnvelopeDialog({ opened, onClose, prefill }: Props) {
           <Text size="sm" fw={500} mb={6}>
             PDF file
           </Text>
-          <Dropzone
-            onDrop={(files) => {
-              const next = files[0]
-              if (!next) return
-              setFile(next)
-              if (!form.values.title) {
-                form.setFieldValue('title', next.name.replace(/\.pdf$/i, ''))
+          <SegmentedControl
+            fullWidth
+            value={pdfSource}
+            onChange={(v) => setPdfSource(v as 'upload' | 'existing')}
+            data={[
+              { label: 'Upload new', value: 'upload' },
+              { label: 'Existing document', value: 'existing' },
+            ]}
+            mb="sm"
+          />
+          {pdfSource === 'upload' ? (
+            <Dropzone
+              onDrop={(files) => {
+                const next = files[0]
+                if (!next) return
+                setFile(next)
+                if (!form.values.title) {
+                  form.setFieldValue('title', next.name.replace(/\.pdf$/i, ''))
+                }
+              }}
+              onReject={() =>
+                notifications.show({ color: 'red', message: 'Only PDF files are supported' })
               }
-            }}
-            onReject={() =>
-              notifications.show({ color: 'red', message: 'Only PDF files are supported' })
-            }
-            maxFiles={1}
-            accept={PDF_MIME_TYPE}
-            maxSize={25 * 1024 * 1024}
-          >
-            <Group justify="center" gap="md" mih={100} style={{ pointerEvents: 'none' }}>
-              <Dropzone.Accept>
-                <IconUpload size={32} stroke={1.5} />
-              </Dropzone.Accept>
-              <Dropzone.Reject>
-                <IconX size={32} stroke={1.5} />
-              </Dropzone.Reject>
-              <Dropzone.Idle>
-                <IconFileTypePdf size={32} stroke={1.5} />
-              </Dropzone.Idle>
-              <div>
-                <Text size="sm">
-                  {file ? file.name : 'Drop a PDF here or click to browse'}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  Max 25MB — this is the document recipients will sign
-                </Text>
-              </div>
-            </Group>
-          </Dropzone>
+              maxFiles={1}
+              accept={PDF_MIME_TYPE}
+              maxSize={25 * 1024 * 1024}
+            >
+              <Group justify="center" gap="md" mih={100} style={{ pointerEvents: 'none' }}>
+                <Dropzone.Accept>
+                  <IconUpload size={32} stroke={1.5} />
+                </Dropzone.Accept>
+                <Dropzone.Reject>
+                  <IconX size={32} stroke={1.5} />
+                </Dropzone.Reject>
+                <Dropzone.Idle>
+                  <IconFileTypePdf size={32} stroke={1.5} />
+                </Dropzone.Idle>
+                <div>
+                  <Text size="sm">
+                    {file ? file.name : 'Drop a PDF here or click to browse'}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    Max 25MB — this is the document recipients will sign
+                  </Text>
+                </div>
+              </Group>
+            </Dropzone>
+          ) : (
+            <Select
+              label="Document"
+              placeholder="Choose a document"
+              searchable
+              data={(documents?.results || []).map((d) => ({
+                value: String(d.id),
+                label: `${d.title}${d.current_version?.page_count ? ` (${d.current_version.page_count}p)` : ''}`,
+              }))}
+              {...form.getInputProps('document')}
+            />
+          )}
         </div>
         <Select
           label="Template (optional)"
@@ -199,7 +267,7 @@ export function CreateEnvelopeDialog({ opened, onClose, prefill }: Props) {
           <Button
             onClick={() => create.mutate()}
             loading={create.isPending}
-            disabled={!file}
+            disabled={!canSubmit}
           >
             Create envelope
           </Button>

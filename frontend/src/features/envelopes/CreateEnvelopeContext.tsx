@@ -6,6 +6,9 @@ export type CreateEnvelopePrefill = {
   contact?: number | null
   name?: string
   email?: string
+  /** Prefill “Existing document” source when opening from Documents. */
+  documentId?: number
+  title?: string
 }
 
 type CreateEnvelopeContextValue = {
