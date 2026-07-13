@@ -19,6 +19,7 @@ import { ContactDetailPage } from './features/contacts/ContactDetailPage'
 import { CompaniesPage } from './features/contacts/CompaniesPage'
 import { DocumentsPage } from './features/documents/DocumentsPage'
 import { TemplatesPage } from './features/documents/TemplatesPage'
+import { TemplatePreparePage } from './features/documents/TemplatePreparePage'
 import { EnvelopesPage } from './features/envelopes/EnvelopesPage'
 import { EnvelopePreparePage } from './features/envelopes/EnvelopePreparePage'
 import { EnvelopeDetailPage } from './features/envelopes/EnvelopeDetailPage'
@@ -42,6 +43,7 @@ const router = createBrowserRouter([
       { path: 'companies', element: <CompaniesPage /> },
       { path: 'documents', element: <DocumentsPage /> },
       { path: 'templates', element: <TemplatesPage /> },
+      { path: 'templates/:id/prepare', element: <TemplatePreparePage /> },
       { path: 'envelopes', element: <EnvelopesPage /> },
       { path: 'envelopes/new', element: <Navigate to="/app/envelopes" replace /> },
       { path: 'envelopes/:id/prepare', element: <EnvelopePreparePage /> },

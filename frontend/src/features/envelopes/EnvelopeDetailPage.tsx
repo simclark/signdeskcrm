@@ -6,18 +6,56 @@ import {
   Stack,
   Text,
   Title,
-  Timeline,
   Anchor,
 } from '@mantine/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../../shared/api'
 import { DataTable } from '../../shared/DataTable'
 import { notifications } from '@mantine/notifications'
+import { PdfViewerDialog } from '../documents/PdfViewerDialog'
+
+const EVENT_BADGE_COLOR: Record<string, string> = {
+  signed: 'forest',
+  completed: 'forest',
+  voided: 'red',
+  declined: 'red',
+  downloaded: 'blue',
+  consent_accepted: 'teal',
+  sent: 'blue',
+}
+
+function formatEventLabel(eventType: string) {
+  return eventType
+    .split('_')
+    .map((part, index) =>
+      index === 0 ? part.charAt(0).toUpperCase() + part.slice(1) : part,
+    )
+    .join(' ')
+}
+
+function formatAuditTime(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
 
 export function EnvelopeDetailPage() {
   const { id } = useParams()
   const qc = useQueryClient()
+  const [pdfViewer, setPdfViewer] = useState<{
+    url: string
+    title: string
+    downloadFileName: string
+  } | null>(null)
   const { data: envelope } = useQuery({
     queryKey: ['envelope', id],
     queryFn: () => api<any>(`/api/envelopes/${id}/`),
@@ -145,20 +183,50 @@ export function EnvelopeDetailPage() {
         <Title order={4} mb="md">
           Documents
         </Title>
-        <Stack gap="xs">
+        <Stack gap="xs" align="flex-start">
           {envelope.document_file_url && (
-            <Anchor href={envelope.document_file_url} target="_blank">
+            <Anchor
+              component="button"
+              type="button"
+              onClick={() =>
+                setPdfViewer({
+                  url: envelope.document_file_url,
+                  title: 'Original PDF',
+                  downloadFileName: `${envelope.title || 'document'}-original.pdf`,
+                })
+              }
+            >
               View original PDF
             </Anchor>
           )}
           {envelope.signed_file_url && (
-            <Anchor href={envelope.signed_file_url} target="_blank">
-              Download signed PDF
+            <Anchor
+              component="button"
+              type="button"
+              onClick={() =>
+                setPdfViewer({
+                  url: envelope.signed_file_url,
+                  title: 'Signed PDF',
+                  downloadFileName: `${envelope.title || 'document'}-signed.pdf`,
+                })
+              }
+            >
+              View signed PDF
             </Anchor>
           )}
           {envelope.certificate_file_url && (
-            <Anchor href={envelope.certificate_file_url} target="_blank">
-              Download Certificate of Completion
+            <Anchor
+              component="button"
+              type="button"
+              onClick={() =>
+                setPdfViewer({
+                  url: envelope.certificate_file_url,
+                  title: 'Certificate of Completion',
+                  downloadFileName: `${envelope.title || 'document'}-certificate.pdf`,
+                })
+              }
+            >
+              View Certificate of Completion
             </Anchor>
           )}
           {envelope.pre_sign_sha256 && (
@@ -178,20 +246,55 @@ export function EnvelopeDetailPage() {
         <Title order={4} mb="md">
           Audit trail
         </Title>
-        <Timeline active={audit?.length || 0}>
-          {(audit || []).map((e) => (
-            <Timeline.Item key={e.id} title={e.event_type}>
-              <Text size="sm">
-                {e.actor_name || e.actor_email || 'System'}
-                {e.ip_address ? ` · ${e.ip_address}` : ''}
-              </Text>
-              <Text size="xs" c="dimmed">
-                {new Date(e.created_at).toLocaleString()}
-              </Text>
-            </Timeline.Item>
-          ))}
-        </Timeline>
+        {(audit || []).length === 0 ? (
+          <Text c="dimmed" size="sm">
+            No audit events yet.
+          </Text>
+        ) : (
+          <DataTable embedded>
+            <DataTable.Thead>
+              <DataTable.Tr>
+                <DataTable.Th>Event</DataTable.Th>
+                <DataTable.Th>Actor</DataTable.Th>
+                <DataTable.Th>IP address</DataTable.Th>
+                <DataTable.Th>Time</DataTable.Th>
+              </DataTable.Tr>
+            </DataTable.Thead>
+            <DataTable.Tbody>
+              {(audit || []).map((e) => (
+                <DataTable.Tr key={e.id}>
+                  <DataTable.Td>
+                    <Badge
+                      variant="light"
+                      color={EVENT_BADGE_COLOR[e.event_type] || 'gray'}
+                      tt="none"
+                    >
+                      {formatEventLabel(e.event_type)}
+                    </Badge>
+                  </DataTable.Td>
+                  <DataTable.Td className="sd-table-primary">
+                    {e.actor_name || e.actor_email || 'System'}
+                  </DataTable.Td>
+                  <DataTable.Td className="sd-table-muted">
+                    {e.ip_address || '—'}
+                  </DataTable.Td>
+                  <DataTable.Td className="sd-table-muted">
+                    {formatAuditTime(e.created_at)}
+                  </DataTable.Td>
+                </DataTable.Tr>
+              ))}
+            </DataTable.Tbody>
+          </DataTable>
+        )}
       </Card>
+
+      <PdfViewerDialog
+        opened={!!pdfViewer}
+        onClose={() => setPdfViewer(null)}
+        fileUrl={pdfViewer?.url}
+        title={pdfViewer?.title}
+        downloadFileName={pdfViewer?.downloadFileName}
+      />
     </Stack>
   )
 }

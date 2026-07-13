@@ -15,4 +15,5 @@ class DocumentVersionAdmin(admin.ModelAdmin):
 
 @admin.register(Template)
 class TemplateAdmin(admin.ModelAdmin):
-    list_display = ("name", "tenant", "is_archived")
+    list_display = ("name", "document", "tenant", "is_active", "is_archived")
+    list_filter = ("is_active", "is_archived")

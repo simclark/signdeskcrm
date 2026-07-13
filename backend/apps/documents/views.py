@@ -40,7 +40,18 @@ class TemplateViewSet(viewsets.ModelViewSet):
     search_fields = ("name",)
 
     def get_queryset(self):
-        return Template.objects.for_tenant(self.request.tenant).filter(is_archived=False)
+        qs = (
+            Template.objects.for_tenant(self.request.tenant)
+            .filter(is_archived=False)
+            .select_related("document")
+            .prefetch_related("document__versions")
+        )
+        # Selection UIs pass ?active=true so inactive templates stay editable
+        # on the management list but are hidden from envelope dropdowns.
+        active = self.request.query_params.get("active")
+        if active is not None:
+            qs = qs.filter(is_active=active.lower() in ("1", "true", "yes"))
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(tenant=self.request.tenant, created_by=self.request.user)

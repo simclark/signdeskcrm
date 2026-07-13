@@ -14,7 +14,12 @@ from apps.envelopes.serializers import (
     FieldSerializer,
     RecipientSerializer,
 )
-from apps.envelopes.services import record_audit, send_envelope
+from apps.envelopes.services import (
+    next_copy_title,
+    record_audit,
+    regenerate_certificate as rebuild_certificate_pdf,
+    send_envelope,
+)
 from apps.tenants.permissions import IsTenantMember
 
 
@@ -90,7 +95,7 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
         source = self.get_object()
         clone = Envelope.objects.create(
             tenant=request.tenant,
-            title=f"{source.title} (copy)",
+            title=next_copy_title(source.title),
             message=source.message,
             routing=source.routing,
             document=source.document,
@@ -152,6 +157,18 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
         envelope = self.get_object()
         events = envelope.audit_events.all()
         return Response(AuditEventSerializer(events, many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="regenerate-certificate")
+    def regenerate_certificate(self, request, pk=None):
+        envelope = self.get_object()
+        if envelope.status != Envelope.Status.COMPLETED:
+            return Response(
+                {"detail": "Only completed envelopes have a certificate."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        rebuild_certificate_pdf(envelope)
+        envelope.refresh_from_db()
+        return Response(EnvelopeSerializer(envelope, context={"request": request}).data)
 
     @action(detail=True, methods=["put", "patch"])
     def recipients(self, request, pk=None):

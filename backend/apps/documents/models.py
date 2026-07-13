@@ -67,10 +67,15 @@ class DocumentVersion(TenantOwnedModel):
         return self.sha256
 
 
+ALLOWED_TEMPLATE_FIELD_TYPES = frozenset(
+    {"signature", "initials", "date", "text", "checkbox"}
+)
+
+
 class Template(TenantOwnedModel):
     name = models.CharField(max_length=255)
     document = models.ForeignKey(
-        Document, on_delete=models.SET_NULL, null=True, blank=True, related_name="templates"
+        Document, on_delete=models.PROTECT, related_name="templates"
     )
     field_layout = models.JSONField(default=list, blank=True)
     created_by = models.ForeignKey(
@@ -79,6 +84,7 @@ class Template(TenantOwnedModel):
         null=True,
         related_name="templates",
     )
+    is_active = models.BooleanField(default=True)
     is_archived = models.BooleanField(default=False)
 
     class Meta:

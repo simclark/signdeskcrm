@@ -15,20 +15,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconFileTypePdf, IconUpload, IconX } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import type { TemplateListItem } from '../documents/templateTypes'
 import { api } from '../../shared/api'
 import { applyTemplateLayout } from './applyTemplate'
 import type { CreateEnvelopePrefill } from './CreateEnvelopeContext'
-import type { TemplateLayoutItem } from './types'
-
-type Template = {
-  id: number
-  name: string
-  field_layout: TemplateLayoutItem[]
-}
 
 type DocumentCreated = {
   id: number
   title: string
+  current_version?: { page_count: number }
 }
 
 type EnvelopeCreated = {
@@ -64,8 +59,8 @@ export function CreateEnvelopeDialog({ opened, onClose, prefill }: Props) {
   }, [opened])
 
   const { data: templates } = useQuery({
-    queryKey: ['templates'],
-    queryFn: () => api<{ results: Template[] }>('/api/templates/'),
+    queryKey: ['templates', 'active'],
+    queryFn: () => api<{ results: TemplateListItem[] }>('/api/templates/?active=true'),
     enabled: opened,
   })
 
@@ -96,25 +91,35 @@ export function CreateEnvelopeDialog({ opened, onClose, prefill }: Props) {
       if (templateId) {
         const template = templates?.results.find((t) => t.id === templateId)
         const layout = Array.isArray(template?.field_layout) ? template.field_layout : []
+        const tplPages = template?.page_count
+        const docPages = document.current_version?.page_count
+        if (tplPages && docPages && tplPages !== docPages) {
+          notifications.show({
+            color: 'yellow',
+            title: 'Page count differs',
+            message: `Template has ${tplPages} page(s); uploaded PDF has ${docPages}. Review field placement on prepare.`,
+          })
+        }
         await applyTemplateLayout(envelope.id, layout, {
           contact: prefill?.contact,
           name: prefill?.name,
           email: prefill?.email,
         })
-        return { envelope, next: 'detail' as const }
       }
 
-      return { envelope, next: 'prepare' as const }
+      // Always open prepare so the user can nudge fields on the real PDF
+      return { envelope, usedTemplate: !!templateId }
     },
-    onSuccess: ({ envelope, next }) => {
+    onSuccess: ({ envelope, usedTemplate }) => {
       qc.invalidateQueries({ queryKey: ['envelopes'] })
       qc.invalidateQueries({ queryKey: ['documents'] })
-      notifications.show({ color: 'forest', message: 'Draft envelope created' })
+      notifications.show({
+        color: 'forest',
+        message: usedTemplate
+          ? 'Draft created with template layout — review fields on the PDF'
+          : 'Draft envelope created',
+      })
       onClose()
-      if (next === 'detail') {
-        navigate(`/app/envelopes/${envelope.id}`)
-        return
-      }
       const params = new URLSearchParams()
       if (prefill?.contact) params.set('contact', String(prefill.contact))
       if (prefill?.name) params.set('name', prefill.name)
@@ -170,7 +175,7 @@ export function CreateEnvelopeDialog({ opened, onClose, prefill }: Props) {
                   {file ? file.name : 'Drop a PDF here or click to browse'}
                 </Text>
                 <Text size="xs" c="dimmed">
-                  Max 25MB
+                  Max 25MB — this is the document recipients will sign
                 </Text>
               </div>
             </Group>
@@ -178,11 +183,12 @@ export function CreateEnvelopeDialog({ opened, onClose, prefill }: Props) {
         </div>
         <Select
           label="Template (optional)"
-          description="Using a template skips field mapping and opens the envelope detail."
+          description="Applies the template’s signature field layout onto this PDF. You’ll review placement next."
           clearable
+          searchable
           data={(templates?.results || []).map((t) => ({
             value: String(t.id),
-            label: t.name,
+            label: `${t.name}${t.page_count ? ` (${t.page_count}p, ${Array.isArray(t.field_layout) ? t.field_layout.length : 0} fields)` : ''}`,
           }))}
           {...form.getInputProps('template')}
         />

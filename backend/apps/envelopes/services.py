@@ -2,22 +2,59 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
+import re
 from datetime import timedelta
 
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
 from pypdf import PdfReader, PdfWriter
+from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from apps.audit.models import AuditEvent
 from apps.contacts.models import Activity
-from apps.envelopes.models import Envelope, Field, Recipient
+from apps.envelopes.models import Envelope, Field, Recipient, SignatureAsset
 
 
 CONSENT_VERSION = "2026-01"
+BRAND_GREEN = colors.HexColor("#0b6e4f")
+MUTED_GRAY = colors.HexColor("#5c6570")
+RULE_GRAY = colors.HexColor("#d8dde3")
+LIGHT_BAND = colors.HexColor("#f4f7f5")
+
+_COPY_SUFFIX_RE = re.compile(r"(?:\s*\(copy(?:\s+\d+)?\))+$", re.IGNORECASE)
+_COPY_PART_RE = re.compile(r"\(copy(?:\s+(\d+))?\)", re.IGNORECASE)
+
+
+def next_copy_title(title: str) -> str:
+    """Build a copy title without stacking repeated "(copy)" suffixes.
+
+    Examples:
+      "Agreement" → "Agreement (copy)"
+      "Agreement (copy)" → "Agreement (copy 2)"
+      "Agreement (copy 2)" → "Agreement (copy 3)"
+      "Agreement (copy) (copy)" → "Agreement (copy 3)"
+    """
+    title = (title or "").strip() or "Untitled"
+    match = _COPY_SUFFIX_RE.search(title)
+    if not match:
+        return f"{title} (copy)"
+
+    base = title[: match.start()].rstrip() or "Untitled"
+    numbers = [
+        int(part.group(1)) if part.group(1) else 1
+        for part in _COPY_PART_RE.finditer(match.group(0))
+    ]
+    if len(numbers) > 1 and all(n == 1 for n in numbers):
+        next_n = len(numbers) + 1
+    else:
+        next_n = max(numbers, default=1) + 1
+    return f"{base} (copy {next_n})"
 
 
 def client_meta(request):
@@ -265,22 +302,13 @@ def flatten_envelope_pdf(envelope: Envelope) -> bytes:
                 Field.FieldType.SIGNATURE,
                 Field.FieldType.INITIALS,
             ):
-                if field.value.startswith("data:image") or field.value.startswith("/"):
-                    # value may be media path or we store image path in value
+                path = _resolve_image_path(field.value)
+                if path:
                     try:
-                        from django.conf import settings
-                        import os
-
-                        path = field.value
-                        if path.startswith(settings.MEDIA_URL):
-                            path = os.path.join(
-                                settings.MEDIA_ROOT, path[len(settings.MEDIA_URL) :]
-                            )
-                        if os.path.exists(path):
-                            img = ImageReader(path)
-                            c.drawImage(
-                                img, x, y, width=w, height=h, mask="auto", preserveAspectRatio=True
-                            )
+                        img = ImageReader(path)
+                        c.drawImage(
+                            img, x, y, width=w, height=h, mask="auto", preserveAspectRatio=True
+                        )
                     except Exception:
                         c.setFont("Helvetica-Oblique", max(8, h * 0.4))
                         c.drawString(x + 2, y + h / 3, field.recipient.name)
@@ -307,60 +335,403 @@ def flatten_envelope_pdf(envelope: Envelope) -> bytes:
     return out.getvalue()
 
 
+def _resolve_image_path(value: str | None) -> str | None:
+    """Resolve a Field.value or media path to a readable filesystem path."""
+    if not value:
+        return None
+    path = value
+    if path.startswith("data:image"):
+        return None
+    media_url = settings.MEDIA_URL or "/media/"
+    if path.startswith(media_url):
+        path = os.path.join(settings.MEDIA_ROOT, path[len(media_url) :])
+    elif path.startswith("/media/"):
+        path = os.path.join(settings.MEDIA_ROOT, path[len("/media/") :])
+    if os.path.exists(path):
+        return path
+    return None
+
+
+def _format_cert_datetime(value) -> str:
+    if not value:
+        return "—"
+    if timezone.is_aware(value):
+        value = timezone.localtime(value)
+    return value.strftime("%b %d, %Y · %I:%M:%S %p %Z")
+
+
+def _wrap_text(text: str, max_chars: int) -> list[str]:
+    text = (text or "").strip()
+    if not text:
+        return [""]
+    words = text.split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines or [""]
+
+
+def _signer_asset_path(recipient: Recipient, kind: str) -> str | None:
+    asset = (
+        SignatureAsset.objects.filter(recipient=recipient, kind=kind)
+        .order_by("-created_at")
+        .first()
+    )
+    if asset and asset.image:
+        try:
+            path = asset.image.path
+            if os.path.exists(path):
+                return path
+        except Exception:
+            pass
+    field = (
+        Field.objects.filter(
+            recipient=recipient,
+            field_type=kind,
+        )
+        .exclude(value="")
+        .order_by("-completed_at", "-id")
+        .first()
+    )
+    if field:
+        return _resolve_image_path(field.value)
+    return None
+
+
+def _draw_wrapped(c: canvas.Canvas, text: str, x: float, y: float, max_chars: int, leading: float):
+    lines = _wrap_text(text, max_chars)
+    for line in lines:
+        c.drawString(x, y, line)
+        y -= leading
+    return y
+
+
 def generate_certificate_pdf(envelope: Envelope) -> bytes:
+    """Professional Certificate of Completion with signer signatures/initials."""
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
-    y = height - 54
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(54, y, "Certificate of Completion")
-    y -= 28
-    c.setFont("Helvetica", 11)
-    c.drawString(54, y, f"Envelope: {envelope.title}")
-    y -= 16
-    c.drawString(54, y, f"Envelope ID: {envelope.id}")
-    y -= 16
-    c.drawString(54, y, f"Workspace: {envelope.tenant.name} ({envelope.tenant.slug})")
-    y -= 16
-    c.drawString(54, y, f"Completed: {envelope.completed_at or timezone.now()}")
-    y -= 16
-    c.drawString(54, y, f"Document hash (pre-sign): {envelope.pre_sign_sha256}")
-    y -= 16
-    c.drawString(54, y, f"Document hash (post-sign): {envelope.post_sign_sha256}")
-    y -= 28
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(54, y, "Recipients")
-    y -= 18
+    left = 54
+    right = width - 54
+    content_width = right - left
+    page_num = 1
+
+    recipients = list(
+        envelope.recipients.select_related("contact").prefetch_related("signature_assets").all()
+    )
+    audit_events = list(envelope.audit_events.all())
+
+    def ensure_space(y: float, needed: float) -> float:
+        nonlocal page_num
+        if y - needed >= 64:
+            return y
+        _draw_footer(c, envelope, page_num, width)
+        c.showPage()
+        page_num += 1
+        return _draw_continuation_header(c, envelope, width, height)
+
+    # ── Header band ──────────────────────────────────────────────
+    c.setFillColor(BRAND_GREEN)
+    c.rect(0, height - 96, width, 96, fill=1, stroke=0)
+    c.setFillColor(colors.white)
     c.setFont("Helvetica", 10)
-    for r in envelope.recipients.all():
-        line = f"{r.name} <{r.email}> — {r.role} — {r.status}"
-        if r.signed_at:
-            line += f" — signed {r.signed_at.isoformat()}"
-        c.drawString(54, y, line[:110])
-        y -= 14
-        if y < 80:
-            c.showPage()
-            y = height - 54
-            c.setFont("Helvetica", 10)
-    y -= 12
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(54, y, "Audit trail")
-    y -= 18
+    c.drawString(left, height - 36, "SignDesk")
+    c.setFont("Helvetica-Bold", 22)
+    c.drawString(left, height - 64, "Certificate of Completion")
     c.setFont("Helvetica", 9)
-    for event in envelope.audit_events.all():
-        line = (
-            f"{event.created_at.isoformat()} | {event.event_type} | "
-            f"{event.actor_email} | ip={event.ip_address or '-'}"
+    c.drawRightString(right, height - 36, "Electronic Signature Record")
+    completed_label = _format_cert_datetime(envelope.completed_at or timezone.now())
+    c.drawRightString(right, height - 52, completed_label)
+
+    y = height - 124
+
+    # ── Document summary ─────────────────────────────────────────
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(left, y, "Document")
+    y -= 8
+    c.setStrokeColor(RULE_GRAY)
+    c.setLineWidth(1)
+    c.line(left, y, right, y)
+    y -= 18
+
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(colors.black)
+    y = _draw_wrapped(c, envelope.title or "Untitled envelope", left, y, 90, 14)
+    y -= 4
+
+    c.setFont("Helvetica", 9)
+    c.setFillColor(MUTED_GRAY)
+    meta_rows = [
+        ("Envelope ID", str(envelope.id)),
+        ("Workspace", f"{envelope.tenant.name} ({envelope.tenant.slug})"),
+        ("Status", (envelope.status or "").replace("_", " ").title()),
+        ("Completed", completed_label),
+    ]
+    for label, value in meta_rows:
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColor(MUTED_GRAY)
+        c.drawString(left, y, f"{label}")
+        c.setFont("Helvetica", 9)
+        c.setFillColor(colors.black)
+        c.drawString(left + 90, y, value)
+        y -= 14
+
+    y -= 10
+    y = ensure_space(y, 70)
+
+    # ── Document integrity ───────────────────────────────────────
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(left, y, "Document integrity")
+    y -= 8
+    c.setStrokeColor(RULE_GRAY)
+    c.line(left, y, right, y)
+    y -= 18
+    c.setFont("Helvetica", 8)
+    c.setFillColor(MUTED_GRAY)
+    c.drawString(left, y, "Pre-sign SHA-256")
+    y -= 12
+    c.setFillColor(colors.black)
+    c.setFont("Courier", 7.5)
+    y = _draw_wrapped(c, envelope.pre_sign_sha256 or "—", left, y, 100, 10)
+    y -= 6
+    c.setFont("Helvetica", 8)
+    c.setFillColor(MUTED_GRAY)
+    c.drawString(left, y, "Post-sign SHA-256")
+    y -= 12
+    c.setFillColor(colors.black)
+    c.setFont("Courier", 7.5)
+    y = _draw_wrapped(c, envelope.post_sign_sha256 or "—", left, y, 100, 10)
+    y -= 16
+
+    # ── Signers ──────────────────────────────────────────────────
+    y = ensure_space(y, 40)
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(left, y, "Signers")
+    y -= 8
+    c.setStrokeColor(RULE_GRAY)
+    c.line(left, y, right, y)
+    y -= 14
+
+    if not recipients:
+        c.setFont("Helvetica", 9)
+        c.setFillColor(MUTED_GRAY)
+        c.drawString(left, y, "No recipients.")
+        y -= 16
+
+    for idx, recipient in enumerate(recipients, start=1):
+        sig_path = _signer_asset_path(recipient, "signature")
+        initials_path = _signer_asset_path(recipient, "initials")
+        block_height = 118 if (sig_path or initials_path) else 72
+        y = ensure_space(y, block_height + 12)
+
+        # Card background
+        card_top = y + 8
+        card_bottom = y - block_height + 16
+        c.setFillColor(LIGHT_BAND)
+        c.roundRect(left, card_bottom, content_width, card_top - card_bottom, 6, fill=1, stroke=0)
+
+        c.setFillColor(BRAND_GREEN)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(left + 12, y, f"Signer {idx}")
+
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(left + 70, y, recipient.name or "—")
+        y -= 14
+
+        c.setFont("Helvetica", 9)
+        c.setFillColor(MUTED_GRAY)
+        c.drawString(left + 12, y, recipient.email or "—")
+        role_status = f"{(recipient.role or '').title()} · {(recipient.status or '').replace('_', ' ').title()}"
+        c.drawRightString(right - 12, y, role_status)
+        y -= 14
+
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica", 8)
+        signed_line = f"Signed: {_format_cert_datetime(recipient.signed_at)}"
+        c.drawString(left + 12, y, signed_line)
+
+        # Best-effort IP from signed audit event for this actor
+        signed_event = next(
+            (
+                e
+                for e in audit_events
+                if e.event_type == AuditEvent.EventType.SIGNED
+                and (
+                    e.actor_email == recipient.email
+                    or (e.recipient_id and e.recipient_id == recipient.id)
+                )
+            ),
+            None,
         )
-        c.drawString(54, y, line[:115])
+        if signed_event and signed_event.ip_address:
+            c.drawRightString(right - 12, y, f"IP: {signed_event.ip_address}")
+        y -= 18
+
+        # Signature / initials images
+        image_y = y - 36
+        col_x = left + 12
+        if sig_path:
+            c.setFont("Helvetica", 7)
+            c.setFillColor(MUTED_GRAY)
+            c.drawString(col_x, y, "SIGNATURE")
+            try:
+                img = ImageReader(sig_path)
+                c.drawImage(
+                    img,
+                    col_x,
+                    image_y,
+                    width=160,
+                    height=40,
+                    mask="auto",
+                    preserveAspectRatio=True,
+                )
+            except Exception:
+                c.setFillColor(colors.black)
+                c.setFont("Helvetica-Oblique", 10)
+                c.drawString(col_x, image_y + 14, recipient.name)
+            col_x += 180
+
+        if initials_path:
+            c.setFont("Helvetica", 7)
+            c.setFillColor(MUTED_GRAY)
+            c.drawString(col_x, y, "INITIALS")
+            try:
+                img = ImageReader(initials_path)
+                c.drawImage(
+                    img,
+                    col_x,
+                    image_y,
+                    width=72,
+                    height=40,
+                    mask="auto",
+                    preserveAspectRatio=True,
+                )
+            except Exception:
+                c.setFillColor(colors.black)
+                c.setFont("Helvetica-Oblique", 10)
+                c.drawString(col_x, image_y + 14, "—")
+
+        if sig_path or initials_path:
+            y = image_y - 14
+        else:
+            c.setFont("Helvetica-Oblique", 8)
+            c.setFillColor(MUTED_GRAY)
+            c.drawString(left + 12, y, "No signature image on file")
+            y -= 14
+
+        y = min(y, card_bottom - 12)
+
+    # ── Audit trail ──────────────────────────────────────────────
+    y = ensure_space(y, 40)
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(left, y, "Audit trail")
+    y -= 8
+    c.setStrokeColor(RULE_GRAY)
+    c.line(left, y, right, y)
+    y -= 16
+
+    # Column headers
+    c.setFont("Helvetica-Bold", 8)
+    c.setFillColor(MUTED_GRAY)
+    c.drawString(left, y, "Time")
+    c.drawString(left + 130, y, "Event")
+    c.drawString(left + 250, y, "Actor")
+    c.drawString(left + 400, y, "IP")
+    y -= 6
+    c.setStrokeColor(RULE_GRAY)
+    c.line(left, y, right, y)
+    y -= 12
+
+    event_labels = {
+        "created": "Created",
+        "sent": "Sent",
+        "viewed": "Viewed",
+        "consent_accepted": "Consent accepted",
+        "field_completed": "Field completed",
+        "signed": "Signed",
+        "declined": "Declined",
+        "voided": "Voided",
+        "completed": "Completed",
+        "reminded": "Reminded",
+        "downloaded": "Downloaded",
+    }
+
+    for event in audit_events:
+        y = ensure_space(y, 16)
+        c.setFont("Helvetica", 7.5)
+        c.setFillColor(colors.black)
+        when = _format_cert_datetime(event.created_at)
+        # Shorter time for table density
+        if event.created_at:
+            local = (
+                timezone.localtime(event.created_at)
+                if timezone.is_aware(event.created_at)
+                else event.created_at
+            )
+            when = local.strftime("%b %d, %Y %I:%M:%S %p")
+        c.drawString(left, y, when[:28])
+        c.drawString(left + 130, y, event_labels.get(event.event_type, event.event_type)[:22])
+        actor = event.actor_name or event.actor_email or "System"
+        c.drawString(left + 250, y, actor[:28])
+        c.drawString(left + 400, y, str(event.ip_address or "—"))
         y -= 12
-        if y < 54:
-            c.showPage()
-            y = height - 54
-            c.setFont("Helvetica", 9)
-    c.showPage()
+
+    _draw_footer(c, envelope, page_num, width)
     c.save()
     return buffer.getvalue()
+
+
+def _draw_continuation_header(c: canvas.Canvas, envelope: Envelope, width: float, height: float) -> float:
+    left = 54
+    right = width - 54
+    c.setFillColor(BRAND_GREEN)
+    c.rect(0, height - 40, width, 40, fill=1, stroke=0)
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(left, height - 26, "Certificate of Completion (continued)")
+    c.setFont("Helvetica", 8)
+    c.drawRightString(right, height - 26, (envelope.title or "")[:40])
+    return height - 64
+
+
+def _draw_footer(c: canvas.Canvas, envelope: Envelope, page_num: int, width: float):
+    left = 54
+    right = width - 54
+    c.setStrokeColor(RULE_GRAY)
+    c.setLineWidth(0.5)
+    c.line(left, 42, right, 42)
+    c.setFillColor(MUTED_GRAY)
+    c.setFont("Helvetica", 7)
+    c.drawString(
+        left,
+        28,
+        "This certificate records the electronic signature events for this envelope.",
+    )
+    c.drawRightString(right, 28, f"Page {page_num}")
+    c.drawString(left, 16, f"SignDesk · Envelope #{envelope.id}")
+
+
+def regenerate_certificate(envelope: Envelope) -> Envelope:
+    """Rebuild and store the Certificate of Completion for a completed envelope."""
+    cert_bytes = generate_certificate_pdf(envelope)
+    envelope.certificate_file.save(
+        f"envelope-{envelope.id}-certificate.pdf", ContentFile(cert_bytes), save=True
+    )
+    return envelope
 
 
 @transaction.atomic
@@ -374,12 +745,13 @@ def finalize_envelope_sync(envelope_id: int):
     envelope.signed_file.save(
         f"envelope-{envelope.id}-signed.pdf", ContentFile(pdf_bytes), save=False
     )
+    # Set completed_at before generating certificate so the PDF shows the timestamp
+    envelope.status = Envelope.Status.COMPLETED
+    envelope.completed_at = timezone.now()
     cert_bytes = generate_certificate_pdf(envelope)
     envelope.certificate_file.save(
         f"envelope-{envelope.id}-certificate.pdf", ContentFile(cert_bytes), save=False
     )
-    envelope.status = Envelope.Status.COMPLETED
-    envelope.completed_at = timezone.now()
     envelope.save()
 
     record_audit(

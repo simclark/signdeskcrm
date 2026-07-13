@@ -10,7 +10,7 @@ from reportlab.pdfgen import canvas
 from apps.accounts.models import User
 from apps.documents.models import Document, DocumentVersion
 from apps.envelopes.models import Envelope, Field, Recipient
-from apps.envelopes.services import flatten_envelope_pdf
+from apps.envelopes.services import flatten_envelope_pdf, next_copy_title
 from apps.tenants.models import Membership, Tenant
 
 
@@ -134,3 +134,26 @@ class FlattenFieldTypesTests(TestCase):
         self.assertGreater(len(pdf_bytes), 500)
         reader = PdfReader(io.BytesIO(pdf_bytes))
         self.assertEqual(len(reader.pages), 2)
+
+
+class NextCopyTitleTests(TestCase):
+    def test_first_copy_appends_copy(self):
+        self.assertEqual(next_copy_title("sample-service-agreement"), "sample-service-agreement (copy)")
+
+    def test_copy_of_copy_uses_number(self):
+        self.assertEqual(
+            next_copy_title("sample-service-agreement (copy)"),
+            "sample-service-agreement (copy 2)",
+        )
+
+    def test_increments_numbered_copy(self):
+        self.assertEqual(
+            next_copy_title("sample-service-agreement (copy 2)"),
+            "sample-service-agreement (copy 3)",
+        )
+
+    def test_normalizes_stacked_copy_suffixes(self):
+        self.assertEqual(
+            next_copy_title("sample-service-agreement (copy) (copy)"),
+            "sample-service-agreement (copy 3)",
+        )
