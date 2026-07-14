@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../../shared/api'
+import { PageBreadcrumbs } from '../../shared/PageBreadcrumbs'
 import { newFieldId, type FieldDraft } from '../envelopes/types'
 import { PdfFieldMapper } from './PdfFieldMapper'
 import {
@@ -143,6 +144,12 @@ export function TemplatePreparePage() {
 
   return (
     <Stack gap="md">
+      <PageBreadcrumbs
+        items={[
+          { label: 'Templates', to: '/app/templates' },
+          { label: template.name },
+        ]}
+      />
       <Group justify="space-between" align="flex-start">
         <div>
           <Group gap="sm" mb={4}>

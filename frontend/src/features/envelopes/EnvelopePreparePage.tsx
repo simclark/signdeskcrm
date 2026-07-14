@@ -13,6 +13,7 @@ import {
 } from '../documents/pdfFieldMapperUtils'
 import type { TemplateListItem } from '../documents/templateTypes'
 import { api } from '../../shared/api'
+import { PageBreadcrumbs } from '../../shared/PageBreadcrumbs'
 import { newFieldId, type EnvelopeDetail, type FieldDraft, type FieldType } from './types'
 
 function validatePrepareDrafts(signers: RoleDraft[], fields: FieldDraft[]): string | null {
@@ -274,6 +275,13 @@ export function EnvelopePreparePage() {
   if (envelope.status !== 'draft') {
     return (
       <Stack>
+        <PageBreadcrumbs
+          items={[
+            { label: 'Envelopes', to: '/app/envelopes' },
+            { label: envelope.title, to: `/app/envelopes/${id}` },
+            { label: 'Prepare' },
+          ]}
+        />
         <Title order={2}>Prepare envelope</Title>
         <Text c="dimmed">Only draft envelopes can be prepared.</Text>
         <Button variant="light" onClick={() => navigate(`/app/envelopes/${id}`)}>
@@ -285,6 +293,13 @@ export function EnvelopePreparePage() {
 
   return (
     <Stack gap="md">
+      <PageBreadcrumbs
+        items={[
+          { label: 'Envelopes', to: '/app/envelopes' },
+          { label: envelope.title, to: `/app/envelopes/${id}` },
+          { label: 'Prepare' },
+        ]}
+      />
       <div>
         <Title order={2}>Prepare: {envelope.title}</Title>
         <Text c="dimmed">

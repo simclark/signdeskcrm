@@ -18,6 +18,7 @@ import { DashboardPage } from './features/dashboard/DashboardPage'
 import { ContactsPage } from './features/contacts/ContactsPage'
 import { ContactDetailPage } from './features/contacts/ContactDetailPage'
 import { CompaniesPage } from './features/contacts/CompaniesPage'
+import { CompanyDetailPage } from './features/contacts/CompanyDetailPage'
 import { DocumentsPage } from './features/documents/DocumentsPage'
 import { TemplatesPage } from './features/documents/TemplatesPage'
 import { TemplatePreparePage } from './features/documents/TemplatePreparePage'
@@ -49,6 +50,7 @@ const router = createBrowserRouter([
       { path: 'contacts', element: <ContactsPage /> },
       { path: 'contacts/:id', element: <ContactDetailPage /> },
       { path: 'companies', element: <CompaniesPage /> },
+      { path: 'companies/:id', element: <CompanyDetailPage /> },
       { path: 'documents', element: <DocumentsPage /> },
       { path: 'templates', element: <TemplatesPage /> },
       { path: 'templates/:id/prepare', element: <TemplatePreparePage /> },

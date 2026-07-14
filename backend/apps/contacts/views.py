@@ -34,9 +34,24 @@ class CompanyViewSet(TenantScopedMixin, viewsets.ModelViewSet):
             message=f"Company {company.name} created",
         )
 
+    def perform_update(self, serializer):
+        company = serializer.save()
+        Activity.objects.create(
+            tenant=self.request.tenant,
+            company=company,
+            kind=Activity.Kind.UPDATED,
+            message=f"Company {company.name} updated",
+        )
+
     def perform_destroy(self, instance):
         instance.is_archived = True
         instance.save(update_fields=["is_archived", "updated_at"])
+
+    @action(detail=True, methods=["get"])
+    def activities(self, request, pk=None):
+        company = self.get_object()
+        qs = Activity.objects.for_tenant(request.tenant).filter(company=company)
+        return Response(ActivitySerializer(qs[:50], many=True).data)
 
 
 class ContactViewSet(TenantScopedMixin, viewsets.ModelViewSet):

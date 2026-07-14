@@ -1,21 +1,25 @@
 import {
+  ActionIcon,
   Button,
   Group,
   Modal,
+  Select,
   Stack,
   Text,
   TextInput,
+  Textarea,
   Title,
-  ActionIcon,
 } from '@mantine/core'
-import { useDisclosure } from '@mantine/hooks'
+import { useDebouncedValue, useDisclosure } from '@mantine/hooks'
 import { useForm } from '@mantine/form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { IconTrash } from '@tabler/icons-react'
+import { IconSearch, IconTrash } from '@tabler/icons-react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../../shared/api'
 import { DataTable } from '../../shared/DataTable'
 import { useCreateEnvelope } from '../envelopes/CreateEnvelopeContext'
+import { useCompaniesOptions } from './useCompaniesOptions'
 
 type Contact = {
   id: number
@@ -29,14 +33,29 @@ type Contact = {
   company_name?: string
 }
 
+function contactsListUrl(search: string, company: string | null) {
+  const params = new URLSearchParams()
+  if (search.trim()) params.set('search', search.trim())
+  if (company) params.set('company', company)
+  const qs = params.toString()
+  return qs ? `/api/contacts/?${qs}` : '/api/contacts/'
+}
+
 export function ContactsPage() {
   const qc = useQueryClient()
   const [opened, { open, close }] = useDisclosure(false)
   const { openCreateEnvelope } = useCreateEnvelope()
+  const companyOptions = useCompaniesOptions()
+  const [search, setSearch] = useState('')
+  const [debouncedSearch] = useDebouncedValue(search, 300)
+  const [companyFilter, setCompanyFilter] = useState<string | null>(null)
+
   const { data } = useQuery({
-    queryKey: ['contacts'],
-    queryFn: () => api<{ results: Contact[] }>('/api/contacts/'),
+    queryKey: ['contacts', { search: debouncedSearch.trim(), company: companyFilter }],
+    queryFn: () =>
+      api<{ results: Contact[] }>(contactsListUrl(debouncedSearch, companyFilter)),
   })
+
   const form = useForm({
     initialValues: {
       first_name: '',
@@ -44,21 +63,38 @@ export function ContactsPage() {
       email: '',
       phone: '',
       title: '',
+      company: null as string | null,
+      notes: '',
     },
   })
+
   const create = useMutation({
     mutationFn: (values: typeof form.values) =>
-      api('/api/contacts/', { method: 'POST', json: values }),
+      api('/api/contacts/', {
+        method: 'POST',
+        json: {
+          first_name: values.first_name,
+          last_name: values.last_name,
+          email: values.email,
+          phone: values.phone,
+          title: values.title,
+          notes: values.notes,
+          company: values.company ? Number(values.company) : null,
+        },
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contacts'] })
       close()
       form.reset()
     },
   })
+
   const remove = useMutation({
     mutationFn: (id: number) => api(`/api/contacts/${id}/`, { method: 'DELETE' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['contacts'] }),
   })
+
+  const rows = data?.results || []
 
   return (
     <Stack>
@@ -69,6 +105,24 @@ export function ContactsPage() {
         </div>
         <Button onClick={open}>Add contact</Button>
       </Group>
+
+      <Group align="flex-end" grow>
+        <TextInput
+          placeholder="Search contacts…"
+          leftSection={<IconSearch size={16} />}
+          value={search}
+          onChange={(e) => setSearch(e.currentTarget.value)}
+        />
+        <Select
+          placeholder="Filter by company"
+          data={companyOptions}
+          value={companyFilter}
+          onChange={setCompanyFilter}
+          clearable
+          searchable
+        />
+      </Group>
+
       <DataTable>
         <DataTable.Thead>
           <DataTable.Tr>
@@ -80,38 +134,60 @@ export function ContactsPage() {
           </DataTable.Tr>
         </DataTable.Thead>
         <DataTable.Tbody>
-          {(data?.results || []).map((c) => (
-            <DataTable.Tr key={c.id}>
-              <DataTable.Td>
-                <Text component={Link} to={`/app/contacts/${c.id}`} className="sd-table-primary">
-                  {c.full_name}
+          {rows.length === 0 ? (
+            <DataTable.Tr>
+              <DataTable.Td colSpan={5}>
+                <Text c="dimmed" size="sm">
+                  No contacts yet.
                 </Text>
               </DataTable.Td>
-              <DataTable.Td className="sd-table-muted">{c.email}</DataTable.Td>
-              <DataTable.Td>{c.company_name || '—'}</DataTable.Td>
-              <DataTable.Td className="sd-table-muted">{c.title || '—'}</DataTable.Td>
-              <DataTable.Td className="sd-table-actions">
-                <Group gap="xs" justify="flex-end" wrap="nowrap">
-                  <Button
-                    size="xs"
-                    variant="light"
-                    onClick={() =>
-                      openCreateEnvelope({
-                        contact: c.id,
-                        email: c.email,
-                        name: c.full_name,
-                      })
-                    }
-                  >
-                    Send for signature
-                  </Button>
-                  <ActionIcon color="red" variant="subtle" onClick={() => remove.mutate(c.id)}>
-                    <IconTrash size={16} />
-                  </ActionIcon>
-                </Group>
-              </DataTable.Td>
             </DataTable.Tr>
-          ))}
+          ) : (
+            rows.map((c) => (
+              <DataTable.Tr key={c.id}>
+                <DataTable.Td>
+                  <Text component={Link} to={`/app/contacts/${c.id}`} className="sd-table-primary">
+                    {c.full_name}
+                  </Text>
+                </DataTable.Td>
+                <DataTable.Td className="sd-table-muted">{c.email}</DataTable.Td>
+                <DataTable.Td>
+                  {c.company && c.company_name ? (
+                    <Text
+                      component={Link}
+                      to={`/app/companies/${c.company}`}
+                      className="sd-table-primary"
+                    >
+                      {c.company_name}
+                    </Text>
+                  ) : (
+                    '—'
+                  )}
+                </DataTable.Td>
+                <DataTable.Td className="sd-table-muted">{c.title || '—'}</DataTable.Td>
+                <DataTable.Td className="sd-table-actions">
+                  <Group gap="xs" justify="flex-end" wrap="nowrap">
+                    <Button
+                      size="xs"
+                      variant="light"
+                      onClick={() =>
+                        openCreateEnvelope({
+                          contact: c.id,
+                          email: c.email,
+                          name: c.full_name,
+                        })
+                      }
+                    >
+                      Send for signature
+                    </Button>
+                    <ActionIcon color="red" variant="subtle" onClick={() => remove.mutate(c.id)}>
+                      <IconTrash size={16} />
+                    </ActionIcon>
+                  </Group>
+                </DataTable.Td>
+              </DataTable.Tr>
+            ))
+          )}
         </DataTable.Tbody>
       </DataTable>
 
@@ -123,6 +199,14 @@ export function ContactsPage() {
             <TextInput label="Email" type="email" required {...form.getInputProps('email')} />
             <TextInput label="Phone" {...form.getInputProps('phone')} />
             <TextInput label="Title" {...form.getInputProps('title')} />
+            <Select
+              label="Company"
+              data={companyOptions}
+              clearable
+              searchable
+              {...form.getInputProps('company')}
+            />
+            <Textarea label="Notes" minRows={3} {...form.getInputProps('notes')} />
             <Button type="submit" loading={create.isPending}>
               Save
             </Button>

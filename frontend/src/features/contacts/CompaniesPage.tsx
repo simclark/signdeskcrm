@@ -6,12 +6,15 @@ import {
   Stack,
   Text,
   TextInput,
+  Textarea,
   Title,
 } from '@mantine/core'
-import { useDisclosure } from '@mantine/hooks'
+import { useDebouncedValue, useDisclosure } from '@mantine/hooks'
 import { useForm } from '@mantine/form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { IconTrash } from '@tabler/icons-react'
+import { IconSearch, IconTrash } from '@tabler/icons-react'
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../../shared/api'
 import { DataTable } from '../../shared/DataTable'
 
@@ -20,10 +23,19 @@ type Company = { id: number; name: string; website: string; notes: string }
 export function CompaniesPage() {
   const qc = useQueryClient()
   const [opened, { open, close }] = useDisclosure(false)
+  const [search, setSearch] = useState('')
+  const [debouncedSearch] = useDebouncedValue(search, 300)
+
+  const listUrl =
+    debouncedSearch.trim().length > 0
+      ? `/api/companies/?search=${encodeURIComponent(debouncedSearch.trim())}`
+      : '/api/companies/'
+
   const { data } = useQuery({
-    queryKey: ['companies'],
-    queryFn: () => api<{ results: Company[] }>('/api/companies/'),
+    queryKey: ['companies', { search: debouncedSearch.trim() }],
+    queryFn: () => api<{ results: Company[] }>(listUrl),
   })
+
   const form = useForm({ initialValues: { name: '', website: '', notes: '' } })
   const create = useMutation({
     mutationFn: (values: typeof form.values) =>
@@ -39,6 +51,8 @@ export function CompaniesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
   })
 
+  const rows = data?.results || []
+
   return (
     <Stack>
       <Group justify="space-between">
@@ -48,6 +62,14 @@ export function CompaniesPage() {
         </div>
         <Button onClick={open}>Add company</Button>
       </Group>
+
+      <TextInput
+        placeholder="Search companies…"
+        leftSection={<IconSearch size={16} />}
+        value={search}
+        onChange={(e) => setSearch(e.currentTarget.value)}
+      />
+
       <DataTable>
         <DataTable.Thead>
           <DataTable.Tr>
@@ -57,26 +79,43 @@ export function CompaniesPage() {
           </DataTable.Tr>
         </DataTable.Thead>
         <DataTable.Tbody>
-          {(data?.results || []).map((c) => (
-            <DataTable.Tr key={c.id}>
-              <DataTable.Td className="sd-table-primary">{c.name}</DataTable.Td>
-              <DataTable.Td className="sd-table-muted">{c.website || '—'}</DataTable.Td>
-              <DataTable.Td className="sd-table-actions">
-                <ActionIcon color="red" variant="subtle" onClick={() => remove.mutate(c.id)}>
-                  <IconTrash size={16} />
-                </ActionIcon>
+          {rows.length === 0 ? (
+            <DataTable.Tr>
+              <DataTable.Td colSpan={3}>
+                <Text c="dimmed" size="sm">
+                  No companies yet.
+                </Text>
               </DataTable.Td>
             </DataTable.Tr>
-          ))}
+          ) : (
+            rows.map((c) => (
+              <DataTable.Tr key={c.id}>
+                <DataTable.Td>
+                  <Text component={Link} to={`/app/companies/${c.id}`} className="sd-table-primary">
+                    {c.name}
+                  </Text>
+                </DataTable.Td>
+                <DataTable.Td className="sd-table-muted">{c.website || '—'}</DataTable.Td>
+                <DataTable.Td className="sd-table-actions">
+                  <ActionIcon color="red" variant="subtle" onClick={() => remove.mutate(c.id)}>
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </DataTable.Td>
+              </DataTable.Tr>
+            ))
+          )}
         </DataTable.Tbody>
       </DataTable>
+
       <Modal opened={opened} onClose={close} title="New company">
         <form onSubmit={form.onSubmit((v) => create.mutate(v))}>
           <Stack>
             <TextInput label="Name" required {...form.getInputProps('name')} />
             <TextInput label="Website" {...form.getInputProps('website')} />
-            <TextInput label="Notes" {...form.getInputProps('notes')} />
-            <Button type="submit">Save</Button>
+            <Textarea label="Notes" minRows={3} {...form.getInputProps('notes')} />
+            <Button type="submit" loading={create.isPending}>
+              Save
+            </Button>
           </Stack>
         </form>
       </Modal>

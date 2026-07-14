@@ -13,6 +13,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../../shared/api'
 import { DataTable } from '../../shared/DataTable'
+import { PageBreadcrumbs } from '../../shared/PageBreadcrumbs'
 import { notifications } from '@mantine/notifications'
 import { PdfViewerDialog } from '../documents/PdfViewerDialog'
 
@@ -104,6 +105,12 @@ export function EnvelopeDetailPage() {
 
   return (
     <Stack>
+      <PageBreadcrumbs
+        items={[
+          { label: 'Envelopes', to: '/app/envelopes' },
+          { label: envelope.title },
+        ]}
+      />
       <Group justify="space-between" align="flex-start">
         <div>
           <Group>
