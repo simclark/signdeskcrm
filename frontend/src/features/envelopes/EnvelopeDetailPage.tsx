@@ -22,6 +22,7 @@ const EVENT_BADGE_COLOR: Record<string, string> = {
   completed: 'forest',
   voided: 'red',
   declined: 'red',
+  expired: 'orange',
   downloaded: 'blue',
   consent_accepted: 'teal',
   sent: 'blue',
@@ -101,6 +102,21 @@ export function EnvelopeDetailPage() {
     },
   })
 
+  const regenerateCertificate = useMutation({
+    mutationFn: () =>
+      api(`/api/envelopes/${id}/regenerate-certificate/`, { method: 'POST', json: {} }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['envelope', id] })
+      notifications.show({ color: 'forest', message: 'Certificate regenerated' })
+    },
+    onError: (err: any) =>
+      notifications.show({
+        color: 'red',
+        title: 'Could not regenerate certificate',
+        message: err?.data?.detail || err.message,
+      }),
+  })
+
   if (!envelope) return null
 
   return (
@@ -116,6 +132,11 @@ export function EnvelopeDetailPage() {
           <Group>
             <Title order={2}>{envelope.title}</Title>
             <Badge>{envelope.status}</Badge>
+            {envelope.routing ? (
+              <Badge variant="outline" tt="capitalize">
+                {envelope.routing}
+              </Badge>
+            ) : null}
           </Group>
           <Text c="dimmed">{envelope.message || 'No message'}</Text>
         </div>
@@ -139,6 +160,15 @@ export function EnvelopeDetailPage() {
                 Void
               </Button>
             </>
+          )}
+          {envelope.status === 'completed' && (
+            <Button
+              variant="light"
+              onClick={() => regenerateCertificate.mutate()}
+              loading={regenerateCertificate.isPending}
+            >
+              Regenerate certificate
+            </Button>
           )}
           <Button variant="default" onClick={() => duplicate.mutate()}>
             Duplicate

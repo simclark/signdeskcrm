@@ -351,3 +351,98 @@ class EsignConsentComplianceTests(TestCase):
         self.assertEqual(custom.esign_acknowledgement, "Our special legal text")
         self.assertEqual(custom.esign_acknowledgement_version, "keep-me")
         self.assertEqual(legacy.esign_acknowledgement, DEFAULT_ESIGN_ACKNOWLEDGEMENT)
+
+
+@override_settings(
+    CELERY_TASK_ALWAYS_EAGER=True,
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class SequentialRoutingTurnTests(TestCase):
+    def setUp(self):
+        from apps.documents.models import Document, DocumentVersion
+        from apps.envelopes.models import Envelope, Field, Recipient
+        from apps.envelopes.services import send_envelope
+        from reportlab.pdfgen import canvas
+        import io
+
+        self.client = APIClient()
+        self.tenant = Tenant.objects.create(name="Acme", slug="acme-seq")
+        self.user = User.objects.create_user(email="owner@acme-seq.test", password="password123")
+        Membership.objects.create(tenant=self.tenant, user=self.user, role=Membership.Role.OWNER)
+
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf)
+        c.drawString(100, 700, "Test contract")
+        c.showPage()
+        c.save()
+        pdf = SimpleUploadedFile("test.pdf", buf.getvalue(), content_type="application/pdf")
+
+        self.document = Document.objects.create(
+            tenant=self.tenant, title="NDA", original_filename="test.pdf", created_by=self.user
+        )
+        self.version = DocumentVersion(
+            tenant=self.tenant, document=self.document, version_number=1, file=pdf
+        )
+        self.version.save()
+        self.version.compute_hash()
+        self.version.page_count = 1
+        self.version.save()
+
+        self.envelope = Envelope.objects.create(
+            tenant=self.tenant,
+            title="Sequential NDA",
+            document=self.document,
+            document_version=self.version,
+            created_by=self.user,
+            routing=Envelope.Routing.SEQUENTIAL,
+        )
+        self.first = Recipient.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            name="First",
+            email="first@example.com",
+            routing_order=1,
+        )
+        self.second = Recipient.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            name="Second",
+            email="second@example.com",
+            routing_order=2,
+        )
+        Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.first,
+            field_type=Field.FieldType.SIGNATURE,
+            page=1,
+            x=0.1,
+            y=0.1,
+            w=0.3,
+            h=0.05,
+        )
+        Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.second,
+            field_type=Field.FieldType.SIGNATURE,
+            page=1,
+            x=0.1,
+            y=0.3,
+            w=0.3,
+            h=0.05,
+        )
+        send_envelope(self.envelope)
+        self.first.refresh_from_db()
+        self.second.refresh_from_db()
+
+    def test_second_signer_blocked_until_turn(self):
+        self.assertEqual(self.first.status, "sent")
+        self.assertEqual(self.second.status, "pending")
+
+        blocked = self.client.get(f"/api/sign/{self.second.access_token}/")
+        self.assertEqual(blocked.status_code, 403)
+        self.assertIn("not your turn", blocked.data["detail"].lower())
+
+        allowed = self.client.get(f"/api/sign/{self.first.access_token}/")
+        self.assertEqual(allowed.status_code, 200)

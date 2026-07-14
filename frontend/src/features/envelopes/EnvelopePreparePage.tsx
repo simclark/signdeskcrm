@@ -1,4 +1,15 @@
-import { Button, Divider, Group, Modal, Select, Stack, Text, TextInput, Title } from '@mantine/core'
+import {
+  Button,
+  Divider,
+  Group,
+  Modal,
+  SegmentedControl,
+  Select,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+} from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -19,19 +30,30 @@ import { newFieldId, type EnvelopeDetail, type FieldDraft, type FieldType } from
 function validatePrepareDrafts(signers: RoleDraft[], fields: FieldDraft[]): string | null {
   for (const s of signers) {
     if (!s.name.trim() || !s.email.trim()) {
-      return 'Each signer needs a name and email'
+      return 'Each recipient needs a name and email'
     }
+  }
+  const signerIndexes = signers
+    .map((s, i) => (s.role === 'signer' ? i : -1))
+    .filter((i) => i >= 0)
+  if (!signerIndexes.length) {
+    return 'Add at least one signer'
   }
   if (!fields.length) {
     return 'Place at least one field on the document'
   }
-  for (let i = 0; i < signers.length; i++) {
+  for (const i of signerIndexes) {
     const hasSignature = fields.some(
       (f) => f.recipientIndex === i && f.field_type === 'signature',
     )
     if (!hasSignature) {
       const label = signers[i].name.trim() || signers[i].email.trim() || `Signer ${i + 1}`
       return `${label} needs at least one signature field`
+    }
+  }
+  for (const f of fields) {
+    if (signers[f.recipientIndex]?.role === 'cc') {
+      return 'Fields cannot be assigned to CC recipients'
     }
   }
   return null
@@ -83,6 +105,8 @@ export function EnvelopePreparePage() {
 
   const [signers, setSigners] = useState<RoleDraft[]>([])
   const [fields, setFields] = useState<FieldDraft[]>([])
+  const [routing, setRouting] = useState<'sequential' | 'parallel'>('sequential')
+  const [savedRouting, setSavedRouting] = useState<'sequential' | 'parallel'>('sequential')
   const [hydrated, setHydrated] = useState(false)
   const [savedSnapshot, setSavedSnapshot] = useState('')
   const allowLeaveRef = useRef(false)
@@ -103,7 +127,9 @@ export function EnvelopePreparePage() {
     queryFn: () => api<{ results: TemplateListItem[] }>('/api/templates/?active=true'),
   })
 
-  const isDirty = hydrated && draftsSnapshot(signers, fields) !== savedSnapshot
+  const isDirty =
+    hydrated &&
+    (draftsSnapshot(signers, fields) !== savedSnapshot || routing !== savedRouting)
 
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     if (allowLeaveRef.current) return false
@@ -114,8 +140,12 @@ export function EnvelopePreparePage() {
     if (!envelope || hydrated) return
     const nextSigners = recipientsToDrafts(envelope, params)
     const nextFields = fieldsToDrafts(envelope)
+    const nextRouting =
+      envelope.routing === 'parallel' ? 'parallel' : ('sequential' as const)
     setSigners(nextSigners)
     setFields(nextFields)
+    setRouting(nextRouting)
+    setSavedRouting(nextRouting)
     setSavedSnapshot(draftsSnapshot(nextSigners, nextFields))
     setHydrated(true)
   }, [envelope, hydrated, params])
@@ -149,10 +179,15 @@ export function EnvelopePreparePage() {
         if (continueAfter) throw new Error(error)
         for (const s of signers) {
           if (!s.name.trim() || !s.email.trim()) {
-            throw new Error('Each signer needs a name and email')
+            throw new Error('Each recipient needs a name and email')
           }
         }
       }
+
+      await api(`/api/envelopes/${id}/`, {
+        method: 'PATCH',
+        json: { routing },
+      })
 
       const createdRecipients = await api<Array<{ id: number }>>(`/api/envelopes/${id}/recipients/`, {
         method: 'PUT',
@@ -178,10 +213,16 @@ export function EnvelopePreparePage() {
       }))
 
       await api(`/api/envelopes/${id}/fields/`, { method: 'PUT', json: payload })
-      return { envelopeId: id, continueAfter, snapshot: draftsSnapshot(signers, fields) }
+      return {
+        envelopeId: id,
+        continueAfter,
+        snapshot: draftsSnapshot(signers, fields),
+        routing,
+      }
     },
-    onSuccess: ({ envelopeId, continueAfter, snapshot }) => {
+    onSuccess: ({ envelopeId, continueAfter, snapshot, routing: nextRouting }) => {
       setSavedSnapshot(snapshot)
+      setSavedRouting(nextRouting)
       qc.invalidateQueries({ queryKey: ['envelope', envelopeId] })
       qc.invalidateQueries({ queryKey: ['envelopes'] })
       if (continueAfter) {
@@ -303,7 +344,7 @@ export function EnvelopePreparePage() {
       <div>
         <Title order={2}>Prepare: {envelope.title}</Title>
         <Text c="dimmed">
-          Set signers and place signature, initials, date, text, and checkbox fields.
+          Set signers and CC recipients, choose routing, and place signature fields.
         </Text>
       </div>
 
@@ -315,6 +356,7 @@ export function EnvelopePreparePage() {
         onRolesChange={setSigners}
         onFieldsChange={setFields}
         editableContacts
+        rolesTitle="Recipients"
         sidebarActions={
           <Stack gap="xs">
             <Button
@@ -340,6 +382,27 @@ export function EnvelopePreparePage() {
         }
         sidebarExtra={
           <>
+            <Divider />
+            <Stack gap="xs">
+              <Text size="sm" fw={600}>
+                Signing order
+              </Text>
+              <SegmentedControl
+                fullWidth
+                size="xs"
+                value={routing}
+                onChange={(v) => setRouting(v as 'sequential' | 'parallel')}
+                data={[
+                  { label: 'Sequential', value: 'sequential' },
+                  { label: 'Parallel', value: 'parallel' },
+                ]}
+              />
+              <Text size="xs" c="dimmed">
+                {routing === 'sequential'
+                  ? 'Signers are invited one at a time in list order.'
+                  : 'All signers are invited at once.'}
+              </Text>
+            </Stack>
             <Divider />
             <Stack gap="xs">
               <Text size="sm" fw={600}>

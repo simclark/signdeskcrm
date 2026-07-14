@@ -19,6 +19,7 @@ import { api } from '../../shared/api'
 import { PageBreadcrumbs } from '../../shared/PageBreadcrumbs'
 import { useCreateEnvelope } from '../envelopes/CreateEnvelopeContext'
 import { ActivityFeed, type Activity } from './ActivityFeed'
+import { RelatedEnvelopesCard, type RelatedEnvelope } from './RelatedEnvelopesCard'
 import { useCompaniesOptions } from './useCompaniesOptions'
 
 type Contact = {
@@ -50,6 +51,12 @@ export function ContactDetailPage() {
   const { data: activities } = useQuery({
     queryKey: ['contact-activities', id],
     queryFn: () => api<Activity[]>(`/api/contacts/${id}/activities/`),
+    enabled: !!id,
+  })
+
+  const { data: relatedEnvelopes } = useQuery({
+    queryKey: ['contact-envelopes', id],
+    queryFn: () => api<RelatedEnvelope[]>(`/api/contacts/${id}/envelopes/`),
     enabled: !!id,
   })
 
@@ -179,7 +186,15 @@ export function ContactDetailPage() {
         </Text>
       </Card>
 
-      <ActivityFeed activities={activities} />
+      <RelatedEnvelopesCard envelopes={relatedEnvelopes} />
+
+      <ActivityFeed
+        activities={activities}
+        onAddNote={async (message) => {
+          await api(`/api/contacts/${id}/notes/`, { method: 'POST', json: { message } })
+          await qc.invalidateQueries({ queryKey: ['contact-activities', id] })
+        }}
+      />
 
       <Modal opened={editOpened} onClose={closeEdit} title="Edit contact">
         <form onSubmit={form.onSubmit((v) => update.mutate(v))}>

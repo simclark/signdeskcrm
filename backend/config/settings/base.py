@@ -157,6 +157,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.envelopes.tasks.send_due_reminders",
         "schedule": 3600.0,
     },
+    "expire-envelopes": {
+        "task": "apps.envelopes.tasks.expire_envelopes",
+        "schedule": 900.0,
+    },
     "purge-retained-documents": {
         "task": "apps.envelopes.tasks.purge_expired_retained_documents",
         "schedule": 3600.0,

@@ -103,6 +103,31 @@ def send_due_reminders():
 
 
 @shared_task
+def expire_envelopes():
+    """Mark sent/in-progress envelopes as expired when expires_at has passed."""
+    now = timezone.now()
+    qs = Envelope.objects.filter(
+        status__in=[Envelope.Status.SENT, Envelope.Status.IN_PROGRESS],
+        expires_at__isnull=False,
+        expires_at__lte=now,
+    )
+    expired = 0
+    for envelope in qs.iterator():
+        envelope.status = Envelope.Status.EXPIRED
+        envelope.save(update_fields=["status", "updated_at"])
+        record_audit(
+            tenant=envelope.tenant,
+            envelope=envelope,
+            event_type=AuditEvent.EventType.EXPIRED,
+            actor_email="system@signdeskcrm.com",
+            actor_name="System",
+            payload={"expires_at": envelope.expires_at.isoformat() if envelope.expires_at else None},
+        )
+        expired += 1
+    return expired
+
+
+@shared_task
 def purge_expired_retained_documents():
     """Remove downloadable signed PDFs/certificates past each workspace retention window."""
     now = timezone.now()

@@ -7,9 +7,12 @@ import {
   ScrollArea,
   Stack,
   Text,
+  Textarea,
   Title,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
+import { useMutation } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 export type Activity = {
@@ -96,13 +99,23 @@ function ActivityList({ activities }: { activities: Activity[] }) {
 
 type ActivityFeedProps = {
   activities: Activity[] | undefined
+  onAddNote?: (message: string) => Promise<unknown>
 }
 
-export function ActivityFeed({ activities }: ActivityFeedProps) {
+export function ActivityFeed({ activities, onAddNote }: ActivityFeedProps) {
   const [opened, { open, close }] = useDisclosure(false)
+  const [note, setNote] = useState('')
   const items = activities || []
   const preview = items.slice(0, PREVIEW_COUNT)
   const hasMore = items.length > PREVIEW_COUNT
+
+  const addNote = useMutation({
+    mutationFn: (message: string) => {
+      if (!onAddNote) throw new Error('Add note unavailable')
+      return onAddNote(message)
+    },
+    onSuccess: () => setNote(''),
+  })
 
   return (
     <>
@@ -115,6 +128,28 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
             </Button>
           ) : null}
         </Group>
+
+        {onAddNote ? (
+          <Stack gap="sm" mb="lg">
+            <Textarea
+              placeholder="Add a note…"
+              minRows={2}
+              value={note}
+              onChange={(e) => setNote(e.currentTarget.value)}
+            />
+            <Group justify="flex-end">
+              <Button
+                size="xs"
+                disabled={!note.trim()}
+                loading={addNote.isPending}
+                onClick={() => addNote.mutate(note.trim())}
+              >
+                Add note
+              </Button>
+            </Group>
+          </Stack>
+        ) : null}
+
         {items.length === 0 ? (
           <Text c="dimmed" size="sm">
             No activity yet.

@@ -15,6 +15,7 @@ class AuditEvent(TenantOwnedModel):
         SIGNED = "signed", "Signed"
         DECLINED = "declined", "Declined"
         VOIDED = "voided", "Voided"
+        EXPIRED = "expired", "Expired"
         COMPLETED = "completed", "Completed"
         REMINDED = "reminded", "Reminded"
         DOWNLOADED = "downloaded", "Downloaded"

@@ -5,6 +5,7 @@ import {
   Divider,
   Group,
   Paper,
+  Select,
   SimpleGrid,
   Stack,
   Switch,
@@ -749,17 +750,17 @@ export function PdfFieldMapper({
     )
   }
 
-  const addRole = () => {
+  const addRole = (role: 'signer' | 'cc' = 'signer') => {
     if (roles.length >= 10) {
-      notifications.show({ color: 'yellow', message: 'Maximum of 10 signers' })
+      notifications.show({ color: 'yellow', message: 'Maximum of 10 recipients' })
       return
     }
     commitRoles([
       ...roles,
       {
-        name: editableContacts ? '' : `Signer ${roles.length + 1}`,
+        name: editableContacts ? '' : role === 'cc' ? `CC ${roles.length + 1}` : `Signer ${roles.length + 1}`,
         email: '',
-        role: 'signer',
+        role,
         routing_order: roles.length + 1,
         contact: null,
       },
@@ -769,8 +770,13 @@ export function PdfFieldMapper({
 
   const removeRole = (index: number) => {
     if (roles.length <= 1) return
+    const nextRoles = roles.filter((_, i) => i !== index)
+    if (editableContacts && !nextRoles.some((r) => r.role === 'signer')) {
+      notifications.show({ color: 'yellow', message: 'Keep at least one signer' })
+      return
+    }
     commitRolesAndFields(
-      roles.filter((_, i) => i !== index).map((s, i) => ({ ...s, routing_order: i + 1 })),
+      nextRoles.map((s, i) => ({ ...s, routing_order: i + 1 })),
       fields
         .filter((f) => f.recipientIndex !== index)
         .map((f) => ({
@@ -819,6 +825,14 @@ export function PdfFieldMapper({
     pageNum: number,
     overrides?: Partial<Pick<FieldDraft, 'field_type' | 'recipientIndex'>>,
   ) => {
+    const assigneeIndex = overrides?.recipientIndex ?? activeSigner
+    if (editableContacts && roles[assigneeIndex]?.role === 'cc') {
+      notifications.show({
+        color: 'yellow',
+        message: 'Select a signer before placing fields (CC recipients do not sign)',
+      })
+      return
+    }
     const wrap = pageWrapRefs.current.get(pageNum)
     if (!wrap) return
     const rect = wrap.getBoundingClientRect()
@@ -831,7 +845,7 @@ export function PdfFieldMapper({
     const { x, y } = clickToFieldCoords(relX, relY, size.w, size.h)
     const draft: FieldDraft = {
       id: newFieldId(),
-      recipientIndex: overrides?.recipientIndex ?? activeSigner,
+      recipientIndex: assigneeIndex,
       field_type: tool,
       page: pageNum,
       x,
@@ -1306,21 +1320,35 @@ export function PdfFieldMapper({
               <Text size="sm" fw={600}>
                 {rolesTitle}
               </Text>
-              <Button
-                size="xs"
-                variant="light"
-                leftSection={<IconPlus size={14} />}
-                onClick={addRole}
-                disabled={roles.length >= 10}
-              >
-                {addRoleLabel}
-              </Button>
+              <Group gap={6}>
+                <Button
+                  size="xs"
+                  variant="light"
+                  leftSection={<IconPlus size={14} />}
+                  onClick={() => addRole('signer')}
+                  disabled={roles.length >= 10}
+                >
+                  {addRoleLabel}
+                </Button>
+                {editableContacts ? (
+                  <Button
+                    size="xs"
+                    variant="default"
+                    leftSection={<IconPlus size={14} />}
+                    onClick={() => addRole('cc')}
+                    disabled={roles.length >= 10}
+                  >
+                    Add CC
+                  </Button>
+                ) : null}
+              </Group>
             </Group>
 
             <Stack gap="sm">
               {roles.map((s, idx) => {
                 const color = SIGNER_COLORS[idx % SIGNER_COLORS.length]
                 const isActive = idx === activeSigner
+                const isCc = s.role === 'cc'
                 return (
                   <Card
                     key={idx}
@@ -1331,6 +1359,7 @@ export function PdfFieldMapper({
                       borderColor: isActive ? color : undefined,
                       boxShadow: isActive ? `0 0 0 1px ${color}` : undefined,
                       cursor: 'pointer',
+                      opacity: isCc ? 0.92 : 1,
                     }}
                     onClick={() => setActiveSigner(idx)}
                   >
@@ -1355,6 +1384,7 @@ export function PdfFieldMapper({
                         </div>
                         <Text size="sm" fw={600} lineClamp={1}>
                           {roleLabel(s, idx)}
+                          {isCc ? ' (CC)' : ''}
                         </Text>
                       </Group>
                       {roles.length > 1 && (
@@ -1374,6 +1404,28 @@ export function PdfFieldMapper({
                     </Group>
                     {editableContacts ? (
                       <Stack gap={6} onClick={(e) => e.stopPropagation()}>
+                        <Select
+                          size="xs"
+                          data={[
+                            { value: 'signer', label: 'Signer' },
+                            { value: 'cc', label: 'CC (receives copy)' },
+                          ]}
+                          value={s.role}
+                          onChange={(value) => {
+                            if (!value) return
+                            const nextRole = value as 'signer' | 'cc'
+                            const next = [...roles]
+                            next[idx] = { ...next[idx], role: nextRole }
+                            if (nextRole === 'cc') {
+                              commitRolesAndFields(
+                                next,
+                                fields.filter((f) => f.recipientIndex !== idx),
+                              )
+                            } else {
+                              commitRoles(next, `role-type-${idx}`)
+                            }
+                          }}
+                        />
                         <TextInput
                           size="xs"
                           placeholder="Name"
@@ -1437,6 +1489,7 @@ export function PdfFieldMapper({
               </Text>
               <Group gap={8}>
                 {roles.map((s, idx) => {
+                  if (editableContacts && s.role === 'cc') return null
                   const color = SIGNER_COLORS[idx % SIGNER_COLORS.length]
                   const isActive = idx === activeSigner
                   return (

@@ -243,6 +243,23 @@ class EsignPolicySettingsTests(TestCase):
         self.assertFalse(bool(self.envelope.signed_file))
         self.assertFalse(bool(self.envelope.certificate_file))
 
+    def test_expire_envelopes_marks_past_due(self):
+        from apps.audit.models import AuditEvent
+        from apps.envelopes.tasks import expire_envelopes
+
+        self.envelope.expires_at = timezone.now() - timedelta(hours=1)
+        self.envelope.save(update_fields=["expires_at", "updated_at"])
+
+        expired = expire_envelopes()
+        self.assertEqual(expired, 1)
+        self.envelope.refresh_from_db()
+        self.assertEqual(self.envelope.status, Envelope.Status.EXPIRED)
+        self.assertTrue(
+            AuditEvent.objects.filter(
+                envelope=self.envelope, event_type=AuditEvent.EventType.EXPIRED
+            ).exists()
+        )
+
     def test_certificate_uses_tenant_brand_and_contact(self):
         import io
 

@@ -19,6 +19,7 @@ import { DataTable } from '../../shared/DataTable'
 import { PageBreadcrumbs } from '../../shared/PageBreadcrumbs'
 import { useCreateEnvelope } from '../envelopes/CreateEnvelopeContext'
 import { ActivityFeed, type Activity } from './ActivityFeed'
+import { RelatedEnvelopesCard, type RelatedEnvelope } from './RelatedEnvelopesCard'
 
 type Company = {
   id: number
@@ -55,6 +56,12 @@ export function CompanyDetailPage() {
   const { data: activities } = useQuery({
     queryKey: ['company-activities', id],
     queryFn: () => api<Activity[]>(`/api/companies/${id}/activities/`),
+    enabled: !!id,
+  })
+
+  const { data: relatedEnvelopes } = useQuery({
+    queryKey: ['company-envelopes', id],
+    queryFn: () => api<RelatedEnvelope[]>(`/api/companies/${id}/envelopes/`),
     enabled: !!id,
   })
 
@@ -184,7 +191,15 @@ export function CompanyDetailPage() {
         )}
       </Card>
 
-      <ActivityFeed activities={activities} />
+      <RelatedEnvelopesCard envelopes={relatedEnvelopes} />
+
+      <ActivityFeed
+        activities={activities}
+        onAddNote={async (message) => {
+          await api(`/api/companies/${id}/notes/`, { method: 'POST', json: { message } })
+          await qc.invalidateQueries({ queryKey: ['company-activities', id] })
+        }}
+      />
 
       <Modal opened={editOpened} onClose={closeEdit} title="Edit company">
         <form onSubmit={form.onSubmit((v) => update.mutate(v))}>

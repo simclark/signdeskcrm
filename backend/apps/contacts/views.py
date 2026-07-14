@@ -1,9 +1,11 @@
-from rest_framework import viewsets
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.contacts.models import Activity, Company, Contact
 from apps.contacts.serializers import ActivitySerializer, CompanySerializer, ContactSerializer
+from apps.envelopes.models import Envelope
+from apps.envelopes.serializers import EnvelopeListSerializer
 from apps.tenants.permissions import IsTenantMember
 
 
@@ -17,6 +19,24 @@ class TenantScopedMixin:
 
     def perform_create(self, serializer):
         serializer.save(tenant=self.request.tenant)
+
+
+def _create_note_activity(*, tenant, message: str, contact=None, company=None, actor_email=""):
+    text = (message or "").strip()
+    if not text:
+        return None, Response(
+            {"detail": "Message is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    activity = Activity.objects.create(
+        tenant=tenant,
+        contact=contact,
+        company=company,
+        kind=Activity.Kind.NOTE,
+        message=text,
+        metadata={"created_by": actor_email or ""},
+    )
+    return activity, None
 
 
 class CompanyViewSet(TenantScopedMixin, viewsets.ModelViewSet):
@@ -52,6 +72,30 @@ class CompanyViewSet(TenantScopedMixin, viewsets.ModelViewSet):
         company = self.get_object()
         qs = Activity.objects.for_tenant(request.tenant).filter(company=company)
         return Response(ActivitySerializer(qs[:50], many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def notes(self, request, pk=None):
+        company = self.get_object()
+        activity, error = _create_note_activity(
+            tenant=request.tenant,
+            message=request.data.get("message", ""),
+            company=company,
+            actor_email=getattr(request.user, "email", "") or "",
+        )
+        if error:
+            return error
+        return Response(ActivitySerializer(activity).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"])
+    def envelopes(self, request, pk=None):
+        company = self.get_object()
+        qs = (
+            Envelope.objects.for_tenant(request.tenant)
+            .filter(recipients__contact__company=company)
+            .distinct()
+            .order_by("-created_at")[:50]
+        )
+        return Response(EnvelopeListSerializer(qs, many=True).data)
 
 
 class ContactViewSet(TenantScopedMixin, viewsets.ModelViewSet):
@@ -90,3 +134,28 @@ class ContactViewSet(TenantScopedMixin, viewsets.ModelViewSet):
         contact = self.get_object()
         qs = Activity.objects.for_tenant(request.tenant).filter(contact=contact)
         return Response(ActivitySerializer(qs[:50], many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def notes(self, request, pk=None):
+        contact = self.get_object()
+        activity, error = _create_note_activity(
+            tenant=request.tenant,
+            message=request.data.get("message", ""),
+            contact=contact,
+            company=contact.company,
+            actor_email=getattr(request.user, "email", "") or "",
+        )
+        if error:
+            return error
+        return Response(ActivitySerializer(activity).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"])
+    def envelopes(self, request, pk=None):
+        contact = self.get_object()
+        qs = (
+            Envelope.objects.for_tenant(request.tenant)
+            .filter(recipients__contact=contact)
+            .distinct()
+            .order_by("-created_at")[:50]
+        )
+        return Response(EnvelopeListSerializer(qs, many=True).data)

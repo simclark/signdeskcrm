@@ -287,6 +287,28 @@ def require_consent(recipient: Recipient) -> None:
         )
 
 
+def require_signer_turn(recipient: Recipient) -> None:
+    """Raise PermissionError if sequential routing and this signer is not yet invited."""
+    if recipient.role != Recipient.Role.SIGNER:
+        return
+    envelope = recipient.envelope
+    if envelope.routing != Envelope.Routing.SEQUENTIAL:
+        return
+    if envelope.status in (
+        Envelope.Status.COMPLETED,
+        Envelope.Status.VOIDED,
+        Envelope.Status.EXPIRED,
+        Envelope.Status.DECLINED,
+        Envelope.Status.DRAFT,
+    ):
+        return
+    if recipient.status == Recipient.Status.PENDING:
+        raise PermissionError(
+            "It is not your turn to sign yet. You will receive an email when "
+            "the previous signer finishes."
+        )
+
+
 @transaction.atomic
 def complete_recipient_signing(recipient: Recipient, request=None):
     required = recipient.fields.filter(required=True)
@@ -797,6 +819,7 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
         "signed": "Signed",
         "declined": "Declined",
         "voided": "Voided",
+        "expired": "Expired",
         "completed": "Completed",
         "reminded": "Reminded",
         "downloaded": "Downloaded",
@@ -905,6 +928,20 @@ def finalize_envelope_sync(envelope_id: int):
         event_type=AuditEvent.EventType.COMPLETED,
         payload={"post_sign_sha256": digest},
     )
+
+    seen_contacts: set[int] = set()
+    for recipient in envelope.recipients.select_related("contact", "contact__company"):
+        if not recipient.contact_id or recipient.contact_id in seen_contacts:
+            continue
+        seen_contacts.add(recipient.contact_id)
+        Activity.objects.create(
+            tenant=envelope.tenant,
+            contact=recipient.contact,
+            company=recipient.contact.company,
+            kind=Activity.Kind.ENVELOPE_COMPLETED,
+            message=f"Envelope '{envelope.title}' completed",
+            metadata={"envelope_id": envelope.id},
+        )
 
     from apps.envelopes.tasks import send_completion_emails
 

@@ -20,6 +20,7 @@ from apps.envelopes.services import (
     mark_viewed,
     record_audit,
     require_consent,
+    require_signer_turn,
 )
 from apps.tenants.esign_disclosure import resolve_acknowledgement
 
@@ -53,6 +54,10 @@ def _consent_denied_response():
     )
 
 
+def _turn_denied_response(exc: PermissionError):
+    return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+
 class SigningSessionView(views.APIView):
     permission_classes = [AllowAny]
     throttle_classes = [SigningThrottle]
@@ -83,6 +88,10 @@ class SigningSessionView(views.APIView):
             return Response({"detail": "This envelope has expired."}, status=410)
 
         if envelope.status != Envelope.Status.COMPLETED:
+            try:
+                require_signer_turn(recipient)
+            except PermissionError as exc:
+                return _turn_denied_response(exc)
             mark_viewed(recipient, request)
 
         version = envelope.document_version
@@ -223,6 +232,10 @@ class SigningConsentView(views.APIView):
             recipient = get_recipient_by_token(token)
         except Recipient.DoesNotExist:
             return Response({"detail": "Invalid link."}, status=404)
+        try:
+            require_signer_turn(recipient)
+        except PermissionError as exc:
+            return _turn_denied_response(exc)
         accept_consent(recipient, request)
         recipient.refresh_from_db()
         return Response(
@@ -244,6 +257,10 @@ class SigningFieldCompleteView(views.APIView):
             recipient = get_recipient_by_token(token)
         except Recipient.DoesNotExist:
             return Response({"detail": "Invalid link."}, status=404)
+        try:
+            require_signer_turn(recipient)
+        except PermissionError as exc:
+            return _turn_denied_response(exc)
         try:
             require_consent(recipient)
         except PermissionError:
@@ -284,6 +301,10 @@ class SigningSubmitView(views.APIView):
         if recipient.role != Recipient.Role.SIGNER:
             return Response({"detail": "Not a signer."}, status=400)
         try:
+            require_signer_turn(recipient)
+        except PermissionError as exc:
+            return _turn_denied_response(exc)
+        try:
             require_consent(recipient)
         except PermissionError:
             return _consent_denied_response()
@@ -309,6 +330,10 @@ class SigningDeclineView(views.APIView):
             recipient = get_recipient_by_token(token)
         except Recipient.DoesNotExist:
             return Response({"detail": "Invalid link."}, status=404)
+        try:
+            require_signer_turn(recipient)
+        except PermissionError as exc:
+            return _turn_denied_response(exc)
         reason = request.data.get("reason", "")
         recipient.status = Recipient.Status.DECLINED
         recipient.decline_reason = reason
