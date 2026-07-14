@@ -103,6 +103,27 @@ class TemplateLayoutFillModeTests(SimpleTestCase):
             ]
         )
         self.assertEqual(layout[0]["fill_mode"], "document")
+        self.assertIsNone(layout[0]["recipient_index"])
+
+    def test_role_token_infers_document_fill_mode(self):
+        from apps.documents.serializers import validate_field_layout
+
+        layout = validate_field_layout(
+            [
+                {
+                    "field_type": "text",
+                    "page": 1,
+                    "x": 0.1,
+                    "y": 0.1,
+                    "w": 0.2,
+                    "h": 0.04,
+                    "merge_token": "role.buyer.name",
+                    "label": "Buyer name",
+                }
+            ]
+        )
+        self.assertEqual(layout[0]["fill_mode"], "document")
+        self.assertIsNone(layout[0]["recipient_index"])
 
     def test_explicit_signer_fill_mode_wins(self):
         from apps.documents.serializers import validate_field_layout
@@ -124,3 +145,28 @@ class TemplateLayoutFillModeTests(SimpleTestCase):
             ]
         )
         self.assertEqual(layout[0]["fill_mode"], "signer")
+        self.assertEqual(layout[0]["recipient_index"], 0)
+
+    def test_document_fill_mode_clears_recipient_index(self):
+        from apps.documents.serializers import validate_field_layout
+
+        layout = validate_field_layout(
+            [
+                {
+                    "field_type": "text",
+                    "page": 1,
+                    "x": 0.1,
+                    "y": 0.1,
+                    "w": 0.2,
+                    "h": 0.04,
+                    "recipient_index": 2,
+                    "role_key": "agent",
+                    "merge_token": "listing.mls_number",
+                    "fill_mode": "document",
+                    "label": "MLS",
+                }
+            ]
+        )
+        self.assertEqual(layout[0]["fill_mode"], "document")
+        self.assertIsNone(layout[0]["recipient_index"])
+        self.assertEqual(layout[0]["role_key"], "")

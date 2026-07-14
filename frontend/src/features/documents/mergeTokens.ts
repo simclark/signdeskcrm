@@ -189,8 +189,24 @@ export function inferFillMode(
     return 'signer'
   }
   const token = (mergeToken || '').trim()
-  if (token.startsWith('listing.') || token.startsWith('deal.') || token.startsWith('custom.')) {
+  if (
+    token.startsWith('listing.') ||
+    token.startsWith('deal.') ||
+    token.startsWith('custom.') ||
+    token.startsWith('role.')
+  ) {
     return 'document'
   }
   return 'signer'
+}
+
+/** Tokens that imply shared document data (stamp on send). */
+export function isDocumentDataToken(token: string | undefined): boolean {
+  const key = (token || '').trim()
+  return (
+    key.startsWith('listing.') ||
+    key.startsWith('deal.') ||
+    key.startsWith('custom.') ||
+    key.startsWith('role.')
+  )
 }

@@ -1,6 +1,8 @@
 import {
+  Accordion,
   ActionIcon,
   Autocomplete,
+  Badge,
   Button,
   Card,
   Divider,
@@ -43,6 +45,7 @@ import {
 } from 'react'
 import {
   DEFAULT_FIELD_SIZE,
+  DOCUMENT_FIELD_COLOR,
   SIGNER_COLORS,
   newFieldId,
   type FieldDraft,
@@ -53,6 +56,7 @@ import {
   buildMergeTokenSelectData,
   flattenMergeTokenOptions,
   humanizeTokenLabel,
+  isDocumentDataToken,
   MERGE_TOKEN_HINTS,
   normalizeMergeTokenInput,
   useMergeTokenCatalog,
@@ -336,9 +340,13 @@ function MapperPageBlock({
           />
         )}
         {fields.map((field) => {
-          const color = SIGNER_COLORS[field.recipientIndex % SIGNER_COLORS.length]
+          const isDocument = (field.fill_mode || 'signer') === 'document'
+          const color = isDocument
+            ? DOCUMENT_FIELD_COLOR
+            : SIGNER_COLORS[(field.recipientIndex ?? 0) % SIGNER_COLORS.length]
           const selected = selectedSet.has(field.id)
-          const signer = roles[field.recipientIndex]
+          const signer =
+            !isDocument && field.recipientIndex != null ? roles[field.recipientIndex] : undefined
           const isDragging = Boolean(draggingIds?.has(field.id) && dragDelta)
           const dimmed = multiSelectActive && !selected
           const fieldClass = [
@@ -392,7 +400,11 @@ function MapperPageBlock({
                   pointerEvents: 'none',
                 }}
               >
-                {signer ? roleInitials(signer, field.recipientIndex) : field.recipientIndex + 1}
+                {isDocument
+                  ? 'D'
+                  : signer
+                    ? roleInitials(signer, field.recipientIndex ?? 0)
+                    : (field.recipientIndex ?? 0) + 1}
               </span>
               <span
                 style={{
@@ -815,7 +827,10 @@ export function PdfFieldMapper({
         .filter((f) => f.recipientIndex !== index)
         .map((f) => ({
           ...f,
-          recipientIndex: f.recipientIndex > index ? f.recipientIndex - 1 : f.recipientIndex,
+          recipientIndex:
+            f.recipientIndex != null && f.recipientIndex > index
+              ? f.recipientIndex - 1
+              : f.recipientIndex,
         })),
     )
     setActiveSigner((current) => {
@@ -931,7 +946,7 @@ export function PdfFieldMapper({
     const ids = selectedSet.has(field.id) ? selectedIds : [field.id]
     if (!selectedSet.has(field.id)) {
       setSelectedIds([field.id])
-      setActiveSigner(field.recipientIndex)
+      if (field.recipientIndex != null) setActiveSigner(field.recipientIndex)
     }
     setLabelEditOpen(false)
     setFieldTypeFlyout(false)
@@ -965,7 +980,15 @@ export function PdfFieldMapper({
   const setActiveSignerAndMaybeReassign = (idx: number) => {
     setActiveSigner(idx)
     if (selectedIds.length) {
-      patchSelectedFields({ recipientIndex: idx })
+      const idSet = new Set(selectedIds)
+      commitFields(
+        fields.map((f) => {
+          if (!idSet.has(f.id)) return f
+          if ((f.fill_mode || 'signer') === 'document') return f
+          return { ...f, recipientIndex: idx }
+        }),
+        'field-patch',
+      )
     }
   }
 
@@ -1037,9 +1060,9 @@ export function PdfFieldMapper({
     } else if (!selectedSet.has(field.id)) {
       nextSelected = [field.id]
       setSelectedIds(nextSelected)
-      setActiveSigner(field.recipientIndex)
+      if (field.recipientIndex != null) setActiveSigner(field.recipientIndex)
     } else if (selectedIds.length === 1) {
-      setActiveSigner(field.recipientIndex)
+      if (field.recipientIndex != null) setActiveSigner(field.recipientIndex)
     }
 
     const movingIds =
@@ -1350,156 +1373,176 @@ export function PdfFieldMapper({
         }}
       >
         <Stack gap="lg">
-          <Stack gap="sm">
-            <Group justify="space-between" align="center">
-              <Text size="sm" fw={600}>
-                {rolesTitle}
-              </Text>
-              <Group gap={6}>
-                <Button
-                  size="xs"
-                  variant="light"
-                  leftSection={<IconPlus size={14} />}
-                  onClick={() => addRole('signer')}
-                  disabled={roles.length >= 10}
-                >
-                  {addRoleLabel}
-                </Button>
-                {editableContacts ? (
-                  <Button
-                    size="xs"
-                    variant="default"
-                    leftSection={<IconPlus size={14} />}
-                    onClick={() => addRole('cc')}
-                    disabled={roles.length >= 10}
-                  >
-                    Add CC
-                  </Button>
-                ) : null}
-              </Group>
-            </Group>
-
-            <Stack gap="sm">
-              {roles.map((s, idx) => {
-                const color = SIGNER_COLORS[idx % SIGNER_COLORS.length]
-                const isActive = idx === activeSigner
-                const isCc = s.role === 'cc'
-                return (
-                  <Card
-                    key={idx}
-                    withBorder
-                    padding="sm"
-                    radius="md"
-                    style={{
-                      borderColor: isActive ? color : undefined,
-                      boxShadow: isActive ? `0 0 0 1px ${color}` : undefined,
-                      cursor: 'pointer',
-                      opacity: isCc ? 0.92 : 1,
-                    }}
-                    onClick={() => setActiveSigner(idx)}
-                  >
-                    <Group gap="xs" mb={6} justify="space-between" wrap="nowrap">
-                      <Group gap="xs" wrap="nowrap">
-                        <div
-                          style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: '50%',
-                            background: color,
-                            color: '#fff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 11,
-                            fontWeight: 700,
-                            flexShrink: 0,
-                          }}
-                        >
-                          {roleInitials(s, idx)}
-                        </div>
-                        <Text size="sm" fw={600} lineClamp={1}>
-                          {roleLabel(s, idx)}
-                          {isCc ? ' (CC)' : ''}
-                        </Text>
-                      </Group>
-                      {roles.length > 1 && (
-                        <ActionIcon
-                          size="sm"
-                          variant="subtle"
-                          color="red"
-                          aria-label={`Remove ${roleLabel(s, idx)}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            removeRole(idx)
-                          }}
-                        >
-                          <IconX size={14} />
-                        </ActionIcon>
-                      )}
-                    </Group>
+          <Accordion
+            variant="contained"
+            defaultValue="recipients"
+            styles={{
+              item: { background: 'var(--mantine-color-body)' },
+              control: { paddingBlock: 8, paddingInline: 10 },
+              content: { padding: '0 10px 10px' },
+              label: { fontSize: 'var(--mantine-font-size-xs)', fontWeight: 600 },
+            }}
+          >
+            <Accordion.Item value="recipients">
+              <Accordion.Control>
+                <Group justify="space-between" wrap="nowrap" gap="xs" pr="xs">
+                  <Text size="xs" fw={600}>
+                    {rolesTitle}
+                  </Text>
+                  <Badge size="xs" variant="light" color="gray">
+                    {roles.length}
+                  </Badge>
+                </Group>
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Stack gap="sm">
+                  <Group gap={6}>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      leftSection={<IconPlus size={14} />}
+                      onClick={() => addRole('signer')}
+                      disabled={roles.length >= 10}
+                    >
+                      {addRoleLabel}
+                    </Button>
                     {editableContacts ? (
-                      <Stack gap={6} onClick={(e) => e.stopPropagation()}>
-                        <Select
-                          size="xs"
-                          data={[
-                            { value: 'signer', label: 'Signer' },
-                            { value: 'cc', label: 'CC (receives copy)' },
-                          ]}
-                          value={s.role}
-                          onChange={(value) => {
-                            if (!value) return
-                            const nextRole = value as 'signer' | 'cc'
-                            const next = [...roles]
-                            next[idx] = { ...next[idx], role: nextRole }
-                            if (nextRole === 'cc') {
-                              commitRolesAndFields(
-                                next,
-                                fields.filter((f) => f.recipientIndex !== idx),
-                              )
-                            } else {
-                              commitRoles(next, `role-type-${idx}`)
-                            }
-                          }}
-                        />
-                        <TextInput
-                          size="xs"
-                          placeholder="Name"
-                          value={s.name}
-                          onChange={(e) => {
-                            const next = [...roles]
-                            next[idx] = { ...next[idx], name: e.currentTarget.value }
-                            commitRoles(next, `role-name-${idx}`)
-                          }}
-                        />
-                        <TextInput
-                          size="xs"
-                          placeholder="Email"
-                          value={s.email}
-                          onChange={(e) => {
-                            const next = [...roles]
-                            next[idx] = { ...next[idx], email: e.currentTarget.value }
-                            commitRoles(next, `role-email-${idx}`)
-                          }}
-                        />
-                      </Stack>
-                    ) : (
-                      <TextInput
+                      <Button
                         size="xs"
-                        placeholder="Role label"
-                        value={s.name}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => {
-                          const next = [...roles]
-                          next[idx] = { ...next[idx], name: e.currentTarget.value }
-                          commitRoles(next, `role-name-${idx}`)
-                        }}
-                      />
-                    )}
-                  </Card>
-                )
-              })}
-            </Stack>
-          </Stack>
+                        variant="default"
+                        leftSection={<IconPlus size={14} />}
+                        onClick={() => addRole('cc')}
+                        disabled={roles.length >= 10}
+                      >
+                        Add CC
+                      </Button>
+                    ) : null}
+                  </Group>
+
+                  <Stack gap="sm">
+                    {roles.map((s, idx) => {
+                      const color = SIGNER_COLORS[idx % SIGNER_COLORS.length]
+                      const isActive = idx === activeSigner
+                      const isCc = s.role === 'cc'
+                      return (
+                        <Card
+                          key={idx}
+                          withBorder
+                          padding="sm"
+                          radius="md"
+                          style={{
+                            borderColor: isActive ? color : undefined,
+                            boxShadow: isActive ? `0 0 0 1px ${color}` : undefined,
+                            cursor: 'pointer',
+                            opacity: isCc ? 0.92 : 1,
+                          }}
+                          onClick={() => setActiveSigner(idx)}
+                        >
+                          <Group gap="xs" mb={6} justify="space-between" wrap="nowrap">
+                            <Group gap="xs" wrap="nowrap">
+                              <div
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: '50%',
+                                  background: color,
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {roleInitials(s, idx)}
+                              </div>
+                              <Text size="sm" fw={600} lineClamp={1}>
+                                {roleLabel(s, idx)}
+                                {isCc ? ' (CC)' : ''}
+                              </Text>
+                            </Group>
+                            {roles.length > 1 && (
+                              <ActionIcon
+                                size="sm"
+                                variant="subtle"
+                                color="red"
+                                aria-label={`Remove ${roleLabel(s, idx)}`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  removeRole(idx)
+                                }}
+                              >
+                                <IconX size={14} />
+                              </ActionIcon>
+                            )}
+                          </Group>
+                          {editableContacts ? (
+                            <Stack gap={6} onClick={(e) => e.stopPropagation()}>
+                              <Select
+                                size="xs"
+                                data={[
+                                  { value: 'signer', label: 'Signer' },
+                                  { value: 'cc', label: 'CC (receives copy)' },
+                                ]}
+                                value={s.role}
+                                onChange={(value) => {
+                                  if (!value) return
+                                  const nextRole = value as 'signer' | 'cc'
+                                  const next = [...roles]
+                                  next[idx] = { ...next[idx], role: nextRole }
+                                  if (nextRole === 'cc') {
+                                    commitRolesAndFields(
+                                      next,
+                                      fields.filter((f) => f.recipientIndex !== idx),
+                                    )
+                                  } else {
+                                    commitRoles(next, `role-type-${idx}`)
+                                  }
+                                }}
+                              />
+                              <TextInput
+                                size="xs"
+                                placeholder="Name"
+                                value={s.name}
+                                onChange={(e) => {
+                                  const next = [...roles]
+                                  next[idx] = { ...next[idx], name: e.currentTarget.value }
+                                  commitRoles(next, `role-name-${idx}`)
+                                }}
+                              />
+                              <TextInput
+                                size="xs"
+                                placeholder="Email"
+                                value={s.email}
+                                onChange={(e) => {
+                                  const next = [...roles]
+                                  next[idx] = { ...next[idx], email: e.currentTarget.value }
+                                  commitRoles(next, `role-email-${idx}`)
+                                }}
+                              />
+                            </Stack>
+                          ) : (
+                            <TextInput
+                              size="xs"
+                              placeholder="Role label"
+                              value={s.name}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                const next = [...roles]
+                                next[idx] = { ...next[idx], name: e.currentTarget.value }
+                                commitRoles(next, `role-name-${idx}`)
+                              }}
+                            />
+                          )}
+                        </Card>
+                      )
+                    })}
+                  </Stack>
+                </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
 
           <Divider />
 
@@ -1614,7 +1657,7 @@ export function PdfFieldMapper({
                     label="Fill mode"
                     description={
                       (selectedField.fill_mode || 'signer') === 'document'
-                        ? 'Stamped into the PDF on send — every signer sees it.'
+                        ? 'Stamped into the PDF on send — every signer sees it. Not assigned to a signer.'
                         : 'Completed by the assigned signer during signing.'
                     }
                     data={[
@@ -1622,11 +1665,21 @@ export function PdfFieldMapper({
                       { value: 'signer', label: 'Signer completes' },
                     ]}
                     value={selectedField.fill_mode || 'signer'}
-                    onChange={(value) =>
-                      patchSelectedFields({
-                        fill_mode: value === 'document' ? 'document' : 'signer',
-                      })
-                    }
+                    onChange={(value) => {
+                      if (value === 'document') {
+                        patchSelectedFields({
+                          fill_mode: 'document',
+                          recipientIndex: null,
+                          role_key: '',
+                        })
+                      } else {
+                        patchSelectedFields({
+                          fill_mode: 'signer',
+                          recipientIndex: activeSigner,
+                          role_key: roles[activeSigner]?.role_key || '',
+                        })
+                      }
+                    }}
                   />
                 )}
                 <Autocomplete
@@ -1636,7 +1689,7 @@ export function PdfFieldMapper({
                     MERGE_TOKEN_HINTS[selectedField.merge_token || ''] ||
                     (selectedField.merge_token
                       ? humanizeTokenLabel(selectedField.merge_token)
-                      : 'Pick a catalog token or type custom.lender_name / deal.price')
+                      : 'Pick a catalog token or type custom.field_name')
                   }
                   placeholder="Search or type a token…"
                   data={mergeTokenOptions}
@@ -1651,19 +1704,20 @@ export function PdfFieldMapper({
                       previous,
                       selectedField.label,
                     )
-                    const fillPatch =
+                    const makeDocument =
                       (selectedField.field_type === 'text' ||
                         selectedField.field_type === 'date') &&
-                      (token.startsWith('listing.') ||
-                        token.startsWith('deal.') ||
-                        token.startsWith('custom.') ||
-                        normalized.startsWith('custom.'))
-                        ? { fill_mode: 'document' as const }
-                        : {}
+                      (isDocumentDataToken(token) || isDocumentDataToken(normalized))
                     patchSelectedFields({
                       merge_token: token,
                       ...(nextLabel ? { label: nextLabel } : {}),
-                      ...fillPatch,
+                      ...(makeDocument
+                        ? {
+                            fill_mode: 'document' as const,
+                            recipientIndex: null,
+                            role_key: '',
+                          }
+                        : {}),
                     })
                   }}
                   onBlur={() => {
@@ -1676,15 +1730,19 @@ export function PdfFieldMapper({
                       previous,
                       selectedField.label,
                     )
+                    const makeDocument =
+                      (selectedField.field_type === 'text' ||
+                        selectedField.field_type === 'date') &&
+                      isDocumentDataToken(normalized)
                     patchSelectedFields({
                       merge_token: normalized,
                       ...(nextLabel ? { label: nextLabel } : {}),
-                      ...((selectedField.field_type === 'text' ||
-                        selectedField.field_type === 'date') &&
-                      (normalized.startsWith('listing.') ||
-                        normalized.startsWith('deal.') ||
-                        normalized.startsWith('custom.'))
-                        ? { fill_mode: 'document' as const }
+                      ...(makeDocument
+                        ? {
+                            fill_mode: 'document' as const,
+                            recipientIndex: null,
+                            role_key: '',
+                          }
                         : {}),
                     })
                   }}
@@ -1819,32 +1877,46 @@ export function PdfFieldMapper({
               )}
             </div>
             <Divider my={4} />
-            <Text size="xs" c="dimmed" px={10} tt="uppercase" fw={600}>
-              Assign to
-            </Text>
-            {roles.map((s, idx) => (
-              <UnstyledButton
-                key={idx}
-                onClick={() => {
-                  patchSelectedFields({ recipientIndex: idx }, fieldMenu.fieldIds)
-                  setActiveSigner(idx)
-                  setFieldMenu(null)
-                }}
-                style={menuButtonStyle()}
-              >
-                <span
-                  style={{
-                    width: 14,
-                    height: 14,
-                    borderRadius: '50%',
-                    background: SIGNER_COLORS[idx % SIGNER_COLORS.length],
-                    flexShrink: 0,
-                  }}
-                />
-                {roleLabel(s, idx)}
-              </UnstyledButton>
-            ))}
-            <Divider my={4} />
+            {fieldMenu.fieldIds.some((id) => {
+              const f = fields.find((row) => row.id === id)
+              return f && (f.fill_mode || 'signer') !== 'document'
+            }) ? (
+              <>
+                <Text size="xs" c="dimmed" px={10} tt="uppercase" fw={600}>
+                  Assign to
+                </Text>
+                {roles.map((s, idx) => (
+                  <UnstyledButton
+                    key={idx}
+                    onClick={() => {
+                      const idSet = new Set(fieldMenu.fieldIds)
+                      commitFields(
+                        fields.map((f) => {
+                          if (!idSet.has(f.id)) return f
+                          if ((f.fill_mode || 'signer') === 'document') return f
+                          return { ...f, recipientIndex: idx }
+                        }),
+                      )
+                      setActiveSigner(idx)
+                      setFieldMenu(null)
+                    }}
+                    style={menuButtonStyle()}
+                  >
+                    <span
+                      style={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: '50%',
+                        background: SIGNER_COLORS[idx % SIGNER_COLORS.length],
+                        flexShrink: 0,
+                      }}
+                    />
+                    {roleLabel(s, idx)}
+                  </UnstyledButton>
+                ))}
+                <Divider my={4} />
+              </>
+            ) : null}
             {fieldMenuSingle && (
               <>
                 {labelEditOpen ? (

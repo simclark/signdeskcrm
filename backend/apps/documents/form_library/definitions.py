@@ -13,8 +13,8 @@ SAMPLE_PURCHASE_AGREEMENT = {
     "category": "general",
     "description": (
         "Demo multi-party agreement with Buyer / Seller / Agent roles and "
-        "listing/deal merge tokens. Replace with your board forms (e.g. TREC) "
-        "by uploading the official PDF and cloning this field pattern."
+        "shared document-data merge tokens. Replace with your board forms "
+        "(e.g. TREC) by uploading the official PDF and cloning this field pattern."
     ),
     "roles": [
         {"key": "buyer", "label": "Buyer", "order": 1},
@@ -31,8 +31,8 @@ SAMPLE_PURCHASE_AGREEMENT = {
             "h": 0.035,
             "required": True,
             "label": "Property address",
-            "recipient_index": 2,
-            "role_key": "agent",
+            "recipient_index": None,
+            "role_key": "",
             "merge_token": "listing.full_address",
             "fill_mode": "document",
             "prefill_editable": True,
@@ -46,8 +46,8 @@ SAMPLE_PURCHASE_AGREEMENT = {
             "h": 0.035,
             "required": True,
             "label": "Purchase price",
-            "recipient_index": 2,
-            "role_key": "agent",
+            "recipient_index": None,
+            "role_key": "",
             "merge_token": "deal.price",
             "fill_mode": "document",
             "prefill_editable": True,
@@ -61,8 +61,8 @@ SAMPLE_PURCHASE_AGREEMENT = {
             "h": 0.035,
             "required": False,
             "label": "MLS number",
-            "recipient_index": 2,
-            "role_key": "agent",
+            "recipient_index": None,
+            "role_key": "",
             "merge_token": "listing.mls_number",
             "fill_mode": "document",
             "prefill_editable": True,
@@ -76,11 +76,11 @@ SAMPLE_PURCHASE_AGREEMENT = {
             "h": 0.035,
             "required": True,
             "label": "Buyer legal name",
-            "recipient_index": 0,
-            "role_key": "buyer",
+            "recipient_index": None,
+            "role_key": "",
             "merge_token": "role.buyer.name",
-            "fill_mode": "signer",
-            "prefill_editable": False,
+            "fill_mode": "document",
+            "prefill_editable": True,
         },
         {
             "field_type": "signature",
@@ -121,11 +121,11 @@ SAMPLE_PURCHASE_AGREEMENT = {
             "h": 0.035,
             "required": True,
             "label": "Seller legal name",
-            "recipient_index": 1,
-            "role_key": "seller",
+            "recipient_index": None,
+            "role_key": "",
             "merge_token": "role.seller.name",
-            "fill_mode": "signer",
-            "prefill_editable": False,
+            "fill_mode": "document",
+            "prefill_editable": True,
         },
         {
             "field_type": "signature",

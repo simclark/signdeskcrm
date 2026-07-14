@@ -153,8 +153,13 @@ class Field(TenantOwnedModel):
         DOCUMENT = "document", "Document data (stamped on send)"
 
     envelope = models.ForeignKey(Envelope, on_delete=models.CASCADE, related_name="fields")
+    # Null when fill_mode=document (shared stamp data, not a signer task).
     recipient = models.ForeignKey(
-        Recipient, on_delete=models.CASCADE, related_name="fields"
+        Recipient,
+        on_delete=models.CASCADE,
+        related_name="fields",
+        null=True,
+        blank=True,
     )
     field_type = models.CharField(max_length=20, choices=FieldType.choices)
     page = models.PositiveIntegerField(default=1)

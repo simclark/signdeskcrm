@@ -110,10 +110,9 @@ def validate_field_layout(value, page_count=None):
             y = float(item["y"])
             w = float(item["w"])
             h = float(item["h"])
-            recipient_index = int(item.get("recipient_index", 0))
         except (KeyError, TypeError, ValueError) as exc:
             raise serializers.ValidationError(
-                f"field_layout[{idx}] requires numeric page, x, y, w, h, recipient_index."
+                f"field_layout[{idx}] requires numeric page, x, y, w, h."
             ) from exc
         if page < 1:
             raise serializers.ValidationError(f"field_layout[{idx}].page must be >= 1.")
@@ -130,16 +129,12 @@ def validate_field_layout(value, page_count=None):
             raise serializers.ValidationError(
                 f"field_layout[{idx}] extends outside the page bounds."
             )
-        if recipient_index < 0:
-            raise serializers.ValidationError(
-                f"field_layout[{idx}].recipient_index must be >= 0."
-            )
         fill_mode = str(item.get("fill_mode") or "").strip().lower()
         merge_token = str(item.get("merge_token") or "")[:128]
         if fill_mode not in ("signer", "document"):
-            # Infer: listing/deal/custom merge tokens are document data; else signer
+            # Infer: shared merge tokens are document data; else signer
             if field_type in ("text", "date") and merge_token.startswith(
-                ("listing.", "deal.", "custom.")
+                ("listing.", "deal.", "custom.", "role.")
             ):
                 fill_mode = "document"
             elif item.get("prefill_editable") is False:
@@ -148,6 +143,34 @@ def validate_field_layout(value, page_count=None):
                 fill_mode = "signer"
         if field_type in ("signature", "initials", "checkbox"):
             fill_mode = "signer"
+
+        raw_recipient = item.get("recipient_index", None if fill_mode == "document" else 0)
+        if fill_mode == "document":
+            if raw_recipient is None or raw_recipient == "":
+                recipient_index = None
+            else:
+                try:
+                    recipient_index = int(raw_recipient)
+                except (TypeError, ValueError) as exc:
+                    raise serializers.ValidationError(
+                        f"field_layout[{idx}].recipient_index must be null or an integer."
+                    ) from exc
+                # Document fields are signer-neutral; coerce any assignee away.
+                recipient_index = None
+            role_key = ""
+        else:
+            try:
+                recipient_index = int(0 if raw_recipient is None else raw_recipient)
+            except (TypeError, ValueError) as exc:
+                raise serializers.ValidationError(
+                    f"field_layout[{idx}].recipient_index must be an integer >= 0."
+                ) from exc
+            if recipient_index < 0:
+                raise serializers.ValidationError(
+                    f"field_layout[{idx}].recipient_index must be >= 0."
+                )
+            role_key = str(item.get("role_key") or "")[:64]
+
         cleaned.append(
             {
                 "field_type": field_type,
@@ -159,7 +182,7 @@ def validate_field_layout(value, page_count=None):
                 "required": bool(item.get("required", True)),
                 "label": str(item.get("label") or "")[:255],
                 "recipient_index": recipient_index,
-                "role_key": str(item.get("role_key") or "")[:64],
+                "role_key": role_key,
                 "merge_token": merge_token,
                 "fill_mode": fill_mode,
                 "prefill_editable": bool(item.get("prefill_editable", True)),

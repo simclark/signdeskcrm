@@ -272,8 +272,8 @@ export function layoutFromFields(fields: FieldDraft[]) {
     h: f.h,
     required: f.required,
     label: f.label,
-    recipient_index: f.recipientIndex,
-    role_key: f.role_key || '',
+    recipient_index: (f.fill_mode || 'signer') === 'document' ? null : f.recipientIndex,
+    role_key: (f.fill_mode || 'signer') === 'document' ? '' : f.role_key || '',
     merge_token: f.merge_token || '',
     fill_mode: f.fill_mode || 'signer',
     prefill_editable: f.prefill_editable ?? true,
@@ -290,7 +290,7 @@ export function fieldsFromLayout(
     h: number
     required?: boolean
     label?: string
-    recipient_index: number
+    recipient_index?: number | null
     role_key?: string
     merge_token?: string
     fill_mode?: 'signer' | 'document'
@@ -306,12 +306,18 @@ export function fieldsFromLayout(
         ? item.fill_mode
         : mergeToken.startsWith('listing.') ||
             mergeToken.startsWith('deal.') ||
-            mergeToken.startsWith('custom.')
+            mergeToken.startsWith('custom.') ||
+            mergeToken.startsWith('role.')
           ? 'document'
           : 'signer'
+    const isDocument = fillMode === 'document'
     return {
       id: newId(),
-      recipientIndex: item.recipient_index ?? 0,
+      recipientIndex: isDocument
+        ? null
+        : item.recipient_index == null
+          ? 0
+          : item.recipient_index,
       field_type: item.field_type as FieldType,
       page: item.page || 1,
       x: item.x,
@@ -320,7 +326,7 @@ export function fieldsFromLayout(
       h: item.h,
       required: item.required ?? true,
       label: item.label || '',
-      role_key: item.role_key || '',
+      role_key: isDocument ? '' : item.role_key || '',
       merge_token: mergeToken,
       fill_mode: fillMode,
       prefill_editable: item.prefill_editable ?? true,
@@ -330,7 +336,7 @@ export function fieldsFromLayout(
 }
 
 export function rolesFromLayout(
-  layout: Array<{ recipient_index?: number; role_key?: string }>,
+  layout: Array<{ recipient_index?: number | null; role_key?: string }>,
   namedRoles?: Array<{ key: string; label: string; order: number }>,
 ): RoleDraft[] {
   if (namedRoles?.length) {
@@ -344,10 +350,16 @@ export function rolesFromLayout(
       role_key: r.key,
     }))
   }
-  const maxIndex = layout.reduce((max, item) => Math.max(max, item.recipient_index ?? 0), 0)
+  const maxIndex = layout.reduce((max, item) => {
+    const idx = item.recipient_index
+    if (idx == null || idx < 0) return max
+    return Math.max(max, idx)
+  }, 0)
   const count = Math.max(1, maxIndex + 1)
   return Array.from({ length: count }, (_, idx) => {
-    const keyFromLayout = layout.find((item) => (item.recipient_index ?? 0) === idx)?.role_key
+    const keyFromLayout = layout.find(
+      (item) => item.recipient_index != null && item.recipient_index === idx,
+    )?.role_key
     return {
       name: keyFromLayout
         ? keyFromLayout.charAt(0).toUpperCase() + keyFromLayout.slice(1)

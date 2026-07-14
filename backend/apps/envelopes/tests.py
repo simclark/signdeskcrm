@@ -325,7 +325,7 @@ class StampOnSendDocumentFieldsTests(TestCase):
         self.doc_field = Field.objects.create(
             tenant=self.tenant,
             envelope=self.envelope,
-            recipient=self.agent,
+            recipient=None,
             field_type=Field.FieldType.TEXT,
             page=1,
             x=0.1,
@@ -341,7 +341,7 @@ class StampOnSendDocumentFieldsTests(TestCase):
         self.lender_field = Field.objects.create(
             tenant=self.tenant,
             envelope=self.envelope,
-            recipient=self.agent,
+            recipient=None,
             field_type=Field.FieldType.TEXT,
             page=1,
             x=0.1,
@@ -353,6 +353,22 @@ class StampOnSendDocumentFieldsTests(TestCase):
             merge_token="custom.lender_name",
             fill_mode=Field.FillMode.DOCUMENT,
             value="First National",
+        )
+        self.name_field = Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=None,
+            field_type=Field.FieldType.TEXT,
+            page=1,
+            x=0.1,
+            y=0.68,
+            w=0.5,
+            h=0.04,
+            required=False,
+            label="Buyer legal name",
+            merge_token="role.buyer.name",
+            fill_mode=Field.FillMode.DOCUMENT,
+            value="",
         )
         self.sig_field = Field.objects.create(
             tenant=self.tenant,
@@ -407,11 +423,20 @@ class StampOnSendDocumentFieldsTests(TestCase):
         self.assertIn("425000", text)
         self.assertIn("First National", text)
 
-        # Agent has only document fields — auto-marked signed, not invited
+        # Agent has no signer tasks — auto-marked signed, not invited
         self.agent.refresh_from_db()
         self.assertEqual(self.agent.status, Recipient.Status.SIGNED)
         self.buyer.refresh_from_db()
         self.assertEqual(self.buyer.status, Recipient.Status.SENT)
+
+    def test_prefill_resolves_role_name_onto_unassigned_document_field(self):
+        from apps.envelopes.services import resolve_merge_values_for_envelope
+
+        updated = resolve_merge_values_for_envelope(self.envelope, overwrite_with_empty=True)
+        self.assertGreaterEqual(updated, 1)
+        self.name_field.refresh_from_db()
+        self.assertEqual(self.name_field.value, "Buyer One")
+        self.assertIsNone(self.name_field.recipient_id)
 
     def test_required_empty_document_field_blocks_send(self):
         from apps.envelopes.services import send_envelope, validate_envelope_for_send
@@ -466,3 +491,141 @@ class StampOnSendDocumentFieldsTests(TestCase):
         version = self.envelope.document_version
         text = PdfReader(version.file.path).pages[0].extract_text() or ""
         self.assertIn("425000", text)
+
+
+class FieldRecipientFillModeValidationTests(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Val", slug="val-fields")
+        self.user = User.objects.create_user(email="owner@val.test", password="password123")
+        Membership.objects.create(tenant=self.tenant, user=self.user, role=Membership.Role.OWNER)
+        pdf = SimpleUploadedFile("doc.pdf", _multi_page_pdf(1), content_type="application/pdf")
+        self.document = Document.objects.create(
+            tenant=self.tenant,
+            title="Doc",
+            original_filename="doc.pdf",
+            created_by=self.user,
+        )
+        self.version = DocumentVersion(
+            tenant=self.tenant, document=self.document, version_number=1, file=pdf
+        )
+        self.version.save()
+        self.version.compute_hash()
+        self.version.page_count = 1
+        self.version.save()
+        self.envelope = Envelope.objects.create(
+            tenant=self.tenant,
+            title="E",
+            document=self.document,
+            document_version=self.version,
+            created_by=self.user,
+        )
+        self.recipient = Recipient.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            name="Pat",
+            email="pat@example.com",
+            routing_order=1,
+        )
+
+    def test_document_field_rejects_recipient(self):
+        from apps.envelopes.serializers import FieldSerializer
+
+        ser = FieldSerializer(
+            data={
+                "recipient": self.recipient.id,
+                "field_type": "text",
+                "page": 1,
+                "x": 0.1,
+                "y": 0.1,
+                "w": 0.2,
+                "h": 0.04,
+                "fill_mode": "document",
+                "label": "Price",
+            }
+        )
+        self.assertFalse(ser.is_valid())
+        self.assertIn("recipient", ser.errors)
+
+    def test_signer_field_requires_recipient(self):
+        from apps.envelopes.serializers import FieldSerializer
+
+        ser = FieldSerializer(
+            data={
+                "recipient": None,
+                "field_type": "text",
+                "page": 1,
+                "x": 0.1,
+                "y": 0.1,
+                "w": 0.2,
+                "h": 0.04,
+                "fill_mode": "signer",
+                "label": "Title",
+            }
+        )
+        self.assertFalse(ser.is_valid())
+        self.assertIn("recipient", ser.errors)
+
+    def test_document_field_allows_null_recipient(self):
+        from apps.envelopes.serializers import FieldSerializer
+
+        ser = FieldSerializer(
+            data={
+                "recipient": None,
+                "field_type": "text",
+                "page": 1,
+                "x": 0.1,
+                "y": 0.1,
+                "w": 0.2,
+                "h": 0.04,
+                "fill_mode": "document",
+                "label": "Price",
+                "merge_token": "deal.price",
+                "value": "100",
+            }
+        )
+        self.assertTrue(ser.is_valid(), ser.errors)
+
+    def test_duplicate_preserves_null_recipient_document_fields(self):
+        from rest_framework.test import APIClient
+
+        Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=None,
+            field_type=Field.FieldType.TEXT,
+            page=1,
+            x=0.1,
+            y=0.8,
+            w=0.4,
+            h=0.04,
+            fill_mode=Field.FillMode.DOCUMENT,
+            merge_token="deal.price",
+            value="99",
+            label="Price",
+        )
+        Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.recipient,
+            field_type=Field.FieldType.SIGNATURE,
+            page=1,
+            x=0.1,
+            y=0.2,
+            w=0.3,
+            h=0.06,
+            fill_mode=Field.FillMode.SIGNER,
+            label="Sig",
+        )
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        res = client.post(
+            f"/api/envelopes/{self.envelope.id}/duplicate/",
+            HTTP_HOST=f"{self.tenant.slug}.signdeskcrm.test",
+            HTTP_X_TENANT_SLUG=self.tenant.slug,
+        )
+        self.assertEqual(res.status_code, 201, getattr(res, "data", res.content))
+        clone = Envelope.objects.get(pk=res.data["id"])
+        doc_fields = clone.fields.filter(fill_mode=Field.FillMode.DOCUMENT)
+        self.assertEqual(doc_fields.count(), 1)
+        self.assertIsNone(doc_fields.first().recipient_id)
+        self.assertEqual(clone.fields.filter(fill_mode=Field.FillMode.SIGNER).count(), 1)

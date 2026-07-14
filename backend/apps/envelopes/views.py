@@ -123,7 +123,7 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
             Field.objects.create(
                 tenant=request.tenant,
                 envelope=clone,
-                recipient=recipient_map[f.recipient_id],
+                recipient=recipient_map.get(f.recipient_id) if f.recipient_id else None,
                 field_type=f.field_type,
                 page=f.page,
                 x=f.x,
@@ -226,7 +226,13 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
             if listing_id:
                 if not getattr(request.tenant, "listings_enabled", False):
                     return Response(
-                        {"detail": "Prefill records (Listings) are disabled for this workspace."},
+                        {
+                            "detail": (
+                                "Listings are disabled for this workspace, so prefill from a "
+                                "listing record isn’t available. Add custom values or enter "
+                                "document data field values manually."
+                            ),
+                        },
                         status=403,
                     )
                 listing = Listing.objects.for_tenant(request.tenant).filter(

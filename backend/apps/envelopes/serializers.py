@@ -6,6 +6,12 @@ from apps.envelopes.services import validate_envelope_for_send
 
 
 class FieldSerializer(serializers.ModelSerializer):
+    recipient = serializers.PrimaryKeyRelatedField(
+        queryset=Recipient.objects.all(),
+        allow_null=True,
+        required=False,
+    )
+
     class Meta:
         model = Field
         fields = (
@@ -41,9 +47,32 @@ class FieldSerializer(serializers.ModelSerializer):
             Field.FieldType.INITIALS,
             Field.FieldType.CHECKBOX,
         ):
-            attrs["fill_mode"] = Field.FillMode.SIGNER
+            fill_mode = Field.FillMode.SIGNER
+            attrs["fill_mode"] = fill_mode
         elif fill_mode not in Field.FillMode.values:
-            attrs["fill_mode"] = Field.FillMode.SIGNER
+            fill_mode = Field.FillMode.SIGNER
+            attrs["fill_mode"] = fill_mode
+        else:
+            attrs["fill_mode"] = fill_mode
+
+        recipient = attrs.get("recipient", serializers.empty)
+        if recipient is serializers.empty and self.instance is not None:
+            recipient = self.instance.recipient
+        elif recipient is serializers.empty:
+            recipient = None
+
+        if fill_mode == Field.FillMode.DOCUMENT:
+            if recipient is not None:
+                raise serializers.ValidationError(
+                    {"recipient": "Document data fields must not be assigned to a signer."}
+                )
+            attrs["recipient"] = None
+        else:
+            if recipient is None:
+                raise serializers.ValidationError(
+                    {"recipient": "Signer fields require a recipient."}
+                )
+            attrs["recipient"] = recipient
         return attrs
 
 

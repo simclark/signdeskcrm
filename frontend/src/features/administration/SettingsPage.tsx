@@ -888,8 +888,8 @@ export function SettingsPage() {
               }
             >
               <Switch
-                label="Prefill records (Listings)"
-                description="Show Listings in the nav and let envelopes pull property/record details into merge fields. Useful for real estate and similar workflows; off by default."
+                label="Prefill records"
+                description="Show Records in the nav and let envelopes pull shared details into document fields. Optional; off by default."
                 {...modulesForm.getInputProps('listings_enabled', { type: 'checkbox' })}
               />
             </SettingsSection>

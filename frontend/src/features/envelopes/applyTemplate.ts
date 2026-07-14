@@ -37,11 +37,22 @@ export async function applyTemplateLayout(
       }
     })
   } else {
-    const maxIndex = layout.reduce((max, item) => Math.max(max, item.recipient_index ?? 0), 0)
+    const maxIndex = layout.reduce((max, item) => {
+      if (item.fill_mode === 'document') return max
+      const idx = item.recipient_index
+      if (idx == null || idx < 0) return max
+      return Math.max(max, idx)
+    }, 0)
     const signerCount = Math.max(1, maxIndex + 1)
     recipientsPayload = Array.from({ length: signerCount }, (_, idx) => {
       const isFirst = idx === 0 && options?.email
-      const roleKey = layout.find((item) => (item.recipient_index ?? 0) === idx)?.role_key || ''
+      const roleKey =
+        layout.find(
+          (item) =>
+            item.fill_mode !== 'document' &&
+            item.recipient_index != null &&
+            item.recipient_index === idx,
+        )?.role_key || ''
       return {
         name: isFirst ? options!.name || `Signer ${idx + 1}` : `Signer ${idx + 1}`,
         email: isFirst
@@ -63,27 +74,34 @@ export async function applyTemplateLayout(
   })
 
   const fields = layout.map((item) => {
-    let recipientIndex = item.recipient_index ?? 0
-    if (item.role_key) {
-      const byKey = createdRecipients.findIndex((r) => r.role_key === item.role_key)
-      if (byKey >= 0) recipientIndex = byKey
-    }
-    recipientIndex = Math.min(Math.max(recipientIndex, 0), createdRecipients.length - 1)
     const mergeToken = item.merge_token || ''
-    const value =
-      mergeToken && options?.mergeValues?.[mergeToken]
-        ? options.mergeValues[mergeToken]
-        : item.value || ''
     const fillMode =
       item.fill_mode === 'document' || item.fill_mode === 'signer'
         ? item.fill_mode
         : mergeToken.startsWith('listing.') ||
             mergeToken.startsWith('deal.') ||
-            mergeToken.startsWith('custom.')
+            mergeToken.startsWith('custom.') ||
+            mergeToken.startsWith('role.')
           ? 'document'
           : 'signer'
+
+    let recipient: number | null = null
+    if (fillMode !== 'document') {
+      let recipientIndex = item.recipient_index ?? 0
+      if (item.role_key) {
+        const byKey = createdRecipients.findIndex((r) => r.role_key === item.role_key)
+        if (byKey >= 0) recipientIndex = byKey
+      }
+      recipientIndex = Math.min(Math.max(recipientIndex, 0), createdRecipients.length - 1)
+      recipient = createdRecipients[recipientIndex].id
+    }
+
+    const value =
+      mergeToken && options?.mergeValues?.[mergeToken]
+        ? options.mergeValues[mergeToken]
+        : item.value || ''
     return {
-      recipient: createdRecipients[recipientIndex].id,
+      recipient,
       field_type: item.field_type,
       page: item.page || 1,
       x: item.x,

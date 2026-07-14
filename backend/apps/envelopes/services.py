@@ -246,10 +246,18 @@ def _overlay_fields_on_pdf(version, fields) -> bytes:
                         )
                     except Exception:
                         c.setFont("Helvetica-Oblique", max(8, h * 0.4))
-                        c.drawString(x + 2, y + h / 3, field.recipient.name)
+                        fallback = (
+                            field.recipient.name
+                            if field.recipient_id
+                            else (field.value or "")
+                        )
+                        c.drawString(x + 2, y + h / 3, fallback)
                 else:
                     c.setFont("Helvetica-Oblique", max(8, h * 0.45))
-                    c.drawString(x + 2, y + h / 3, field.value or field.recipient.name)
+                    fallback = field.value or (
+                        field.recipient.name if field.recipient_id else ""
+                    )
+                    c.drawString(x + 2, y + h / 3, fallback)
             elif field.field_type == Field.FieldType.CHECKBOX:
                 c.rect(x, y, min(w, h), min(w, h))
                 if field.value.lower() in ("1", "true", "yes", "on"):

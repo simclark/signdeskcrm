@@ -1,4 +1,6 @@
 export const SIGNER_COLORS = ['#0B6E4F', '#E07A5F', '#3D5A80', '#9B5DE5', '#F4A261']
+/** Neutral chrome for document-data fields (not assigned to a signer). */
+export const DOCUMENT_FIELD_COLOR = '#5C6B73'
 
 export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox'
 export type FillMode = 'signer' | 'document'
@@ -12,7 +14,7 @@ export type TemplateLayoutItem = {
   h: number
   required?: boolean
   label?: string
-  recipient_index: number
+  recipient_index?: number | null
   role_key?: string
   merge_token?: string
   fill_mode?: FillMode
@@ -31,7 +33,8 @@ export type SignerDraft = {
 
 export type FieldDraft = {
   id: string
-  recipientIndex: number
+  /** Null when fill_mode is document (signer-neutral). */
+  recipientIndex: number | null
   field_type: FieldType
   page: number
   x: number
@@ -71,7 +74,7 @@ export type EnvelopeDetail = {
   }>
   fields: Array<{
     id: number
-    recipient: number
+    recipient: number | null
     field_type: string
     page: number
     x: number

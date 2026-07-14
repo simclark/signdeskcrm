@@ -1,8 +1,12 @@
 import {
+  Accordion,
+  ActionIcon,
+  Badge,
   Button,
   Divider,
   Group,
   Modal,
+  ScrollArea,
   SegmentedControl,
   Select,
   Stack,
@@ -12,6 +16,7 @@ import {
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
+import { IconPlus, IconTrash } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -44,6 +49,20 @@ function validatePrepareDrafts(signers: RoleDraft[], fields: FieldDraft[]): stri
   if (!fields.length) {
     return 'Place at least one field on the document'
   }
+  for (const f of fields) {
+    if ((f.fill_mode || 'signer') === 'document') {
+      if (f.recipientIndex != null) {
+        return 'Document data fields must not be assigned to a signer'
+      }
+      continue
+    }
+    if (f.recipientIndex == null) {
+      return 'Signer fields need an assigned recipient'
+    }
+    if (signers[f.recipientIndex]?.role === 'cc') {
+      return 'Fields cannot be assigned to CC recipients'
+    }
+  }
   for (const i of signerIndexes) {
     const hasSignerTasks = fields.some(
       (f) => f.recipientIndex === i && (f.fill_mode || 'signer') === 'signer',
@@ -60,11 +79,6 @@ function validatePrepareDrafts(signers: RoleDraft[], fields: FieldDraft[]): stri
   const hasAnySignerTasks = fields.some((f) => (f.fill_mode || 'signer') === 'signer')
   if (!hasAnySignerTasks) {
     return 'Add at least one signer field to complete'
-  }
-  for (const f of fields) {
-    if (signers[f.recipientIndex]?.role === 'cc') {
-      return 'Fields cannot be assigned to CC recipients'
-    }
   }
   return null
 }
@@ -93,34 +107,36 @@ function recipientsToDrafts(envelope: EnvelopeDetail, params: URLSearchParams): 
 }
 
 function fieldsToDrafts(envelope: EnvelopeDetail): FieldDraft[] {
-  if (!envelope.fields?.length || !envelope.recipients?.length) return []
-  const indexById = new Map(envelope.recipients.map((r, i) => [r.id, i]))
-  return envelope.fields.map((f) => ({
-    id: newFieldId(),
-    recipientIndex: indexById.get(f.recipient) ?? 0,
-    field_type: f.field_type as FieldType,
-    page: f.page,
-    x: f.x,
-    y: f.y,
-    w: f.w,
-    h: f.h,
-    required: f.required,
-    label: f.label,
-    merge_token: f.merge_token || '',
-    fill_mode: f.fill_mode === 'document' ? 'document' : 'signer',
-    value: f.value || '',
-  }))
+  if (!envelope.fields?.length) return []
+  const indexById = new Map((envelope.recipients || []).map((r, i) => [r.id, i]))
+  return envelope.fields.map((f) => {
+    const fillMode = f.fill_mode === 'document' ? 'document' : 'signer'
+    return {
+      id: newFieldId(),
+      recipientIndex:
+        fillMode === 'document' || f.recipient == null
+          ? null
+          : (indexById.get(f.recipient) ?? 0),
+      field_type: f.field_type as FieldType,
+      page: f.page,
+      x: f.x,
+      y: f.y,
+      w: f.w,
+      h: f.h,
+      required: f.required,
+      label: f.label,
+      merge_token: f.merge_token || '',
+      fill_mode: fillMode,
+      value: f.value || '',
+    }
+  })
 }
 
 function buildMergeDataFromState(
   fields: FieldDraft[],
-  dealPrice: string,
-  dealClosing: string,
   customEntries: Array<{ key: string; value: string }>,
 ): Record<string, string | Record<string, string>> {
   const merge: Record<string, string | Record<string, string>> = {}
-  if (dealPrice.trim()) merge.price = dealPrice.trim()
-  if (dealClosing.trim()) merge.closing_date = dealClosing.trim()
 
   for (const f of fields) {
     if ((f.fill_mode || 'signer') !== 'document') continue
@@ -172,8 +188,6 @@ export function EnvelopePreparePage() {
   const [applyTemplateId, setApplyTemplateId] = useState<string | null>(null)
   const [templateName, setTemplateName] = useState('')
   const [listingId, setListingId] = useState<string | null>(null)
-  const [dealPrice, setDealPrice] = useState('')
-  const [dealClosing, setDealClosing] = useState('')
   const [customEntries, setCustomEntries] = useState<Array<{ key: string; value: string }>>([])
 
   const { data: envelope, isLoading } = useQuery({
@@ -216,10 +230,10 @@ export function EnvelopePreparePage() {
     setRouting(nextRouting)
     setSavedRouting(nextRouting)
     setSavedSnapshot(draftsSnapshot(nextSigners, nextFields))
-    setListingId(envelope.listing != null ? String(envelope.listing) : null)
+    setListingId(
+      listingsEnabled && envelope.listing != null ? String(envelope.listing) : null,
+    )
     const md = envelope.merge_data || {}
-    setDealPrice(typeof md.price === 'string' ? md.price : '')
-    setDealClosing(typeof md.closing_date === 'string' ? md.closing_date : '')
     const customBag = md.custom
     if (customBag && typeof customBag === 'object' && !Array.isArray(customBag)) {
       setCustomEntries(
@@ -232,7 +246,7 @@ export function EnvelopePreparePage() {
       setCustomEntries([])
     }
     setHydrated(true)
-  }, [envelope, hydrated, params])
+  }, [envelope, hydrated, listingsEnabled, params])
 
   useEffect(() => {
     if (!isDirty) return
@@ -272,8 +286,8 @@ export function EnvelopePreparePage() {
         method: 'PATCH',
         json: {
           routing,
-          listing: listingId ? Number(listingId) : null,
-          merge_data: buildMergeDataFromState(fields, dealPrice, dealClosing, customEntries),
+          listing: listingsEnabled && listingId ? Number(listingId) : null,
+          merge_data: buildMergeDataFromState(fields, customEntries),
         },
       })
 
@@ -289,25 +303,36 @@ export function EnvelopePreparePage() {
         })),
       })
 
-      const payload = fields.map((f) => ({
-        recipient: createdRecipients[Math.min(f.recipientIndex, createdRecipients.length - 1)].id,
-        field_type: f.field_type,
-        page: f.page,
-        x: f.x,
-        y: f.y,
-        w: f.w,
-        h: f.h,
-        required: f.required,
-        label: f.label,
-        merge_token: f.merge_token || '',
-        fill_mode:
+      const payload = fields.map((f) => {
+        const fillMode =
           f.field_type === 'signature' ||
           f.field_type === 'initials' ||
           f.field_type === 'checkbox'
             ? 'signer'
-            : f.fill_mode || 'signer',
-        value: f.value || '',
-      }))
+            : f.fill_mode || 'signer'
+        let recipient: number | null = null
+        if (fillMode !== 'document') {
+          const idx = Math.min(
+            Math.max(f.recipientIndex ?? 0, 0),
+            createdRecipients.length - 1,
+          )
+          recipient = createdRecipients[idx].id
+        }
+        return {
+          recipient,
+          field_type: f.field_type,
+          page: f.page,
+          x: f.x,
+          y: f.y,
+          w: f.w,
+          h: f.h,
+          required: f.required,
+          label: f.label,
+          merge_token: f.merge_token || '',
+          fill_mode: fillMode,
+          value: f.value || '',
+        }
+      })
 
       await api(`/api/envelopes/${id}/fields/`, { method: 'PUT', json: payload })
       return {
@@ -363,7 +388,10 @@ export function EnvelopePreparePage() {
           contact: signers[idx]?.contact ?? null,
         }))
       } else {
-        const maxIndex = nextFields.reduce((max, f) => Math.max(max, f.recipientIndex), 0)
+        const maxIndex = nextFields.reduce((max, f) => {
+          if (f.recipientIndex == null) return max
+          return Math.max(max, f.recipientIndex)
+        }, 0)
         nextSigners = [...signers]
         while (nextSigners.length <= maxIndex) {
           nextSigners.push({
@@ -430,29 +458,37 @@ export function EnvelopePreparePage() {
       // Persist recipients/fields first so role keys are available for merge
       await save.mutateAsync({ continueAfter: false })
       const contactId = signers.find((s) => s.contact)?.contact || null
+      const body: {
+        contact: number | null
+        deal: Record<string, string | Record<string, string>>
+        listing?: number | null
+      } = {
+        contact: contactId,
+        deal: buildMergeDataFromState(fields, customEntries),
+      }
+      if (listingsEnabled) {
+        body.listing = listingId ? Number(listingId) : null
+      }
       return api<{
         updated_fields: number
         envelope: EnvelopeDetail
       }>(`/api/envelopes/${id}/prefill/`, {
         method: 'POST',
-        json: {
-          listing: listingId ? Number(listingId) : null,
-          contact: contactId,
-          deal: buildMergeDataFromState(fields, dealPrice, dealClosing, customEntries),
-        },
+        json: body,
       })
     },
     onSuccess: ({ updated_fields, envelope: next }) => {
       const nextFields = fieldsToDrafts(next)
       setFields(nextFields)
-      setDealPrice(
-        typeof next.merge_data?.price === 'string' ? next.merge_data.price : dealPrice,
-      )
-      setDealClosing(
-        typeof next.merge_data?.closing_date === 'string'
-          ? next.merge_data.closing_date
-          : dealClosing,
-      )
+      const customBag = next.merge_data?.custom
+      if (customBag && typeof customBag === 'object' && !Array.isArray(customObj)) {
+        setCustomEntries(
+          Object.entries(customObj).map(([key, value]) => ({
+            key,
+            value: String(value ?? ''),
+          })),
+        )
+      }
       setSavedSnapshot(draftsSnapshot(signers, nextFields))
       qc.invalidateQueries({ queryKey: ['envelope', id] })
       notifications.show({
@@ -463,6 +499,28 @@ export function EnvelopePreparePage() {
     onError: (err: Error) =>
       notifications.show({ color: 'red', title: 'Prefill failed', message: err.message }),
   })
+
+  const hasUsableCustomEntries = customEntries.some((e) => e.key.trim())
+  const hasContactPrefill = signers.some((s) => s.contact)
+  const documentDataFields = fields.filter((f) => (f.fill_mode || 'signer') === 'document')
+  const hasResolvableNonListingTokens = documentDataFields.some((f) => {
+    const token = (f.merge_token || '').trim()
+    return (
+      token.startsWith('custom.') ||
+      token.startsWith('deal.') ||
+      token.startsWith('role.') ||
+      token.startsWith('contact.') ||
+      token.startsWith('company.')
+    )
+  })
+  const canApplyPrefill =
+    listingsEnabled ||
+    hasUsableCustomEntries ||
+    hasContactPrefill ||
+    hasResolvableNonListingTokens
+  const prefillDisabledHint = canApplyPrefill
+    ? null
+    : 'No custom values set. Add a custom key above to Apply prefill, or type values into the document data fields. Listing tokens (e.g. listing.full_address) need the Listings module.'
 
   if (isLoading || !envelope || !hydrated) return null
 
@@ -558,19 +616,19 @@ export function EnvelopePreparePage() {
             </Stack>
             <Divider />
             <Stack gap="xs">
-              <Text size="sm" fw={600}>
-                Document data
-              </Text>
-              <Text size="xs" c="dimmed">
-                Values for document fields are stamped into the PDF on send so every signer can
-                see them. Signer fields (title, signature, etc.) stay blank until each party
-                completes them.
-              </Text>
+              <div>
+                <Text size="sm" fw={600}>
+                  Document data
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Shared values stamped into the PDF on send.
+                </Text>
+              </div>
               {listingsEnabled ? (
                 <Select
                   size="xs"
-                  label="Listing"
-                  placeholder="Optional listing source"
+                  label="Prefill record"
+                  placeholder="Optional record to pull values from"
                   clearable
                   searchable
                   data={(listingsData?.results || []).map((l) => ({
@@ -582,136 +640,232 @@ export function EnvelopePreparePage() {
                   value={listingId}
                   onChange={setListingId}
                 />
-              ) : (
-                <Text size="xs" c="dimmed">
-                  Enable Prefill records under Settings → Modules to attach listings.
-                </Text>
-              )}
-              <TextInput
-                size="xs"
-                label="Deal price"
-                placeholder="e.g. 450000"
-                value={dealPrice}
-                onChange={(e) => {
-                  const v = e.currentTarget.value
-                  setDealPrice(v)
-                  setFields((prev) =>
-                    prev.map((f) =>
-                      f.merge_token === 'deal.price' && (f.fill_mode || 'signer') === 'document'
-                        ? { ...f, value: v }
-                        : f,
-                    ),
-                  )
+              ) : null}
+              <Accordion
+                multiple
+                variant="contained"
+                defaultValue={['fields', 'custom']}
+                styles={{
+                  item: { background: 'var(--mantine-color-body)' },
+                  control: { paddingBlock: 8, paddingInline: 10 },
+                  content: { padding: '0 10px 10px' },
+                  label: { fontSize: 'var(--mantine-font-size-xs)', fontWeight: 600 },
                 }}
-              />
-              <TextInput
-                size="xs"
-                label="Closing date"
-                placeholder="e.g. 2026-08-01"
-                value={dealClosing}
-                onChange={(e) => {
-                  const v = e.currentTarget.value
-                  setDealClosing(v)
-                  setFields((prev) =>
-                    prev.map((f) =>
-                      f.merge_token === 'deal.closing_date' &&
-                      (f.fill_mode || 'signer') === 'document'
-                        ? { ...f, value: v }
-                        : f,
-                    ),
-                  )
-                }}
-              />
-              {fields
-                .filter((f) => (f.fill_mode || 'signer') === 'document')
-                .map((f) => (
-                  <TextInput
-                    key={f.id}
-                    size="xs"
-                    label={f.label || f.merge_token || 'Document field'}
-                    description={f.merge_token || 'Manual document value'}
-                    placeholder="Value stamped on send"
-                    value={f.value || ''}
-                    onChange={(e) => {
-                      const v = e.currentTarget.value
-                      setFields((prev) =>
-                        prev.map((row) => (row.id === f.id ? { ...row, value: v } : row)),
-                      )
-                      if (f.merge_token === 'deal.price') setDealPrice(v)
-                      if (f.merge_token === 'deal.closing_date') setDealClosing(v)
-                    }}
-                  />
-                ))}
-              <Divider label="Custom tokens" labelPosition="left" />
-              <Text size="xs" c="dimmed">
-                Add custom.* values (e.g. lender_name). Bind fields to custom.lender_name in the
-                mapper.
-              </Text>
-              {customEntries.map((entry, idx) => (
-                <Group key={idx} gap="xs" align="flex-end" wrap="nowrap">
-                  <TextInput
-                    size="xs"
-                    label={idx === 0 ? 'Key' : undefined}
-                    placeholder="lender_name"
-                    value={entry.key}
-                    style={{ flex: 1 }}
-                    onChange={(e) => {
-                      const key = e.currentTarget.value
-                      setCustomEntries((prev) =>
-                        prev.map((row, i) => (i === idx ? { ...row, key } : row)),
-                      )
-                    }}
-                  />
-                  <TextInput
-                    size="xs"
-                    label={idx === 0 ? 'Value' : undefined}
-                    placeholder="Value"
-                    value={entry.value}
-                    style={{ flex: 1 }}
-                    onChange={(e) => {
-                      const value = e.currentTarget.value
-                      setCustomEntries((prev) =>
-                        prev.map((row, i) => (i === idx ? { ...row, value } : row)),
-                      )
-                      const key = entry.key.trim().replace(/\s+/g, '_').toLowerCase()
-                      if (!key) return
-                      const token = `custom.${key}`
-                      setFields((prev) =>
-                        prev.map((f) =>
-                          f.merge_token === token && (f.fill_mode || 'signer') === 'document'
-                            ? { ...f, value }
-                            : f,
-                        ),
-                      )
-                    }}
-                  />
-                  <Button
-                    size="xs"
-                    variant="subtle"
-                    color="red"
-                    onClick={() =>
-                      setCustomEntries((prev) => prev.filter((_, i) => i !== idx))
-                    }
-                  >
-                    Remove
-                  </Button>
-                </Group>
-              ))}
-              <Button
-                size="xs"
-                variant="default"
-                onClick={() => setCustomEntries((prev) => [...prev, { key: '', value: '' }])}
               >
-                Add custom value
-              </Button>
+                <Accordion.Item value="fields">
+                  <Accordion.Control>
+                    <Group justify="space-between" wrap="nowrap" gap="xs" pr="xs">
+                      <Text size="xs" fw={600}>
+                        Fields
+                      </Text>
+                      <Badge size="xs" variant="light" color="gray">
+                        {documentDataFields.length}
+                      </Badge>
+                    </Group>
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    {documentDataFields.length === 0 ? (
+                      <Text size="xs" c="dimmed">
+                        No document-data fields yet. Set a text/date field to “Document data” in
+                        the mapper.
+                      </Text>
+                    ) : (
+                      <ScrollArea.Autosize mah={220} offsetScrollbars type="auto">
+                        <Stack gap="sm" pr={4}>
+                          {documentDataFields.map((f) => (
+                            <Stack key={f.id} gap={4}>
+                              <Group justify="space-between" gap={6} wrap="nowrap">
+                                <Text size="xs" fw={500} truncate style={{ flex: 1, minWidth: 0 }}>
+                                  {f.label || f.merge_token || 'Document field'}
+                                </Text>
+                                {f.merge_token ? (
+                                  <Text
+                                    size="xs"
+                                    c="dimmed"
+                                    truncate
+                                    title={f.merge_token}
+                                    style={{ maxWidth: '42%', flexShrink: 0 }}
+                                  >
+                                    {f.merge_token}
+                                  </Text>
+                                ) : null}
+                              </Group>
+                              <TextInput
+                                size="xs"
+                                placeholder="Value stamped on send"
+                                value={f.value || ''}
+                                onChange={(e) => {
+                                  const v = e.currentTarget.value
+                                  setFields((prev) =>
+                                    prev.map((row) =>
+                                      row.id === f.id ? { ...row, value: v } : row,
+                                    ),
+                                  )
+                                }}
+                              />
+                            </Stack>
+                          ))}
+                        </Stack>
+                      </ScrollArea.Autosize>
+                    )}
+                  </Accordion.Panel>
+                </Accordion.Item>
+                <Accordion.Item value="custom">
+                  <Accordion.Control>
+                    <Group justify="space-between" wrap="nowrap" gap="xs" pr="xs">
+                      <Text size="xs" fw={600}>
+                        Custom values
+                      </Text>
+                      <Badge size="xs" variant="light" color="gray">
+                        {customEntries.length}
+                      </Badge>
+                    </Group>
+                  </Accordion.Control>
+                  <Accordion.Panel>
+                    <Stack gap="xs">
+                      <Text size="xs" c="dimmed">
+                        Bind a field to <Text span fw={600} inherit>custom.key</Text>, set the
+                        value here, then Apply prefill.
+                      </Text>
+                      {customEntries.length === 0 ? (
+                        <Text size="xs" c="dimmed" fs="italic">
+                          No custom values set.
+                        </Text>
+                      ) : (
+                        <Stack gap="xs">
+                          {customEntries.map((entry, idx) => (
+                            <Stack
+                              key={idx}
+                              gap={6}
+                              p="xs"
+                              style={{
+                                border: '1px solid var(--mantine-color-gray-3)',
+                                borderRadius: 'var(--mantine-radius-sm)',
+                                background: 'var(--mantine-color-gray-0)',
+                              }}
+                            >
+                              <Group gap={6} wrap="nowrap" align="flex-end">
+                                <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+                                  <Text size="xs" c="dimmed">
+                                    Key
+                                  </Text>
+                                  <Group
+                                    gap={0}
+                                    wrap="nowrap"
+                                    px={8}
+                                    style={{
+                                      border: '1px solid var(--mantine-color-gray-4)',
+                                      borderRadius: 'var(--mantine-radius-sm)',
+                                      background: 'var(--mantine-color-body)',
+                                      minHeight: 30,
+                                    }}
+                                  >
+                                    <Text
+                                      size="xs"
+                                      c="dimmed"
+                                      style={{ flexShrink: 0, lineHeight: 1 }}
+                                    >
+                                      custom.
+                                    </Text>
+                                    <TextInput
+                                      size="xs"
+                                      variant="unstyled"
+                                      placeholder="lender_name"
+                                      value={entry.key}
+                                      style={{ flex: 1 }}
+                                      styles={{
+                                        input: {
+                                          minHeight: 28,
+                                          paddingInline: 0,
+                                          height: 28,
+                                        },
+                                      }}
+                                      onChange={(e) => {
+                                        const key = e.currentTarget.value
+                                        setCustomEntries((prev) =>
+                                          prev.map((row, i) =>
+                                            i === idx ? { ...row, key } : row,
+                                          ),
+                                        )
+                                      }}
+                                    />
+                                  </Group>
+                                </Stack>
+                                <ActionIcon
+                                  size="sm"
+                                  variant="subtle"
+                                  color="red"
+                                  mb={2}
+                                  aria-label={`Remove custom value ${idx + 1}`}
+                                  onClick={() =>
+                                    setCustomEntries((prev) =>
+                                      prev.filter((_, i) => i !== idx),
+                                    )
+                                  }
+                                >
+                                  <IconTrash size={14} />
+                                </ActionIcon>
+                              </Group>
+                              <TextInput
+                                size="xs"
+                                label="Value"
+                                placeholder="First National Bank"
+                                value={entry.value}
+                                onChange={(e) => {
+                                  const value = e.currentTarget.value
+                                  setCustomEntries((prev) =>
+                                    prev.map((row, i) =>
+                                      i === idx ? { ...row, value } : row,
+                                    ),
+                                  )
+                                  const key = entry.key
+                                    .trim()
+                                    .replace(/\s+/g, '_')
+                                    .toLowerCase()
+                                  if (!key) return
+                                  const token = `custom.${key}`
+                                  setFields((prev) =>
+                                    prev.map((f) =>
+                                      f.merge_token === token &&
+                                      (f.fill_mode || 'signer') === 'document'
+                                        ? { ...f, value }
+                                        : f,
+                                    ),
+                                  )
+                                }}
+                              />
+                            </Stack>
+                          ))}
+                        </Stack>
+                      )}
+                      <Button
+                        size="xs"
+                        variant="default"
+                        leftSection={<IconPlus size={14} />}
+                        onClick={() =>
+                          setCustomEntries((prev) => [...prev, { key: '', value: '' }])
+                        }
+                      >
+                        Add custom value
+                      </Button>
+                    </Stack>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion>
               <Button
                 size="xs"
                 variant="light"
                 onClick={() => prefill.mutate()}
                 loading={prefill.isPending}
+                disabled={!canApplyPrefill || save.isPending}
               >
                 Apply prefill
               </Button>
+              {prefillDisabledHint ? (
+                <Text size="xs" c="dimmed">
+                  {prefillDisabledHint}
+                </Text>
+              ) : null}
             </Stack>
             <Divider />
             <Stack gap="xs">
