@@ -12,6 +12,7 @@ import {
   fieldsFromLayout,
   layoutFromFields,
   rolesFromLayout,
+  rolesPayloadFromDrafts,
   type RoleDraft,
 } from './pdfFieldMapperUtils'
 import type { TemplateDetail } from './templateTypes'
@@ -43,18 +44,19 @@ export function TemplatePreparePage() {
     if (!template || hydrated) return
     const layout = Array.isArray(template.field_layout) ? template.field_layout : []
     const nextRoles =
-      layout.length > 0
-        ? rolesFromLayout(layout)
-        : [
-            {
-              name: 'Signer 1',
-              email: '',
-              role: 'signer' as const,
-              routing_order: 1,
-              contact: null,
-            },
-          ]
-    // Preserve role labels from layout max only — names default Signer N
+      template.roles?.length
+        ? rolesFromLayout(layout, template.roles)
+        : layout.length > 0
+          ? rolesFromLayout(layout)
+          : [
+              {
+                name: 'Signer 1',
+                email: '',
+                role: 'signer' as const,
+                routing_order: 1,
+                contact: null,
+              },
+            ]
     const nextFields = fieldsFromLayout(layout, newFieldId)
     setRoles(nextRoles)
     setFields(nextFields)
@@ -97,7 +99,10 @@ export function TemplatePreparePage() {
       }
       const updated = await api<TemplateDetail>(`/api/templates/${id}/`, {
         method: 'PATCH',
-        json: { field_layout: layoutFromFields(fields) },
+        json: {
+          field_layout: layoutFromFields(fields),
+          roles: rolesPayloadFromDrafts(roles),
+        },
       })
       return {
         template: updated,

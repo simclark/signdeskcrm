@@ -19,6 +19,9 @@ import { ContactsPage } from './features/contacts/ContactsPage'
 import { ContactDetailPage } from './features/contacts/ContactDetailPage'
 import { CompaniesPage } from './features/contacts/CompaniesPage'
 import { CompanyDetailPage } from './features/contacts/CompanyDetailPage'
+import { ListingsPage } from './features/contacts/ListingsPage'
+import { FollowUpsPage } from './features/contacts/FollowUpsPage'
+import { CadencesPage } from './features/contacts/CadencesPage'
 import { DocumentsPage } from './features/documents/DocumentsPage'
 import { TemplatesPage } from './features/documents/TemplatesPage'
 import { TemplatePreparePage } from './features/documents/TemplatePreparePage'
@@ -51,6 +54,9 @@ const router = createBrowserRouter([
       { path: 'contacts/:id', element: <ContactDetailPage /> },
       { path: 'companies', element: <CompaniesPage /> },
       { path: 'companies/:id', element: <CompanyDetailPage /> },
+      { path: 'listings', element: <ListingsPage /> },
+      { path: 'follow-ups', element: <FollowUpsPage /> },
+      { path: 'cadences', element: <CadencesPage /> },
       { path: 'documents', element: <DocumentsPage /> },
       { path: 'templates', element: <TemplatesPage /> },
       { path: 'templates/:id/prepare', element: <TemplatePreparePage /> },

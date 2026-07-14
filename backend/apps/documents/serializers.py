@@ -134,6 +134,20 @@ def validate_field_layout(value, page_count=None):
             raise serializers.ValidationError(
                 f"field_layout[{idx}].recipient_index must be >= 0."
             )
+        fill_mode = str(item.get("fill_mode") or "").strip().lower()
+        merge_token = str(item.get("merge_token") or "")[:128]
+        if fill_mode not in ("signer", "document"):
+            # Infer: listing/deal/custom merge tokens are document data; else signer
+            if field_type in ("text", "date") and merge_token.startswith(
+                ("listing.", "deal.", "custom.")
+            ):
+                fill_mode = "document"
+            elif item.get("prefill_editable") is False:
+                fill_mode = "signer"
+            else:
+                fill_mode = "signer"
+        if field_type in ("signature", "initials", "checkbox"):
+            fill_mode = "signer"
         cleaned.append(
             {
                 "field_type": field_type,
@@ -145,8 +159,40 @@ def validate_field_layout(value, page_count=None):
                 "required": bool(item.get("required", True)),
                 "label": str(item.get("label") or "")[:255],
                 "recipient_index": recipient_index,
+                "role_key": str(item.get("role_key") or "")[:64],
+                "merge_token": merge_token,
+                "fill_mode": fill_mode,
+                "prefill_editable": bool(item.get("prefill_editable", True)),
             }
         )
+    return cleaned
+
+
+def validate_roles(value):
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise serializers.ValidationError("roles must be a list.")
+    cleaned = []
+    seen = set()
+    for idx, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise serializers.ValidationError(f"roles[{idx}] must be an object.")
+        key = str(item.get("key") or "").strip().lower().replace(" ", "_")[:64]
+        label = str(item.get("label") or key or f"Signer {idx + 1}")[:128]
+        if not key:
+            key = f"signer_{idx + 1}"
+        if key in seen:
+            raise serializers.ValidationError(f"Duplicate role key: {key}")
+        seen.add(key)
+        try:
+            order = int(item.get("order", idx + 1))
+        except (TypeError, ValueError) as exc:
+            raise serializers.ValidationError(
+                f"roles[{idx}].order must be an integer."
+            ) from exc
+        cleaned.append({"key": key, "label": label, "order": max(1, order)})
+    cleaned.sort(key=lambda r: r["order"])
     return cleaned
 
 
@@ -165,6 +211,11 @@ class TemplateSerializer(serializers.ModelSerializer):
             "document_file_url",
             "page_count",
             "field_layout",
+            "roles",
+            "category",
+            "description",
+            "is_library",
+            "library_key",
             "is_active",
             "is_archived",
             "created_at",
@@ -175,6 +226,7 @@ class TemplateSerializer(serializers.ModelSerializer):
             "document_title",
             "document_file_url",
             "page_count",
+            "library_key",
             "created_at",
             "updated_at",
         )
@@ -212,13 +264,13 @@ class TemplateSerializer(serializers.ModelSerializer):
         document = None
         if self.instance is not None:
             document = self.instance.document
-        elif "document" in self.initial_data or "document" in getattr(self, "validated_data", {}):
-            # document may not be validated yet; page bounds checked in validate()
-            pass
         page_count = None
         if document and document.current_version:
             page_count = document.current_version.page_count
         return validate_field_layout(value, page_count=page_count)
+
+    def validate_roles(self, value):
+        return validate_roles(value)
 
     def validate(self, attrs):
         document = attrs.get("document")
@@ -233,8 +285,11 @@ class TemplateSerializer(serializers.ModelSerializer):
             attrs["field_layout"] = validate_field_layout(
                 attrs["field_layout"], page_count=page_count
             )
+        if "roles" in attrs:
+            attrs["roles"] = validate_roles(attrs["roles"])
         return attrs
 
     def create(self, validated_data):
         validated_data.setdefault("field_layout", [])
+        validated_data.setdefault("roles", [])
         return super().create(validated_data)

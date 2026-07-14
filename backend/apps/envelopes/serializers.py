@@ -19,10 +19,32 @@ class FieldSerializer(serializers.ModelSerializer):
             "h",
             "required",
             "label",
+            "merge_token",
+            "fill_mode",
             "value",
             "completed_at",
         )
-        read_only_fields = ("id", "value", "completed_at")
+        # `value` is writable on draft prepare for merge/prefill; signing still
+        # overwrites via the public signing API.
+        read_only_fields = ("id", "completed_at")
+
+    def validate(self, attrs):
+        field_type = attrs.get("field_type")
+        if self.instance is not None and field_type is None:
+            field_type = self.instance.field_type
+        fill_mode = attrs.get("fill_mode")
+        if self.instance is not None and fill_mode is None:
+            fill_mode = self.instance.fill_mode
+        fill_mode = fill_mode or Field.FillMode.SIGNER
+        if field_type in (
+            Field.FieldType.SIGNATURE,
+            Field.FieldType.INITIALS,
+            Field.FieldType.CHECKBOX,
+        ):
+            attrs["fill_mode"] = Field.FillMode.SIGNER
+        elif fill_mode not in Field.FillMode.values:
+            attrs["fill_mode"] = Field.FillMode.SIGNER
+        return attrs
 
 
 class RecipientSerializer(serializers.ModelSerializer):
@@ -34,6 +56,7 @@ class RecipientSerializer(serializers.ModelSerializer):
             "name",
             "email",
             "role",
+            "role_key",
             "routing_order",
             "status",
             "sent_at",
@@ -62,6 +85,8 @@ class EnvelopeSerializer(serializers.ModelSerializer):
             "document",
             "document_version",
             "template",
+            "listing",
+            "merge_data",
             "sent_at",
             "completed_at",
             "expires_at",

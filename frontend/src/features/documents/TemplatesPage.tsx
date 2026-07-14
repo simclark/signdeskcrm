@@ -12,6 +12,7 @@ import {
   TextInput,
   Title,
   SegmentedControl,
+  FileButton,
 } from '@mantine/core'
 import { Dropzone, PDF_MIME_TYPE } from '@mantine/dropzone'
 import { useDisclosure } from '@mantine/hooks'
@@ -20,6 +21,7 @@ import { notifications } from '@mantine/notifications'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   IconArchive,
+  IconCopy,
   IconDotsVertical,
   IconFileTypePdf,
   IconLayout,
@@ -43,12 +45,19 @@ export function TemplatesPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [opened, { open, close }] = useDisclosure(false)
+  const [importOpened, { open: openImport, close: closeImport }] = useDisclosure(false)
   const [pdfSource, setPdfSource] = useState<'upload' | 'existing'>('upload')
   const [file, setFile] = useState<File | null>(null)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importFieldMap, setImportFieldMap] = useState<File | null>(null)
+  const [view, setView] = useState<'all' | 'library'>('all')
 
   const { data } = useQuery({
-    queryKey: ['templates'],
-    queryFn: () => api<{ results: TemplateListItem[] }>('/api/templates/'),
+    queryKey: ['templates', view],
+    queryFn: () =>
+      api<{ results: TemplateListItem[] }>(
+        view === 'library' ? '/api/templates/?library=true' : '/api/templates/',
+      ),
   })
 
   const { data: documents } = useQuery({
@@ -59,6 +68,9 @@ export function TemplatesPage() {
 
   const form = useForm({
     initialValues: { name: '', document: '' },
+  })
+  const importForm = useForm({
+    initialValues: { name: '', category: 'general' },
   })
 
   const create = useMutation({
@@ -101,6 +113,51 @@ export function TemplatesPage() {
       notifications.show({ color: 'red', title: 'Could not create template', message: err.message }),
   })
 
+  const importTemplate = useMutation({
+    mutationFn: async () => {
+      if (!importFile) throw new Error('Choose a PDF to import')
+      const fd = new FormData()
+      fd.append('file', importFile)
+      fd.append('name', importForm.values.name.trim() || importFile.name.replace(/\.pdf$/i, ''))
+      fd.append('category', importForm.values.category || 'general')
+      if (importFieldMap) {
+        const text = await importFieldMap.text()
+        fd.append('field_map', text)
+      }
+      return api<TemplateListItem & { imported_field_count: number; import_source: string }>(
+        '/api/templates/import/',
+        { method: 'POST', formData: fd },
+      )
+    },
+    onSuccess: (template) => {
+      qc.invalidateQueries({ queryKey: ['templates'] })
+      qc.invalidateQueries({ queryKey: ['documents'] })
+      closeImport()
+      importForm.reset()
+      setImportFile(null)
+      setImportFieldMap(null)
+      notifications.show({
+        color: 'forest',
+        message: `Imported ${template.imported_field_count} field(s) via ${template.import_source}`,
+      })
+      navigate(`/app/templates/${template.id}/prepare`)
+    },
+    onError: (err: Error) =>
+      notifications.show({ color: 'red', title: 'Import failed', message: err.message }),
+  })
+
+  const clone = useMutation({
+    mutationFn: (templateId: number) =>
+      api<TemplateListItem>(`/api/templates/${templateId}/clone/`, { method: 'POST', json: {} }),
+    onSuccess: (template) => {
+      qc.invalidateQueries({ queryKey: ['templates'] })
+      notifications.show({ color: 'forest', message: 'Template cloned' })
+      navigate(`/app/templates/${template.id}/prepare`)
+    },
+    onError: (err: Error) =>
+      notifications.show({ color: 'red', title: 'Could not clone', message: err.message }),
+  })
+
   const setActive = useMutation({
     mutationFn: ({ templateId, is_active }: { templateId: number; is_active: boolean }) =>
       api<TemplateListItem>(`/api/templates/${templateId}/`, {
@@ -132,29 +189,49 @@ export function TemplatesPage() {
 
   return (
     <Stack>
-      <Group justify="space-between">
+      <Group justify="space-between" align="flex-start">
         <div>
           <Title order={2}>Templates</Title>
           <Text c="dimmed">
-            PDF-backed field layouts you can overlay onto any document when sending for signature.
-            Only active templates appear in envelope dropdowns.
+            Field layouts and form library starters. Seed with{' '}
+            <Text span ff="monospace" size="sm">
+              seed_form_library
+            </Text>{' '}
+            or import a PDF / field map from DocuSign-style exports.
           </Text>
         </div>
-        <Button
-          onClick={() => {
-            form.reset()
-            setFile(null)
-            setPdfSource('upload')
-            open()
-          }}
-        >
-          New template
-        </Button>
+        <Group>
+          <Button variant="light" onClick={openImport}>
+            Import PDF
+          </Button>
+          <Button
+            onClick={() => {
+              form.reset()
+              setFile(null)
+              setPdfSource('upload')
+              open()
+            }}
+          >
+            New template
+          </Button>
+        </Group>
       </Group>
+
+      <SegmentedControl
+        value={view}
+        onChange={(v) => setView(v as 'all' | 'library')}
+        data={[
+          { label: 'All templates', value: 'all' },
+          { label: 'Form library', value: 'library' },
+        ]}
+        w={320}
+      />
+
       {(data?.results || []).length === 0 ? (
         <Text c="dimmed">
-          No templates yet. Upload a PDF, place signature fields, then apply that layout to future
-          documents.
+          {view === 'library'
+            ? 'No library forms yet. Run seed_form_library for your workspace or mark a template as library.'
+            : 'No templates yet. Upload a PDF, place signature fields, then reuse that layout.'}
         </Text>
       ) : (
         <DataTable>
@@ -172,7 +249,16 @@ export function TemplatesPage() {
           <DataTable.Tbody>
             {(data?.results || []).map((t) => (
               <DataTable.Tr key={t.id}>
-                <DataTable.Td className="sd-table-primary">{t.name}</DataTable.Td>
+                <DataTable.Td className="sd-table-primary">
+                  <Group gap="xs">
+                    <span>{t.name}</span>
+                    {t.is_library ? (
+                      <Badge size="sm" variant="light" color="blue">
+                        Library
+                      </Badge>
+                    ) : null}
+                  </Group>
+                </DataTable.Td>
                 <DataTable.Td>
                   <Group gap="sm" wrap="nowrap">
                     <Badge variant="light" color={t.is_active ? 'forest' : 'gray'}>
@@ -219,6 +305,12 @@ export function TemplatesPage() {
                         Edit layout
                       </Menu.Item>
                       <Menu.Item
+                        leftSection={<IconCopy size={14} />}
+                        onClick={() => clone.mutate(t.id)}
+                      >
+                        Clone
+                      </Menu.Item>
+                      <Menu.Item
                         color="red"
                         leftSection={<IconArchive size={14} />}
                         disabled={archive.isPending}
@@ -239,12 +331,7 @@ export function TemplatesPage() {
         </DataTable>
       )}
 
-      <Modal
-        opened={opened}
-        onClose={close}
-        title="New template"
-        size="lg"
-      >
+      <Modal opened={opened} onClose={close} title="New template" size="lg">
         <Stack>
           <TextInput label="Name" required {...form.getInputProps('name')} />
           <div>
@@ -317,6 +404,50 @@ export function TemplatesPage() {
             </Button>
             <Button onClick={() => create.mutate()} loading={create.isPending}>
               Create & place fields
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal opened={importOpened} onClose={closeImport} title="Import PDF / field map" size="lg">
+        <Stack>
+          <Text size="sm" c="dimmed">
+            Upload a PDF exported from DocuSign or another tool. Embedded AcroForm fields are
+            detected automatically. Optionally attach a JSON field map for overlays without AcroForm.
+          </Text>
+          <TextInput label="Name" {...importForm.getInputProps('name')} />
+          <TextInput label="Category" placeholder="general" {...importForm.getInputProps('category')} />
+          <Dropzone
+            onDrop={(files) => {
+              const next = files[0]
+              if (!next) return
+              setImportFile(next)
+              if (!importForm.values.name) {
+                importForm.setFieldValue('name', next.name.replace(/\.pdf$/i, ''))
+              }
+            }}
+            maxFiles={1}
+            accept={PDF_MIME_TYPE}
+            maxSize={25 * 1024 * 1024}
+          >
+            <Group justify="center" gap="md" mih={90} style={{ pointerEvents: 'none' }}>
+              <IconFileTypePdf size={28} stroke={1.5} />
+              <Text size="sm">{importFile ? importFile.name : 'Drop PDF or click to browse'}</Text>
+            </Group>
+          </Dropzone>
+          <FileButton onChange={setImportFieldMap} accept="application/json,.json">
+            {(props) => (
+              <Button {...props} variant="light">
+                {importFieldMap ? importFieldMap.name : 'Optional JSON field map'}
+              </Button>
+            )}
+          </FileButton>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={closeImport}>
+              Cancel
+            </Button>
+            <Button onClick={() => importTemplate.mutate()} loading={importTemplate.isPending}>
+              Import
             </Button>
           </Group>
         </Stack>

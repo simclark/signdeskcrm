@@ -84,11 +84,27 @@ npm run dev
 6. Consent → complete fields → submit
 7. Signed PDF + Certificate of Completion + audit trail
 
+## Form library, listings & CRM outreach
+
+Horizontal capabilities (first design partner: real estate — see `docs/design-partner/`):
+
+- **Form library** — curated templates with named roles + merge tokens (`seed_form_library --tenant-slug …`)
+- **Import** — `POST /api/templates/import/` (PDF AcroForm + optional JSON field map)
+- **Listings** — manual or CSV import → envelope prepare prefill
+- **Follow-ups & cadences** — contact nurture tasks and email sequences
+
+```bash
+cd backend
+python manage.py seed_form_library --tenant-slug acme-esign
+```
+
 ## Tests
 
 ```bash
 cd backend
 CELERY_TASK_ALWAYS_EAGER=true MYSQL_HOST=127.0.0.1 python manage.py test apps.tenants
+# Offline unit tests (no MySQL):
+python manage.py test apps.documents.tests_merge_import
 ```
 
 ## Production

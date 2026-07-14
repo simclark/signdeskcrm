@@ -47,6 +47,15 @@ class Envelope(TenantOwnedModel):
         blank=True,
         related_name="envelopes",
     )
+    listing = models.ForeignKey(
+        "contacts.Listing",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="envelopes",
+    )
+    # Freeform deal overrides for merge tokens (e.g. {"price": "450000", "closing_date": "..."})
+    merge_data = models.JSONField(default=dict, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -94,6 +103,8 @@ class Recipient(TenantOwnedModel):
     name = models.CharField(max_length=255)
     email = models.EmailField()
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.SIGNER)
+    # Named slot from template roles (buyer / seller / agent / custom)
+    role_key = models.CharField(max_length=64, blank=True)
     routing_order = models.PositiveIntegerField(default=1)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     access_token = models.CharField(max_length=64, unique=True, blank=True)
@@ -137,6 +148,10 @@ class Field(TenantOwnedModel):
         TEXT = "text", "Text"
         CHECKBOX = "checkbox", "Checkbox"
 
+    class FillMode(models.TextChoices):
+        SIGNER = "signer", "Signer completes"
+        DOCUMENT = "document", "Document data (stamped on send)"
+
     envelope = models.ForeignKey(Envelope, on_delete=models.CASCADE, related_name="fields")
     recipient = models.ForeignKey(
         Recipient, on_delete=models.CASCADE, related_name="fields"
@@ -150,6 +165,13 @@ class Field(TenantOwnedModel):
     h = models.FloatField()
     required = models.BooleanField(default=True)
     label = models.CharField(max_length=255, blank=True)
+    merge_token = models.CharField(max_length=128, blank=True)
+    # document = filled at prepare, stamped into PDF on send; signer = completed in-session
+    fill_mode = models.CharField(
+        max_length=20,
+        choices=FillMode.choices,
+        default=FillMode.SIGNER,
+    )
     value = models.TextField(blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 

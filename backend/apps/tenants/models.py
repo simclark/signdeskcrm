@@ -98,6 +98,11 @@ class Tenant(TimeStampedModel):
         blank=True,
         help_text="Optional policy shown to signers about paper-copy fees.",
     )
+    # Optional modules (horizontal product — features tenants can turn on)
+    listings_enabled = models.BooleanField(
+        default=False,
+        help_text="Show Prefill records (Listings) for merge fields on envelopes.",
+    )
     esign_acknowledgement = models.TextField(default=DEFAULT_ESIGN_ACKNOWLEDGEMENT)
     esign_acknowledgement_version = models.CharField(
         max_length=32, default=DEFAULT_ESIGN_ACKNOWLEDGEMENT_VERSION

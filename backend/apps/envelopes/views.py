@@ -101,6 +101,8 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
             document=source.document,
             document_version=source.document_version,
             template=source.template,
+            listing=source.listing,
+            merge_data=dict(source.merge_data or {}),
             created_by=request.user,
             status=Envelope.Status.DRAFT,
         )
@@ -113,6 +115,7 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
                 name=r.name,
                 email=r.email,
                 role=r.role,
+                role_key=r.role_key,
                 routing_order=r.routing_order,
             )
             recipient_map[r.id] = nr
@@ -129,6 +132,9 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
                 h=f.h,
                 required=f.required,
                 label=f.label,
+                merge_token=f.merge_token,
+                fill_mode=f.fill_mode,
+                value=f.value,
             )
         return Response(
             EnvelopeSerializer(clone, context={"request": request}).data,
@@ -199,6 +205,67 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
                 Field.objects.create(tenant=request.tenant, envelope=envelope, **item)
             )
         return Response(FieldSerializer(created, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def prefill(self, request, pk=None):
+        """Resolve merge tokens onto draft field values from listing/contact/deal data."""
+        from apps.contacts.models import Contact, Listing
+
+        envelope = self.get_object()
+        if envelope.status != Envelope.Status.DRAFT:
+            return Response({"detail": "Locked."}, status=status.HTTP_400_BAD_REQUEST)
+
+        listing_id = request.data.get("listing")
+        contact_id = request.data.get("contact")
+        deal = request.data.get("deal") or {}
+        if not isinstance(deal, dict):
+            return Response({"detail": "deal must be an object."}, status=400)
+
+        listing = envelope.listing
+        if listing_id is not None:
+            if listing_id:
+                if not getattr(request.tenant, "listings_enabled", False):
+                    return Response(
+                        {"detail": "Prefill records (Listings) are disabled for this workspace."},
+                        status=403,
+                    )
+                listing = Listing.objects.for_tenant(request.tenant).filter(
+                    pk=listing_id, is_archived=False
+                ).first()
+                if not listing:
+                    return Response({"detail": "Listing not found."}, status=404)
+                envelope.listing = listing
+            else:
+                envelope.listing = None
+                listing = None
+
+        contact = None
+        if contact_id:
+            contact = Contact.objects.for_tenant(request.tenant).filter(
+                pk=contact_id, is_archived=False
+            ).select_related("company").first()
+
+        if deal:
+            merge_data = dict(envelope.merge_data or {})
+            merge_data.update(deal)
+            envelope.merge_data = merge_data
+        envelope.save(update_fields=["listing", "merge_data", "updated_at"])
+
+        from apps.envelopes.services import resolve_merge_values_for_envelope
+
+        updated = resolve_merge_values_for_envelope(
+            envelope,
+            contact=contact,
+            overwrite_with_empty=True,
+        )
+
+        envelope.refresh_from_db()
+        return Response(
+            {
+                "updated_fields": updated,
+                "envelope": EnvelopeSerializer(envelope, context={"request": request}).data,
+            }
+        )
 
 
 class DashboardViewSet(viewsets.ViewSet):

@@ -78,6 +78,20 @@ class Template(TenantOwnedModel):
         Document, on_delete=models.PROTECT, related_name="templates"
     )
     field_layout = models.JSONField(default=list, blank=True)
+    # Named signer slots: [{key, label, order}] — horizontal; not industry-specific
+    roles = models.JSONField(default=list, blank=True)
+    category = models.CharField(max_length=64, blank=True, default="general")
+    description = models.TextField(blank=True)
+    is_library = models.BooleanField(
+        default=False,
+        help_text="Curated form-library entry (cloneable starting point).",
+    )
+    library_key = models.CharField(
+        max_length=128,
+        blank=True,
+        null=True,
+        help_text="Stable key for seeded library forms (null for user templates).",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -89,6 +103,12 @@ class Template(TenantOwnedModel):
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "library_key"],
+                name="uniq_template_library_key_per_tenant",
+            )
+        ]
 
     def __str__(self) -> str:
         return self.name

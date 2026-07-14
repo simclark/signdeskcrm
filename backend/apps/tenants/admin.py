@@ -35,6 +35,7 @@ class TenantAdmin(admin.ModelAdmin):
         "sender_support_email",
         "sender_support_phone",
         "paper_copy_fee_policy",
+        "listings_enabled",
         "esign_acknowledgement",
         "esign_acknowledgement_version",
     )

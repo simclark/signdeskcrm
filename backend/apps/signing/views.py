@@ -145,7 +145,11 @@ class SigningSessionView(views.APIView):
             if version
             else None,
             "fields": FieldSerializer(
-                envelope.fields.filter(recipient=recipient), many=True
+                envelope.fields.filter(
+                    recipient=recipient,
+                    fill_mode=Field.FillMode.SIGNER,
+                ),
+                many=True,
             ).data,
             "downloads_ready": completed,
         }
@@ -266,7 +270,7 @@ class SigningFieldCompleteView(views.APIView):
         except PermissionError:
             return _consent_denied_response()
         try:
-            field = recipient.fields.get(pk=field_id)
+            field = recipient.fields.get(pk=field_id, fill_mode=Field.FillMode.SIGNER)
         except Field.DoesNotExist:
             return Response({"detail": "Field not found."}, status=404)
 

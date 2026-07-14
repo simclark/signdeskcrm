@@ -351,6 +351,12 @@ export function SettingsPage() {
     },
   })
 
+  const modulesForm = useForm({
+    initialValues: {
+      listings_enabled: tenant?.listings_enabled ?? false,
+    },
+  })
+
   const emailForm = useForm({
     initialValues: {
       subject: '',
@@ -398,6 +404,9 @@ export function SettingsPage() {
       sender_support_phone: tenant.sender_support_phone || '',
       paper_copy_fee_policy: tenant.paper_copy_fee_policy || '',
     })
+    modulesForm.setValues({
+      listings_enabled: tenant.listings_enabled ?? false,
+    })
     if (!iconFile) setIconPreview(toAppMediaUrl(tenant.icon))
     if (!logoFile) setLogoPreview(toAppMediaUrl(tenant.logo))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -427,6 +436,7 @@ export function SettingsPage() {
     tenant?.sender_support_email,
     tenant?.sender_support_phone,
     tenant?.paper_copy_fee_policy,
+    tenant?.listings_enabled,
   ])
 
   useEffect(() => {
@@ -545,6 +555,23 @@ export function SettingsPage() {
     onError: (err) => {
       const message =
         err instanceof ApiError ? String(err.message) : 'Could not save e-signature settings'
+      notifications.show({ color: 'red', message })
+    },
+  })
+
+  const saveModules = useMutation({
+    mutationFn: (values: typeof modulesForm.values) =>
+      api('/api/tenant/settings/', {
+        method: 'PATCH',
+        json: { listings_enabled: values.listings_enabled },
+      }),
+    onSuccess: async () => {
+      await refreshMe()
+      notifications.show({ color: 'forest', message: 'Modules updated' })
+    },
+    onError: (err) => {
+      const message =
+        err instanceof ApiError ? String(err.message) : 'Could not save modules'
       notifications.show({ color: 'red', message })
     },
   })
@@ -844,6 +871,28 @@ export function SettingsPage() {
                 </Stack>
               </SettingsSection>
             </Stack>
+          </form>
+
+          <form
+            onSubmit={modulesForm.onSubmit((v) => saveModules.mutate(v))}
+            style={{ marginTop: 'var(--mantine-spacing-lg)' }}
+          >
+            <SettingsSection
+              wide
+              title="Modules"
+              description="Optional features for this workspace. Leave off anything your team does not need."
+              actions={
+                <Button type="submit" loading={saveModules.isPending}>
+                  {saveModules.isPending ? 'Saving…' : 'Save modules'}
+                </Button>
+              }
+            >
+              <Switch
+                label="Prefill records (Listings)"
+                description="Show Listings in the nav and let envelopes pull property/record details into merge fields. Useful for real estate and similar workflows; off by default."
+                {...modulesForm.getInputProps('listings_enabled', { type: 'checkbox' })}
+              />
+            </SettingsSection>
           </form>
         </Tabs.Panel>
 

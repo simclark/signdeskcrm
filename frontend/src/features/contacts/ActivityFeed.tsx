@@ -34,6 +34,8 @@ const KIND_BADGE_COLOR: Record<string, string> = {
   created: 'gray',
   updated: 'gray',
   note: 'teal',
+  follow_up: 'orange',
+  cadence_email: 'violet',
 }
 
 function formatKindLabel(kind: string) {

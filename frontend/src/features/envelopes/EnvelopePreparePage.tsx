@@ -20,11 +20,13 @@ import {
   draftsSnapshot,
   fieldsFromLayout,
   layoutFromFields,
+  rolesFromLayout,
   type RoleDraft,
 } from '../documents/pdfFieldMapperUtils'
 import type { TemplateListItem } from '../documents/templateTypes'
 import { api } from '../../shared/api'
 import { PageBreadcrumbs } from '../../shared/PageBreadcrumbs'
+import { useAuth } from '../auth/AuthContext'
 import { newFieldId, type EnvelopeDetail, type FieldDraft, type FieldType } from './types'
 
 function validatePrepareDrafts(signers: RoleDraft[], fields: FieldDraft[]): string | null {
@@ -43,6 +45,10 @@ function validatePrepareDrafts(signers: RoleDraft[], fields: FieldDraft[]): stri
     return 'Place at least one field on the document'
   }
   for (const i of signerIndexes) {
+    const hasSignerTasks = fields.some(
+      (f) => f.recipientIndex === i && (f.fill_mode || 'signer') === 'signer',
+    )
+    if (!hasSignerTasks) continue
     const hasSignature = fields.some(
       (f) => f.recipientIndex === i && f.field_type === 'signature',
     )
@@ -50,6 +56,10 @@ function validatePrepareDrafts(signers: RoleDraft[], fields: FieldDraft[]): stri
       const label = signers[i].name.trim() || signers[i].email.trim() || `Signer ${i + 1}`
       return `${label} needs at least one signature field`
     }
+  }
+  const hasAnySignerTasks = fields.some((f) => (f.fill_mode || 'signer') === 'signer')
+  if (!hasAnySignerTasks) {
+    return 'Add at least one signer field to complete'
   }
   for (const f of fields) {
     if (signers[f.recipientIndex]?.role === 'cc') {
@@ -67,6 +77,7 @@ function recipientsToDrafts(envelope: EnvelopeDetail, params: URLSearchParams): 
       role: (r.role as 'signer' | 'cc') || 'signer',
       routing_order: r.routing_order || idx + 1,
       contact: r.contact ?? null,
+      role_key: r.role_key || '',
     }))
   }
   return [
@@ -76,6 +87,7 @@ function recipientsToDrafts(envelope: EnvelopeDetail, params: URLSearchParams): 
       role: 'signer',
       routing_order: 1,
       contact: params.get('contact') ? Number(params.get('contact')) : null,
+      role_key: '',
     },
   ]
 }
@@ -94,7 +106,49 @@ function fieldsToDrafts(envelope: EnvelopeDetail): FieldDraft[] {
     h: f.h,
     required: f.required,
     label: f.label,
+    merge_token: f.merge_token || '',
+    fill_mode: f.fill_mode === 'document' ? 'document' : 'signer',
+    value: f.value || '',
   }))
+}
+
+function buildMergeDataFromState(
+  fields: FieldDraft[],
+  dealPrice: string,
+  dealClosing: string,
+  customEntries: Array<{ key: string; value: string }>,
+): Record<string, string | Record<string, string>> {
+  const merge: Record<string, string | Record<string, string>> = {}
+  if (dealPrice.trim()) merge.price = dealPrice.trim()
+  if (dealClosing.trim()) merge.closing_date = dealClosing.trim()
+
+  for (const f of fields) {
+    if ((f.fill_mode || 'signer') !== 'document') continue
+    const token = (f.merge_token || '').trim()
+    const value = (f.value || '').trim()
+    if (!token || !value) continue
+    if (token.startsWith('deal.')) {
+      const key = token.slice('deal.'.length)
+      if (key && key !== 'custom') merge[key] = value
+    }
+  }
+
+  const custom: Record<string, string> = {}
+  for (const entry of customEntries) {
+    const key = entry.key.trim().replace(/\s+/g, '_').toLowerCase()
+    if (!key) continue
+    custom[key] = entry.value
+  }
+  for (const f of fields) {
+    if ((f.fill_mode || 'signer') !== 'document') continue
+    const token = (f.merge_token || '').trim()
+    const value = (f.value || '').trim()
+    if (!token.startsWith('custom.') || !value) continue
+    const key = token.slice('custom.'.length)
+    if (key) custom[key] = value
+  }
+  if (Object.keys(custom).length) merge.custom = custom
+  return merge
 }
 
 export function EnvelopePreparePage() {
@@ -102,6 +156,8 @@ export function EnvelopePreparePage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { tenant } = useAuth()
+  const listingsEnabled = Boolean(tenant?.listings_enabled)
 
   const [signers, setSigners] = useState<RoleDraft[]>([])
   const [fields, setFields] = useState<FieldDraft[]>([])
@@ -115,11 +171,24 @@ export function EnvelopePreparePage() {
   const [saveTplOpened, { open: openSaveTpl, close: closeSaveTpl }] = useDisclosure(false)
   const [applyTemplateId, setApplyTemplateId] = useState<string | null>(null)
   const [templateName, setTemplateName] = useState('')
+  const [listingId, setListingId] = useState<string | null>(null)
+  const [dealPrice, setDealPrice] = useState('')
+  const [dealClosing, setDealClosing] = useState('')
+  const [customEntries, setCustomEntries] = useState<Array<{ key: string; value: string }>>([])
 
   const { data: envelope, isLoading } = useQuery({
     queryKey: ['envelope', id],
     queryFn: () => api<EnvelopeDetail>(`/api/envelopes/${id}/`),
     enabled: !!id,
+  })
+
+  const { data: listingsData } = useQuery({
+    queryKey: ['listings'],
+    queryFn: () =>
+      api<{ results: Array<{ id: number; full_address: string; mls_number: string }> }>(
+        '/api/listings/',
+      ),
+    enabled: listingsEnabled,
   })
 
   const { data: templatesData } = useQuery({
@@ -147,6 +216,21 @@ export function EnvelopePreparePage() {
     setRouting(nextRouting)
     setSavedRouting(nextRouting)
     setSavedSnapshot(draftsSnapshot(nextSigners, nextFields))
+    setListingId(envelope.listing != null ? String(envelope.listing) : null)
+    const md = envelope.merge_data || {}
+    setDealPrice(typeof md.price === 'string' ? md.price : '')
+    setDealClosing(typeof md.closing_date === 'string' ? md.closing_date : '')
+    const customBag = md.custom
+    if (customBag && typeof customBag === 'object' && !Array.isArray(customBag)) {
+      setCustomEntries(
+        Object.entries(customBag).map(([key, value]) => ({
+          key,
+          value: String(value ?? ''),
+        })),
+      )
+    } else {
+      setCustomEntries([])
+    }
     setHydrated(true)
   }, [envelope, hydrated, params])
 
@@ -186,7 +270,11 @@ export function EnvelopePreparePage() {
 
       await api(`/api/envelopes/${id}/`, {
         method: 'PATCH',
-        json: { routing },
+        json: {
+          routing,
+          listing: listingId ? Number(listingId) : null,
+          merge_data: buildMergeDataFromState(fields, dealPrice, dealClosing, customEntries),
+        },
       })
 
       const createdRecipients = await api<Array<{ id: number }>>(`/api/envelopes/${id}/recipients/`, {
@@ -195,6 +283,7 @@ export function EnvelopePreparePage() {
           name: s.name.trim(),
           email: s.email.trim(),
           role: s.role,
+          role_key: s.role_key || '',
           routing_order: s.routing_order || idx + 1,
           contact: s.contact || null,
         })),
@@ -210,6 +299,14 @@ export function EnvelopePreparePage() {
         h: f.h,
         required: f.required,
         label: f.label,
+        merge_token: f.merge_token || '',
+        fill_mode:
+          f.field_type === 'signature' ||
+          f.field_type === 'initials' ||
+          f.field_type === 'checkbox'
+            ? 'signer'
+            : f.fill_mode || 'signer',
+        value: f.value || '',
       }))
 
       await api(`/api/envelopes/${id}/fields/`, { method: 'PUT', json: payload })
@@ -256,16 +353,27 @@ export function EnvelopePreparePage() {
       }
 
       const nextFields = fieldsFromLayout(layout, newFieldId)
-      const maxIndex = nextFields.reduce((max, f) => Math.max(max, f.recipientIndex), 0)
-      let nextSigners = [...signers]
-      while (nextSigners.length <= maxIndex) {
-        nextSigners.push({
-          name: '',
-          email: '',
-          role: 'signer',
-          routing_order: nextSigners.length + 1,
-          contact: null,
-        })
+      let nextSigners = signers
+      if (template.roles?.length) {
+        const named = rolesFromLayout(layout, template.roles)
+        nextSigners = named.map((r, idx) => ({
+          ...r,
+          name: signers[idx]?.name || r.name,
+          email: signers[idx]?.email || '',
+          contact: signers[idx]?.contact ?? null,
+        }))
+      } else {
+        const maxIndex = nextFields.reduce((max, f) => Math.max(max, f.recipientIndex), 0)
+        nextSigners = [...signers]
+        while (nextSigners.length <= maxIndex) {
+          nextSigners.push({
+            name: '',
+            email: '',
+            role: 'signer',
+            routing_order: nextSigners.length + 1,
+            contact: null,
+          })
+        }
       }
       return { nextFields, nextSigners, templateName: template.name }
     },
@@ -295,6 +403,11 @@ export function EnvelopePreparePage() {
           name,
           document: envelope.document,
           field_layout: layoutFromFields(fields),
+          roles: signers.map((s, idx) => ({
+            key: (s.role_key || `signer_${idx + 1}`).toLowerCase().replace(/\s+/g, '_'),
+            label: s.name.trim() || `Signer ${idx + 1}`,
+            order: s.routing_order || idx + 1,
+          })),
         },
       })
     },
@@ -309,6 +422,46 @@ export function EnvelopePreparePage() {
     },
     onError: (err: Error) =>
       notifications.show({ color: 'red', title: 'Could not save template', message: err.message }),
+  })
+
+  const prefill = useMutation({
+    mutationFn: async () => {
+      if (!id) throw new Error('Missing envelope')
+      // Persist recipients/fields first so role keys are available for merge
+      await save.mutateAsync({ continueAfter: false })
+      const contactId = signers.find((s) => s.contact)?.contact || null
+      return api<{
+        updated_fields: number
+        envelope: EnvelopeDetail
+      }>(`/api/envelopes/${id}/prefill/`, {
+        method: 'POST',
+        json: {
+          listing: listingId ? Number(listingId) : null,
+          contact: contactId,
+          deal: buildMergeDataFromState(fields, dealPrice, dealClosing, customEntries),
+        },
+      })
+    },
+    onSuccess: ({ updated_fields, envelope: next }) => {
+      const nextFields = fieldsToDrafts(next)
+      setFields(nextFields)
+      setDealPrice(
+        typeof next.merge_data?.price === 'string' ? next.merge_data.price : dealPrice,
+      )
+      setDealClosing(
+        typeof next.merge_data?.closing_date === 'string'
+          ? next.merge_data.closing_date
+          : dealClosing,
+      )
+      setSavedSnapshot(draftsSnapshot(signers, nextFields))
+      qc.invalidateQueries({ queryKey: ['envelope', id] })
+      notifications.show({
+        color: 'forest',
+        message: `Prefill applied to ${updated_fields} field(s)`,
+      })
+    },
+    onError: (err: Error) =>
+      notifications.show({ color: 'red', title: 'Prefill failed', message: err.message }),
   })
 
   if (isLoading || !envelope || !hydrated) return null
@@ -402,6 +555,163 @@ export function EnvelopePreparePage() {
                   ? 'Signers are invited one at a time in list order.'
                   : 'All signers are invited at once.'}
               </Text>
+            </Stack>
+            <Divider />
+            <Stack gap="xs">
+              <Text size="sm" fw={600}>
+                Document data
+              </Text>
+              <Text size="xs" c="dimmed">
+                Values for document fields are stamped into the PDF on send so every signer can
+                see them. Signer fields (title, signature, etc.) stay blank until each party
+                completes them.
+              </Text>
+              {listingsEnabled ? (
+                <Select
+                  size="xs"
+                  label="Listing"
+                  placeholder="Optional listing source"
+                  clearable
+                  searchable
+                  data={(listingsData?.results || []).map((l) => ({
+                    value: String(l.id),
+                    label: l.mls_number
+                      ? `${l.full_address} (${l.mls_number})`
+                      : l.full_address,
+                  }))}
+                  value={listingId}
+                  onChange={setListingId}
+                />
+              ) : (
+                <Text size="xs" c="dimmed">
+                  Enable Prefill records under Settings → Modules to attach listings.
+                </Text>
+              )}
+              <TextInput
+                size="xs"
+                label="Deal price"
+                placeholder="e.g. 450000"
+                value={dealPrice}
+                onChange={(e) => {
+                  const v = e.currentTarget.value
+                  setDealPrice(v)
+                  setFields((prev) =>
+                    prev.map((f) =>
+                      f.merge_token === 'deal.price' && (f.fill_mode || 'signer') === 'document'
+                        ? { ...f, value: v }
+                        : f,
+                    ),
+                  )
+                }}
+              />
+              <TextInput
+                size="xs"
+                label="Closing date"
+                placeholder="e.g. 2026-08-01"
+                value={dealClosing}
+                onChange={(e) => {
+                  const v = e.currentTarget.value
+                  setDealClosing(v)
+                  setFields((prev) =>
+                    prev.map((f) =>
+                      f.merge_token === 'deal.closing_date' &&
+                      (f.fill_mode || 'signer') === 'document'
+                        ? { ...f, value: v }
+                        : f,
+                    ),
+                  )
+                }}
+              />
+              {fields
+                .filter((f) => (f.fill_mode || 'signer') === 'document')
+                .map((f) => (
+                  <TextInput
+                    key={f.id}
+                    size="xs"
+                    label={f.label || f.merge_token || 'Document field'}
+                    description={f.merge_token || 'Manual document value'}
+                    placeholder="Value stamped on send"
+                    value={f.value || ''}
+                    onChange={(e) => {
+                      const v = e.currentTarget.value
+                      setFields((prev) =>
+                        prev.map((row) => (row.id === f.id ? { ...row, value: v } : row)),
+                      )
+                      if (f.merge_token === 'deal.price') setDealPrice(v)
+                      if (f.merge_token === 'deal.closing_date') setDealClosing(v)
+                    }}
+                  />
+                ))}
+              <Divider label="Custom tokens" labelPosition="left" />
+              <Text size="xs" c="dimmed">
+                Add custom.* values (e.g. lender_name). Bind fields to custom.lender_name in the
+                mapper.
+              </Text>
+              {customEntries.map((entry, idx) => (
+                <Group key={idx} gap="xs" align="flex-end" wrap="nowrap">
+                  <TextInput
+                    size="xs"
+                    label={idx === 0 ? 'Key' : undefined}
+                    placeholder="lender_name"
+                    value={entry.key}
+                    style={{ flex: 1 }}
+                    onChange={(e) => {
+                      const key = e.currentTarget.value
+                      setCustomEntries((prev) =>
+                        prev.map((row, i) => (i === idx ? { ...row, key } : row)),
+                      )
+                    }}
+                  />
+                  <TextInput
+                    size="xs"
+                    label={idx === 0 ? 'Value' : undefined}
+                    placeholder="Value"
+                    value={entry.value}
+                    style={{ flex: 1 }}
+                    onChange={(e) => {
+                      const value = e.currentTarget.value
+                      setCustomEntries((prev) =>
+                        prev.map((row, i) => (i === idx ? { ...row, value } : row)),
+                      )
+                      const key = entry.key.trim().replace(/\s+/g, '_').toLowerCase()
+                      if (!key) return
+                      const token = `custom.${key}`
+                      setFields((prev) =>
+                        prev.map((f) =>
+                          f.merge_token === token && (f.fill_mode || 'signer') === 'document'
+                            ? { ...f, value }
+                            : f,
+                        ),
+                      )
+                    }}
+                  />
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    color="red"
+                    onClick={() =>
+                      setCustomEntries((prev) => prev.filter((_, i) => i !== idx))
+                    }
+                  >
+                    Remove
+                  </Button>
+                </Group>
+              ))}
+              <Button
+                size="xs"
+                variant="default"
+                onClick={() => setCustomEntries((prev) => [...prev, { key: '', value: '' }])}
+              >
+                Add custom value
+              </Button>
+              <Button
+                size="xs"
+                variant="light"
+                onClick={() => prefill.mutate()}
+                loading={prefill.isPending}
+              >
+                Apply prefill
+              </Button>
             </Stack>
             <Divider />
             <Stack gap="xs">

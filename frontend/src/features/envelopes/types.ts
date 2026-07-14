@@ -1,6 +1,7 @@
 export const SIGNER_COLORS = ['#0B6E4F', '#E07A5F', '#3D5A80', '#9B5DE5', '#F4A261']
 
 export type FieldType = 'signature' | 'initials' | 'date' | 'text' | 'checkbox'
+export type FillMode = 'signer' | 'document'
 
 export type TemplateLayoutItem = {
   field_type: FieldType | string
@@ -12,6 +13,11 @@ export type TemplateLayoutItem = {
   required?: boolean
   label?: string
   recipient_index: number
+  role_key?: string
+  merge_token?: string
+  fill_mode?: FillMode
+  prefill_editable?: boolean
+  value?: string
 }
 
 export type SignerDraft = {
@@ -20,6 +26,7 @@ export type SignerDraft = {
   role: 'signer' | 'cc'
   routing_order: number
   contact?: number | null
+  role_key?: string
 }
 
 export type FieldDraft = {
@@ -33,6 +40,11 @@ export type FieldDraft = {
   h: number
   required: boolean
   label: string
+  role_key?: string
+  merge_token?: string
+  fill_mode?: FillMode
+  prefill_editable?: boolean
+  value?: string
 }
 
 export type EnvelopeDetail = {
@@ -43,6 +55,8 @@ export type EnvelopeDetail = {
   routing: string
   document: number
   template: number | null
+  listing?: number | null
+  merge_data?: Record<string, string | Record<string, string>>
   document_file_url: string | null
   page_count: number
   recipients: Array<{
@@ -50,6 +64,7 @@ export type EnvelopeDetail = {
     name: string
     email: string
     role: string
+    role_key?: string
     routing_order: number
     contact?: number | null
     status: string
@@ -65,6 +80,9 @@ export type EnvelopeDetail = {
     h: number
     required: boolean
     label: string
+    merge_token?: string
+    fill_mode?: FillMode
+    value?: string
   }>
 }
 

@@ -128,17 +128,80 @@ def record_audit(
     )
 
 
+def resolve_merge_values_for_envelope(
+    envelope: Envelope,
+    contact=None,
+    *,
+    overwrite_with_empty: bool = False,
+) -> int:
+    """Resolve merge tokens onto field values. Returns count of fields updated.
+
+    When ``overwrite_with_empty`` is False (send path), empty resolutions leave
+    existing manual values in place.
+    """
+    from apps.documents.merge import build_merge_context, resolve_merge_token
+
+    if contact is None:
+        for recipient in envelope.recipients.all():
+            if recipient.contact_id:
+                contact = recipient.contact
+                break
+
+    ctx = build_merge_context(
+        contact=contact,
+        company=getattr(contact, "company", None) if contact else None,
+        listing=envelope.listing,
+        deal=envelope.merge_data,
+        recipients=list(envelope.recipients.all()),
+    )
+    updated = 0
+    for field in envelope.fields.all():
+        token = (field.merge_token or "").strip()
+        if not token:
+            label = field.label or ""
+            if label.startswith("{{") and label.endswith("}}"):
+                token = label[2:-2].strip()
+        if not token:
+            continue
+        value = resolve_merge_token(token, ctx)
+        if not value and not overwrite_with_empty:
+            continue
+        if value != field.value:
+            field.value = value
+            field.save(update_fields=["value"])
+            updated += 1
+    return updated
+
+
 def validate_envelope_for_send(envelope: Envelope) -> list[str]:
     errors = []
     signers = list(envelope.recipients.filter(role=Recipient.Role.SIGNER))
     if not signers:
         errors.append("Add at least one signer.")
     for signer in signers:
+        has_signer_fields = envelope.fields.filter(
+            recipient=signer, fill_mode=Field.FillMode.SIGNER
+        ).exists()
+        if not has_signer_fields:
+            # Document-data assignee only — no signing tasks
+            continue
         sig_fields = envelope.fields.filter(
             recipient=signer, field_type=Field.FieldType.SIGNATURE
         )
         if not sig_fields.exists():
             errors.append(f"Signer {signer.email} needs at least one signature field.")
+
+    active_signers = [
+        s
+        for s in signers
+        if envelope.fields.filter(recipient=s, fill_mode=Field.FillMode.SIGNER).exists()
+    ]
+    if not active_signers:
+        errors.append("Add at least one signer with fields to complete.")
+    for field in envelope.fields.filter(fill_mode=Field.FillMode.DOCUMENT, required=True):
+        if not (field.value or "").strip():
+            label = field.label or field.merge_token or field.field_type
+            errors.append(f"Document field '{label}' needs a value before send.")
     if not envelope.document_version_id:
         version = envelope.document.current_version
         if not version:
@@ -149,13 +212,133 @@ def validate_envelope_for_send(envelope: Envelope) -> list[str]:
     return errors
 
 
+def _overlay_fields_on_pdf(version, fields) -> bytes:
+    """Draw the given fields onto a copy of the PDF version and return bytes."""
+    reader = PdfReader(version.file.path)
+    writer = PdfWriter()
+    fields = list(fields)
+
+    for page_index in range(len(reader.pages)):
+        page = reader.pages[page_index]
+        page_fields = [f for f in fields if f.page == page_index + 1]
+        if not page_fields:
+            writer.add_page(page)
+            continue
+
+        width, height = _page_size(reader, page_index)
+        packet = io.BytesIO()
+        c = canvas.Canvas(packet, pagesize=(width, height))
+        for field in page_fields:
+            x = field.x * width
+            y = field.y * height
+            w = field.w * width
+            h = field.h * height
+            if field.field_type in (
+                Field.FieldType.SIGNATURE,
+                Field.FieldType.INITIALS,
+            ):
+                path = _resolve_image_path(field.value)
+                if path:
+                    try:
+                        img = ImageReader(path)
+                        c.drawImage(
+                            img, x, y, width=w, height=h, mask="auto", preserveAspectRatio=True
+                        )
+                    except Exception:
+                        c.setFont("Helvetica-Oblique", max(8, h * 0.4))
+                        c.drawString(x + 2, y + h / 3, field.recipient.name)
+                else:
+                    c.setFont("Helvetica-Oblique", max(8, h * 0.45))
+                    c.drawString(x + 2, y + h / 3, field.value or field.recipient.name)
+            elif field.field_type == Field.FieldType.CHECKBOX:
+                c.rect(x, y, min(w, h), min(w, h))
+                if field.value.lower() in ("1", "true", "yes", "on"):
+                    c.setFont("Helvetica-Bold", min(w, h) * 0.8)
+                    c.drawString(x + 1, y + 1, "X")
+            else:
+                c.setFont("Helvetica", max(8, h * 0.5))
+                c.drawString(x + 2, y + h / 3, (field.value or "")[:200])
+        c.save()
+        packet.seek(0)
+        overlay = PdfReader(packet)
+        if overlay.pages:
+            page.merge_page(overlay.pages[0])
+        writer.add_page(page)
+
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def stamp_document_fields_pdf(envelope: Envelope) -> bytes | None:
+    """Overlay document-fill fields onto the current PDF. None if nothing to stamp."""
+    fields = [
+        f
+        for f in envelope.fields.select_related("recipient").all()
+        if f.fill_mode == Field.FillMode.DOCUMENT and (f.value or "").strip()
+    ]
+    if not fields:
+        return None
+    version = envelope.document_version or envelope.document.current_version
+    if not version:
+        return None
+    return _overlay_fields_on_pdf(version, fields)
+
+
+def create_stamped_document_version(envelope: Envelope, pdf_bytes: bytes):
+    """Persist stamped PDF on an envelope-private Document copy (never on library docs).
+
+    Writing a new version onto ``envelope.document`` would make stamped bytes the
+    shared ``current_version`` and pollute templates that reuse that PDF.
+    """
+    from apps.documents.models import Document, DocumentVersion
+
+    source_document = envelope.document
+    base = envelope.document_version or source_document.current_version
+    stamped_doc = Document.objects.create(
+        tenant=envelope.tenant,
+        title=f"{envelope.title} (stamped)"[:255],
+        original_filename=f"envelope-{envelope.id}-stamped.pdf",
+        created_by=envelope.created_by,
+    )
+    stamped = DocumentVersion(
+        tenant=envelope.tenant,
+        document=stamped_doc,
+        version_number=1,
+        page_count=base.page_count if base else 1,
+    )
+    stamped.file.save(
+        f"envelope-{envelope.id}-stamped.pdf",
+        ContentFile(pdf_bytes),
+        save=False,
+    )
+    stamped.save()
+    stamped.compute_hash()
+    stamped.save(update_fields=["sha256", "byte_size"])
+    return stamped
+
+
 @transaction.atomic
 def send_envelope(envelope: Envelope, request=None):
+    # Refresh document-field values from merge context before validation/stamp
+    resolve_merge_values_for_envelope(envelope)
+    envelope.refresh_from_db()
+
     errors = validate_envelope_for_send(envelope)
     if errors:
         raise ValueError("; ".join(errors))
 
     version = envelope.document_version or envelope.document.current_version
+    stamped_bytes = stamp_document_fields_pdf(envelope)
+    if stamped_bytes:
+        version = create_stamped_document_version(envelope, stamped_bytes)
+        # Point the envelope at the private stamped document (leave library PDF alone)
+        envelope.document = version.document
+        now = timezone.now()
+        envelope.fields.filter(fill_mode=Field.FillMode.DOCUMENT).update(
+            completed_at=now
+        )
+
     envelope.document_version = version
     envelope.pre_sign_sha256 = version.sha256
     envelope.status = Envelope.Status.SENT
@@ -175,18 +358,31 @@ def send_envelope(envelope: Envelope, request=None):
         **meta,
     )
 
+    def _has_signer_tasks(recipient_id: int) -> bool:
+        return envelope.fields.filter(
+            recipient_id=recipient_id, fill_mode=Field.FillMode.SIGNER
+        ).exists()
+
+    signer_qs = envelope.recipients.filter(role=Recipient.Role.SIGNER)
+    active_ids = [
+        r.id for r in signer_qs if _has_signer_tasks(r.id)
+    ]
     if envelope.routing == Envelope.Routing.SEQUENTIAL:
         first_order = (
-            envelope.recipients.filter(role=Recipient.Role.SIGNER)
+            signer_qs.filter(id__in=active_ids)
             .order_by("routing_order")
             .values_list("routing_order", flat=True)
             .first()
         )
-        to_notify = envelope.recipients.filter(
-            role=Recipient.Role.SIGNER, routing_order=first_order
-        )
+        to_notify = signer_qs.filter(id__in=active_ids, routing_order=first_order)
     else:
-        to_notify = envelope.recipients.filter(role=Recipient.Role.SIGNER)
+        to_notify = signer_qs.filter(id__in=active_ids)
+
+    # Document-only assignees: mark signed so they don't block completion
+    for recipient in signer_qs.exclude(id__in=active_ids):
+        recipient.status = Recipient.Status.SIGNED
+        recipient.signed_at = timezone.now()
+        recipient.save(update_fields=["status", "signed_at", "updated_at"])
 
     from apps.envelopes.tasks import send_recipient_invite
 
@@ -311,7 +507,9 @@ def require_signer_turn(recipient: Recipient) -> None:
 
 @transaction.atomic
 def complete_recipient_signing(recipient: Recipient, request=None):
-    required = recipient.fields.filter(required=True)
+    required = recipient.fields.filter(
+        required=True, fill_mode=Field.FillMode.SIGNER
+    )
     incomplete = required.filter(completed_at__isnull=True)
     if incomplete.exists():
         raise ValueError("Complete all required fields before submitting.")
@@ -374,61 +572,14 @@ def _page_size(reader, page_index: int):
 
 
 def flatten_envelope_pdf(envelope: Envelope) -> bytes:
+    """Final flatten: signer fields only (document data already stamped on send)."""
     version = envelope.document_version
-    reader = PdfReader(version.file.path)
-    writer = PdfWriter()
-
-    fields = list(envelope.fields.select_related("recipient"))
-    for page_index in range(len(reader.pages)):
-        page = reader.pages[page_index]
-        page_fields = [f for f in fields if f.page == page_index + 1]
-        if not page_fields:
-            writer.add_page(page)
-            continue
-
-        width, height = _page_size(reader, page_index)
-        packet = io.BytesIO()
-        c = canvas.Canvas(packet, pagesize=(width, height))
-        for field in page_fields:
-            x = field.x * width
-            y = field.y * height
-            w = field.w * width
-            h = field.h * height
-            if field.field_type in (
-                Field.FieldType.SIGNATURE,
-                Field.FieldType.INITIALS,
-            ):
-                path = _resolve_image_path(field.value)
-                if path:
-                    try:
-                        img = ImageReader(path)
-                        c.drawImage(
-                            img, x, y, width=w, height=h, mask="auto", preserveAspectRatio=True
-                        )
-                    except Exception:
-                        c.setFont("Helvetica-Oblique", max(8, h * 0.4))
-                        c.drawString(x + 2, y + h / 3, field.recipient.name)
-                else:
-                    c.setFont("Helvetica-Oblique", max(8, h * 0.45))
-                    c.drawString(x + 2, y + h / 3, field.value or field.recipient.name)
-            elif field.field_type == Field.FieldType.CHECKBOX:
-                c.rect(x, y, min(w, h), min(w, h))
-                if field.value.lower() in ("1", "true", "yes", "on"):
-                    c.setFont("Helvetica-Bold", min(w, h) * 0.8)
-                    c.drawString(x + 1, y + 1, "X")
-            else:
-                c.setFont("Helvetica", max(8, h * 0.5))
-                c.drawString(x + 2, y + h / 3, field.value[:200])
-        c.save()
-        packet.seek(0)
-        overlay = PdfReader(packet)
-        if overlay.pages:
-            page.merge_page(overlay.pages[0])
-        writer.add_page(page)
-
-    out = io.BytesIO()
-    writer.write(out)
-    return out.getvalue()
+    fields = [
+        f
+        for f in envelope.fields.select_related("recipient").all()
+        if f.fill_mode != Field.FillMode.DOCUMENT
+    ]
+    return _overlay_fields_on_pdf(version, fields)
 
 
 def _resolve_image_path(value: str | None) -> str | None:

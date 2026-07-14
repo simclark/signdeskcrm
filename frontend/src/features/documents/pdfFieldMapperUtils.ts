@@ -31,6 +31,7 @@ export type RoleDraft = {
   role: 'signer' | 'cc'
   routing_order: number
   contact?: number | null
+  role_key?: string
 }
 
 export function toAppMediaUrl(url: string | null | undefined) {
@@ -54,6 +55,7 @@ export function draftsSnapshot(roles: RoleDraft[], fields: FieldDraft[]) {
       role: s.role,
       routing_order: s.routing_order,
       contact: s.contact ?? null,
+      role_key: s.role_key || '',
     })),
     fields: fields.map((f) => ({
       recipientIndex: f.recipientIndex,
@@ -65,6 +67,10 @@ export function draftsSnapshot(roles: RoleDraft[], fields: FieldDraft[]) {
       h: f.h,
       required: f.required,
       label: f.label,
+      merge_token: f.merge_token || '',
+      fill_mode: f.fill_mode || 'signer',
+      role_key: f.role_key || '',
+      value: f.value || '',
     })),
   })
 }
@@ -267,6 +273,10 @@ export function layoutFromFields(fields: FieldDraft[]) {
     required: f.required,
     label: f.label,
     recipient_index: f.recipientIndex,
+    role_key: f.role_key || '',
+    merge_token: f.merge_token || '',
+    fill_mode: f.fill_mode || 'signer',
+    prefill_editable: f.prefill_editable ?? true,
   }))
 }
 
@@ -281,33 +291,80 @@ export function fieldsFromLayout(
     required?: boolean
     label?: string
     recipient_index: number
+    role_key?: string
+    merge_token?: string
+    fill_mode?: 'signer' | 'document'
+    prefill_editable?: boolean
+    value?: string
   }>,
   newId: () => string,
 ): FieldDraft[] {
-  return layout.map((item) => ({
-    id: newId(),
-    recipientIndex: item.recipient_index ?? 0,
-    field_type: item.field_type as FieldType,
-    page: item.page || 1,
-    x: item.x,
-    y: item.y,
-    w: item.w,
-    h: item.h,
-    required: item.required ?? true,
-    label: item.label || '',
-  }))
+  return layout.map((item) => {
+    const mergeToken = item.merge_token || ''
+    const fillMode =
+      item.fill_mode === 'document' || item.fill_mode === 'signer'
+        ? item.fill_mode
+        : mergeToken.startsWith('listing.') ||
+            mergeToken.startsWith('deal.') ||
+            mergeToken.startsWith('custom.')
+          ? 'document'
+          : 'signer'
+    return {
+      id: newId(),
+      recipientIndex: item.recipient_index ?? 0,
+      field_type: item.field_type as FieldType,
+      page: item.page || 1,
+      x: item.x,
+      y: item.y,
+      w: item.w,
+      h: item.h,
+      required: item.required ?? true,
+      label: item.label || '',
+      role_key: item.role_key || '',
+      merge_token: mergeToken,
+      fill_mode: fillMode,
+      prefill_editable: item.prefill_editable ?? true,
+      value: item.value || '',
+    }
+  })
 }
 
 export function rolesFromLayout(
-  layout: Array<{ recipient_index?: number }>,
+  layout: Array<{ recipient_index?: number; role_key?: string }>,
+  namedRoles?: Array<{ key: string; label: string; order: number }>,
 ): RoleDraft[] {
+  if (namedRoles?.length) {
+    const sorted = [...namedRoles].sort((a, b) => a.order - b.order)
+    return sorted.map((r, idx) => ({
+      name: r.label || r.key,
+      email: '',
+      role: 'signer' as const,
+      routing_order: idx + 1,
+      contact: null,
+      role_key: r.key,
+    }))
+  }
   const maxIndex = layout.reduce((max, item) => Math.max(max, item.recipient_index ?? 0), 0)
   const count = Math.max(1, maxIndex + 1)
-  return Array.from({ length: count }, (_, idx) => ({
-    name: `Signer ${idx + 1}`,
-    email: '',
-    role: 'signer' as const,
-    routing_order: idx + 1,
-    contact: null,
+  return Array.from({ length: count }, (_, idx) => {
+    const keyFromLayout = layout.find((item) => (item.recipient_index ?? 0) === idx)?.role_key
+    return {
+      name: keyFromLayout
+        ? keyFromLayout.charAt(0).toUpperCase() + keyFromLayout.slice(1)
+        : `Signer ${idx + 1}`,
+      email: '',
+      role: 'signer' as const,
+      routing_order: idx + 1,
+      contact: null,
+      role_key: keyFromLayout || '',
+    }
+  })
+}
+
+export function rolesPayloadFromDrafts(roles: RoleDraft[]) {
+  return roles.map((r, idx) => ({
+    key: (r.role_key || `signer_${idx + 1}`).toLowerCase().replace(/\s+/g, '_'),
+    label: r.name.trim() || `Signer ${idx + 1}`,
+    order: r.routing_order || idx + 1,
   }))
 }

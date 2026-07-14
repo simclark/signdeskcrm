@@ -275,3 +275,194 @@ class EsignPolicySettingsTests(TestCase):
         self.assertIn("America/Chicago", text)
         self.assertIn("legal@policy.test", text)
         self.assertIn("30 days", text)
+
+
+@override_settings(CELERY_TASK_ALWAYS_EAGER=True)
+class StampOnSendDocumentFieldsTests(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Stamp Co", slug="stamp-co")
+        self.user = User.objects.create_user(email="owner@stamp.test", password="password123")
+        Membership.objects.create(tenant=self.tenant, user=self.user, role=Membership.Role.OWNER)
+        pdf = SimpleUploadedFile("doc.pdf", _multi_page_pdf(1), content_type="application/pdf")
+        self.document = Document.objects.create(
+            tenant=self.tenant,
+            title="Offer",
+            original_filename="doc.pdf",
+            created_by=self.user,
+        )
+        self.version = DocumentVersion(
+            tenant=self.tenant, document=self.document, version_number=1, file=pdf
+        )
+        self.version.save()
+        self.version.compute_hash()
+        self.version.page_count = 1
+        self.version.save()
+
+        self.envelope = Envelope.objects.create(
+            tenant=self.tenant,
+            title="Offer",
+            document=self.document,
+            document_version=self.version,
+            created_by=self.user,
+            merge_data={"price": "425000", "custom": {"lender_name": "First National"}},
+        )
+        self.buyer = Recipient.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            name="Buyer One",
+            email="buyer@example.com",
+            role_key="buyer",
+            routing_order=1,
+        )
+        self.agent = Recipient.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            name="Agent",
+            email="agent@example.com",
+            role_key="agent",
+            routing_order=2,
+        )
+        self.doc_field = Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.agent,
+            field_type=Field.FieldType.TEXT,
+            page=1,
+            x=0.1,
+            y=0.8,
+            w=0.5,
+            h=0.04,
+            required=True,
+            label="Purchase price",
+            merge_token="deal.price",
+            fill_mode=Field.FillMode.DOCUMENT,
+            value="425000",
+        )
+        self.lender_field = Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.agent,
+            field_type=Field.FieldType.TEXT,
+            page=1,
+            x=0.1,
+            y=0.74,
+            w=0.5,
+            h=0.04,
+            required=False,
+            label="Lender Name",
+            merge_token="custom.lender_name",
+            fill_mode=Field.FillMode.DOCUMENT,
+            value="First National",
+        )
+        self.sig_field = Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.buyer,
+            field_type=Field.FieldType.SIGNATURE,
+            page=1,
+            x=0.1,
+            y=0.2,
+            w=0.3,
+            h=0.06,
+            required=True,
+            label="Buyer signature",
+            fill_mode=Field.FillMode.SIGNER,
+        )
+        self.title_field = Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.buyer,
+            field_type=Field.FieldType.TEXT,
+            page=1,
+            x=0.1,
+            y=0.3,
+            w=0.3,
+            h=0.04,
+            required=True,
+            label="Job title",
+            fill_mode=Field.FillMode.SIGNER,
+        )
+
+    def test_send_stamps_document_fields_and_marks_completed(self):
+        from apps.envelopes.services import send_envelope
+
+        original_version_id = self.version.id
+        send_envelope(self.envelope)
+        self.envelope.refresh_from_db()
+        self.doc_field.refresh_from_db()
+        self.lender_field.refresh_from_db()
+
+        self.assertEqual(self.envelope.status, Envelope.Status.SENT)
+        self.assertNotEqual(self.envelope.document_version_id, original_version_id)
+        # Stamped PDF lives on a private document — source library PDF stays clean
+        self.assertNotEqual(self.envelope.document_id, self.document.id)
+        self.document.refresh_from_db()
+        self.assertEqual(self.document.current_version.id, original_version_id)
+        self.assertEqual(self.document.versions.count(), 1)
+        self.assertIsNotNone(self.doc_field.completed_at)
+        self.assertIsNotNone(self.lender_field.completed_at)
+
+        stamped = PdfReader(self.envelope.document_version.file.path)
+        text = stamped.pages[0].extract_text() or ""
+        self.assertIn("425000", text)
+        self.assertIn("First National", text)
+
+        # Agent has only document fields — auto-marked signed, not invited
+        self.agent.refresh_from_db()
+        self.assertEqual(self.agent.status, Recipient.Status.SIGNED)
+        self.buyer.refresh_from_db()
+        self.assertEqual(self.buyer.status, Recipient.Status.SENT)
+
+    def test_required_empty_document_field_blocks_send(self):
+        from apps.envelopes.services import send_envelope, validate_envelope_for_send
+
+        self.doc_field.value = ""
+        self.doc_field.merge_token = ""
+        self.doc_field.save(update_fields=["value", "merge_token"])
+        errors = validate_envelope_for_send(self.envelope)
+        self.assertTrue(any("Purchase price" in e for e in errors))
+        with self.assertRaises(ValueError):
+            send_envelope(self.envelope)
+
+    def test_final_flatten_skips_document_fields(self):
+        from apps.envelopes.services import flatten_envelope_pdf, send_envelope
+
+        send_envelope(self.envelope)
+        self.envelope.refresh_from_db()
+        # Signer fills title; document value already in base PDF
+        self.title_field.value = "Director"
+        self.title_field.completed_at = timezone.now()
+        self.title_field.save(update_fields=["value", "completed_at"])
+        self.sig_field.value = "Buyer One"
+        self.sig_field.completed_at = timezone.now()
+        self.sig_field.save(update_fields=["value", "completed_at"])
+
+        # Change document field value after stamp — final flatten must not redraw old/new
+        self.doc_field.value = "SHOULD-NOT-APPEAR-TWICE"
+        self.doc_field.save(update_fields=["value"])
+
+        pdf_bytes = flatten_envelope_pdf(self.envelope)
+        text = PdfReader(io.BytesIO(pdf_bytes)).pages[0].extract_text() or ""
+        self.assertIn("Director", text)
+        self.assertIn("425000", text)
+        self.assertNotIn("SHOULD-NOT-APPEAR-TWICE", text)
+
+    def test_signing_session_omits_document_fields(self):
+        from apps.envelopes.services import send_envelope
+        from rest_framework.test import APIClient
+
+        send_envelope(self.envelope)
+        self.buyer.refresh_from_db()
+        client = APIClient()
+        res = client.get(f"/api/sign/{self.buyer.access_token}/")
+        self.assertEqual(res.status_code, 200)
+        field_ids = {f["id"] for f in res.data["fields"]}
+        self.assertIn(self.sig_field.id, field_ids)
+        self.assertIn(self.title_field.id, field_ids)
+        self.assertNotIn(self.doc_field.id, field_ids)
+        self.assertNotIn(self.lender_field.id, field_ids)
+
+        # Stamped PDF served to signer includes document values
+        version = self.envelope.document_version
+        text = PdfReader(version.file.path).pages[0].extract_text() or ""
+        self.assertIn("425000", text)

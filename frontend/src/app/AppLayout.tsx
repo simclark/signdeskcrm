@@ -14,11 +14,14 @@ import {
 import { useDisclosure, useLocalStorage } from '@mantine/hooks'
 import {
   IconBuilding,
+  IconCalendarDue,
   IconFileText,
+  IconHome,
   IconLayoutDashboard,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLogout,
+  IconRepeat,
   IconSend,
   IconSettings,
   IconTemplate,
@@ -49,8 +52,11 @@ const MEMBER_LINKS: NavItem[] = [
   { to: '/app/envelopes', label: 'Envelopes', icon: IconSend },
   { to: '/app/documents', label: 'Documents', icon: IconFileText },
   { to: '/app/templates', label: 'Templates', icon: IconTemplate },
+  { to: '/app/listings', label: 'Listings', icon: IconHome },
   { to: '/app/contacts', label: 'Contacts', icon: IconUsers },
   { to: '/app/companies', label: 'Companies', icon: IconBuilding },
+  { to: '/app/follow-ups', label: 'Follow-ups', icon: IconCalendarDue },
+  { to: '/app/cadences', label: 'Cadences', icon: IconRepeat },
 ]
 
 /** Extra navigation only for tenant owners and admins. */
@@ -75,6 +81,11 @@ function AppShellContent() {
 
   const isAdmin = membership?.role === 'owner' || membership?.role === 'admin'
   const iconUrl = toAppMediaUrl(tenant?.icon)
+  const listingsEnabled = Boolean(tenant?.listings_enabled)
+
+  const memberLinks = MEMBER_LINKS.filter(
+    (link) => listingsEnabled || link.to !== '/app/listings',
+  )
 
   useEffect(() => {
     setDocumentFavicon(iconUrl)
@@ -249,7 +260,7 @@ function AppShellContent() {
             <Image src={iconUrl} alt={tenant!.name} w={32} h={32} radius="sm" fit="contain" />
           </Group>
         ) : null}
-        {MEMBER_LINKS.map((link) => renderLink(link))}
+        {memberLinks.map((link) => renderLink(link))}
         {isAdmin && (
           <>
             {!desktopCollapsed ? (

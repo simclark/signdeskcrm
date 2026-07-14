@@ -201,6 +201,23 @@ export function SigningPage() {
   const signingIconUrl = toAppMediaUrl(data?.envelope?.icon_url)
 
   useEffect(() => {
+    if (!fields.length) return
+    setTextDrafts((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const field of fields) {
+        if (field.field_type !== 'text' && field.field_type !== 'date') continue
+        if (next[field.id] !== undefined) continue
+        if (field.value) {
+          next[field.id] = field.value
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [fields])
+
+  useEffect(() => {
     setDocumentFavicon(signingIconUrl)
     return () => setDocumentFavicon(null)
   }, [signingIconUrl])

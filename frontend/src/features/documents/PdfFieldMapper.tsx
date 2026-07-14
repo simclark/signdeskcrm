@@ -1,5 +1,6 @@
 import {
   ActionIcon,
+  Autocomplete,
   Button,
   Card,
   Divider,
@@ -47,6 +48,15 @@ import {
   type FieldDraft,
   type FieldType,
 } from '../envelopes/types'
+import {
+  autoLabelForToken,
+  buildMergeTokenSelectData,
+  flattenMergeTokenOptions,
+  humanizeTokenLabel,
+  MERGE_TOKEN_HINTS,
+  normalizeMergeTokenInput,
+  useMergeTokenCatalog,
+} from './mergeTokens'
 import {
   FIELD_TOOLS,
   MAPPER_HISTORY_COALESCE_MS,
@@ -390,9 +400,15 @@ function MapperPageBlock({
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                   pointerEvents: 'none',
+                  fontWeight: field.value ? 600 : undefined,
                 }}
+                title={
+                  field.value
+                    ? `${field.label || field.field_type}: ${field.value}`
+                    : field.label || field.field_type
+                }
               >
-                {field.label || field.field_type}
+                {field.value || field.label || field.field_type}
               </span>
             </div>
           )
@@ -422,6 +438,9 @@ export function PdfFieldMapper({
   const pageBlockRefs = useRef(new Map<number, HTMLDivElement>())
   const stackRef = useRef<HTMLDivElement>(null)
 
+  const { data: mergeTokenCatalog } = useMergeTokenCatalog()
+  const catalogTokens = mergeTokenCatalog?.tokens || Object.keys(MERGE_TOKEN_HINTS)
+
   const [activeSigner, setActiveSigner] = useState(0)
   const [activeTool, setActiveTool] = useState<FieldType>('signature')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -446,6 +465,21 @@ export function PdfFieldMapper({
   const [dragDelta, setDragDelta] = useState<{ x: number; y: number } | null>(null)
   const [draggingIds, setDraggingIds] = useState<Set<string> | null>(null)
   const [historyTick, setHistoryTick] = useState(0)
+
+  const selectedMergeToken =
+    selectedIds.length === 1
+      ? fields.find((f) => f.id === selectedIds[0])?.merge_token?.trim() || ''
+      : ''
+  const mergeTokenOptions = useMemo(() => {
+    const extra = selectedMergeToken ? [selectedMergeToken] : []
+    const groups = buildMergeTokenSelectData(
+      catalogTokens,
+      roles,
+      mergeTokenCatalog?.groups,
+      extra,
+    )
+    return flattenMergeTokenOptions(groups)
+  }, [catalogTokens, mergeTokenCatalog?.groups, roles, selectedMergeToken])
 
   const dragRef = useRef<DragState | null>(null)
   const pastRef = useRef<MapperHistorySnapshot[]>([])
@@ -854,6 +888,7 @@ export function PdfFieldMapper({
       h: size.h,
       required: true,
       label: size.label,
+      fill_mode: 'signer',
     }
     commitFields([...fields, draft])
     setSelectedIds([draft.id])
@@ -1573,6 +1608,106 @@ export function PdfFieldMapper({
                   value={selectedField.label}
                   onChange={(e) => patchSelectedFields({ label: e.currentTarget.value })}
                 />
+                {(selectedField.field_type === 'text' || selectedField.field_type === 'date') && (
+                  <Select
+                    size="xs"
+                    label="Fill mode"
+                    description={
+                      (selectedField.fill_mode || 'signer') === 'document'
+                        ? 'Stamped into the PDF on send — every signer sees it.'
+                        : 'Completed by the assigned signer during signing.'
+                    }
+                    data={[
+                      { value: 'document', label: 'Document data (stamped on send)' },
+                      { value: 'signer', label: 'Signer completes' },
+                    ]}
+                    value={selectedField.fill_mode || 'signer'}
+                    onChange={(value) =>
+                      patchSelectedFields({
+                        fill_mode: value === 'document' ? 'document' : 'signer',
+                      })
+                    }
+                  />
+                )}
+                <Autocomplete
+                  size="xs"
+                  label="Merge token (prefill)"
+                  description={
+                    MERGE_TOKEN_HINTS[selectedField.merge_token || ''] ||
+                    (selectedField.merge_token
+                      ? humanizeTokenLabel(selectedField.merge_token)
+                      : 'Pick a catalog token or type custom.lender_name / deal.price')
+                  }
+                  placeholder="Search or type a token…"
+                  data={mergeTokenOptions}
+                  value={selectedField.merge_token || ''}
+                  onChange={(raw) => {
+                    const previous = selectedField.merge_token || ''
+                    const normalized = normalizeMergeTokenInput(raw)
+                    // While typing intermediate text, keep raw; normalize on blur via blur handler
+                    const token = raw.includes('.') || !raw.trim() ? raw.trim() : raw.trim()
+                    const nextLabel = autoLabelForToken(
+                      token.includes('.') ? token : normalizeMergeTokenInput(token),
+                      previous,
+                      selectedField.label,
+                    )
+                    const fillPatch =
+                      (selectedField.field_type === 'text' ||
+                        selectedField.field_type === 'date') &&
+                      (token.startsWith('listing.') ||
+                        token.startsWith('deal.') ||
+                        token.startsWith('custom.') ||
+                        normalized.startsWith('custom.'))
+                        ? { fill_mode: 'document' as const }
+                        : {}
+                    patchSelectedFields({
+                      merge_token: token,
+                      ...(nextLabel ? { label: nextLabel } : {}),
+                      ...fillPatch,
+                    })
+                  }}
+                  onBlur={() => {
+                    const previous = selectedField.merge_token || ''
+                    if (!previous.trim()) return
+                    const normalized = normalizeMergeTokenInput(previous)
+                    if (normalized === previous) return
+                    const nextLabel = autoLabelForToken(
+                      normalized,
+                      previous,
+                      selectedField.label,
+                    )
+                    patchSelectedFields({
+                      merge_token: normalized,
+                      ...(nextLabel ? { label: nextLabel } : {}),
+                      ...((selectedField.field_type === 'text' ||
+                        selectedField.field_type === 'date') &&
+                      (normalized.startsWith('listing.') ||
+                        normalized.startsWith('deal.') ||
+                        normalized.startsWith('custom.'))
+                        ? { fill_mode: 'document' as const }
+                        : {}),
+                    })
+                  }}
+                />
+                {(selectedField.fill_mode || 'signer') === 'document' ? (
+                  <TextInput
+                    size="xs"
+                    label="Document value"
+                    description="Set here or via Document data / Apply prefill. Stamped on send."
+                    value={selectedField.value || ''}
+                    onChange={(e) =>
+                      patchSelectedFields({ value: e.currentTarget.value })
+                    }
+                  />
+                ) : selectedField.value ? (
+                  <TextInput
+                    size="xs"
+                    label="Current value"
+                    description="Seeded by Apply prefill; signer can still edit"
+                    value={selectedField.value}
+                    readOnly
+                  />
+                ) : null}
                 <Switch
                   size="sm"
                   label="Required"

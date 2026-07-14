@@ -38,6 +38,7 @@ type Tenant = {
   paper_copy_fee_policy: string
   esign_acknowledgement: string
   esign_acknowledgement_version: string
+  listings_enabled: boolean
 }
 
 type Membership = {
