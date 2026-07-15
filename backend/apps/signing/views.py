@@ -357,4 +357,7 @@ class SigningDeclineView(views.APIView):
             actor_name=recipient.name,
             payload={"reason": reason},
         )
+        from apps.contacts.follow_up_plans import start_declined_plan_for_recipient
+
+        start_declined_plan_for_recipient(recipient)
         return Response({"status": "declined"})

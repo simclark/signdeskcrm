@@ -2,11 +2,11 @@ from django.contrib import admin
 
 from .models import (
     Activity,
-    Cadence,
-    CadenceEnrollment,
-    CadenceStep,
     Company,
     Contact,
+    FollowUpPlan,
+    FollowUpPlanEnrollment,
+    FollowUpPlanStep,
     FollowUpTask,
     Listing,
 )
@@ -45,19 +45,20 @@ class FollowUpTaskAdmin(admin.ModelAdmin):
     list_filter = ("status",)
 
 
-@admin.register(Cadence)
-class CadenceAdmin(admin.ModelAdmin):
-    list_display = ("name", "is_active", "tenant", "is_archived")
+@admin.register(FollowUpPlan)
+class FollowUpPlanAdmin(admin.ModelAdmin):
+    list_display = ("name", "trigger", "is_active", "tenant", "is_archived")
+    list_filter = ("trigger", "is_active", "is_archived")
 
 
-@admin.register(CadenceStep)
-class CadenceStepAdmin(admin.ModelAdmin):
-    list_display = ("cadence", "order", "offset_days", "subject", "tenant")
+@admin.register(FollowUpPlanStep)
+class FollowUpPlanStepAdmin(admin.ModelAdmin):
+    list_display = ("plan", "order", "offset_days", "subject", "tenant")
 
 
-@admin.register(CadenceEnrollment)
-class CadenceEnrollmentAdmin(admin.ModelAdmin):
-    list_display = ("contact", "cadence", "status", "next_run_at", "tenant")
+@admin.register(FollowUpPlanEnrollment)
+class FollowUpPlanEnrollmentAdmin(admin.ModelAdmin):
+    list_display = ("plan", "envelope", "recipient", "status", "next_run_at", "tenant")
     list_filter = ("status",)
 
 

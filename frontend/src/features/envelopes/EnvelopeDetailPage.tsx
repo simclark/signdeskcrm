@@ -3,6 +3,7 @@ import {
   Button,
   Card,
   Group,
+  Select,
   Stack,
   Text,
   Title,
@@ -66,6 +67,43 @@ export function EnvelopeDetailPage() {
     queryKey: ['envelope-audit', id],
     queryFn: () => api<any[]>(`/api/envelopes/${id}/audit/`),
     enabled: !!id,
+  })
+  const { data: plans } = useQuery({
+    queryKey: ['follow-up-plans'],
+    queryFn: () =>
+      api<{ results: { id: number; name: string; trigger: string; is_active: boolean }[] }>(
+        '/api/follow-up-plans/',
+      ),
+  })
+  const { data: enrollments } = useQuery({
+    queryKey: ['follow-up-plan-enrollments', id],
+    queryFn: () =>
+      api<{
+        results: {
+          id: number
+          status: string
+          next_run_at: string | null
+          emails_sent: number
+          recipient_name: string
+          current_step_order: number
+        }[]
+      }>(`/api/follow-up-plan-enrollments/?envelope=${id}`),
+    enabled: !!id,
+  })
+
+  const setPlan = useMutation({
+    mutationFn: (planId: number | null) =>
+      api(`/api/envelopes/${id}/`, {
+        method: 'PATCH',
+        json: { follow_up_plan: planId },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['envelope', id] })
+      qc.invalidateQueries({ queryKey: ['follow-up-plan-enrollments', id] })
+      notifications.show({ color: 'forest', message: 'Follow-up plan updated' })
+    },
+    onError: (err: Error) =>
+      notifications.show({ color: 'red', title: 'Could not update plan', message: err.message }),
   })
 
   const send = useMutation({
@@ -175,6 +213,57 @@ export function EnvelopeDetailPage() {
           </Button>
         </Group>
       </Group>
+
+      <Card withBorder radius="lg" p="lg">
+        <Title order={4} mb="sm">
+          Follow-up plan
+        </Title>
+        <Text size="sm" c="dimmed" mb="md">
+          Optional. Stalled plans replace tenant reminder emails for this envelope. Manage plans in{' '}
+          <Anchor component={Link} to="/app/follow-up-plans">
+            Follow-up plans
+          </Anchor>
+          .
+        </Text>
+        <Select
+          label="Active plan"
+          clearable
+          placeholder="None — use tenant reminders only"
+          data={(plans?.results || [])
+            .filter((p) => p.is_active)
+            .map((p) => ({
+              value: String(p.id),
+              label: `${p.name} (${p.trigger})`,
+            }))}
+          value={envelope.follow_up_plan != null ? String(envelope.follow_up_plan) : null}
+          onChange={(value) => setPlan.mutate(value ? Number(value) : null)}
+          disabled={setPlan.isPending || envelope.status === 'voided'}
+          mb="md"
+        />
+        {(enrollments?.results || []).length > 0 ? (
+          <Stack gap="xs">
+            {(enrollments?.results || []).map((e) => (
+              <Group key={e.id} gap="xs">
+                <Badge variant="light" color={e.status === 'active' ? 'orange' : 'gray'}>
+                  {e.recipient_name || 'Recipient'} · {e.status}
+                </Badge>
+                <Text size="sm" c="dimmed">
+                  Step {e.current_step_order} · {e.emails_sent} sent
+                  {e.next_run_at
+                    ? ` · next ${new Date(e.next_run_at).toLocaleString()}`
+                    : ''}
+                </Text>
+              </Group>
+            ))}
+          </Stack>
+        ) : envelope.follow_up_plan ? (
+          <Text size="sm" c="dimmed">
+            {envelope.status === 'draft'
+              ? 'Plan will start for signers when this envelope is sent.'
+              : 'No active enrollments yet.'}
+          </Text>
+        ) : null}
+      </Card>
 
       <Card withBorder radius="lg" p="lg">
         <Title order={4} mb="md">

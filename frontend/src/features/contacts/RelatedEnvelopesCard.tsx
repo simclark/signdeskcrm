@@ -1,4 +1,4 @@
-import { Badge, Card, Text, Title } from '@mantine/core'
+import { Badge, Card, Group, Text, Title } from '@mantine/core'
 import { Link } from 'react-router-dom'
 import { DataTable } from '../../shared/DataTable'
 
@@ -38,16 +38,21 @@ export function RelatedEnvelopesCard({
   const items = envelopes || []
 
   return (
-    <Card withBorder radius="lg" p="lg">
-      <Title order={4} mb="md">
-        Envelopes
-      </Title>
+    <Card withBorder radius="lg" p="md">
+      <Group justify="space-between" align="center" mb={items.length ? 'sm' : 0}>
+        <Group gap="xs">
+          <Title order={5}>Envelopes</Title>
+          <Badge size="sm" variant="light">
+            {items.length}
+          </Badge>
+        </Group>
+      </Group>
       {items.length === 0 ? (
-        <Text c="dimmed" size="sm">
+        <Text c="dimmed" size="sm" mt="xs">
           {emptyMessage}
         </Text>
       ) : (
-        <DataTable embedded>
+        <DataTable embedded verticalSpacing="sm" horizontalSpacing="sm">
           <DataTable.Thead>
             <DataTable.Tr>
               <DataTable.Th>Title</DataTable.Th>
@@ -64,20 +69,21 @@ export function RelatedEnvelopesCard({
                     component={Link}
                     to={`/app/envelopes/${envelope.id}`}
                     className="sd-table-primary"
+                    size="sm"
                   >
                     {envelope.title}
                   </Text>
                 </DataTable.Td>
                 <DataTable.Td>
-                  <Badge variant="light" tt="capitalize">
+                  <Badge variant="light" tt="capitalize" size="sm">
                     {formatStatus(envelope.status)}
                   </Badge>
                 </DataTable.Td>
                 <DataTable.Td className="sd-table-muted">
-                  {formatDate(envelope.sent_at)}
+                  <Text size="sm">{formatDate(envelope.sent_at)}</Text>
                 </DataTable.Td>
                 <DataTable.Td className="sd-table-muted">
-                  {formatDate(envelope.completed_at)}
+                  <Text size="sm">{formatDate(envelope.completed_at)}</Text>
                 </DataTable.Td>
               </DataTable.Tr>
             ))}

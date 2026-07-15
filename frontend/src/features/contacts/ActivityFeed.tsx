@@ -35,6 +35,7 @@ const KIND_BADGE_COLOR: Record<string, string> = {
   updated: 'gray',
   note: 'teal',
   follow_up: 'orange',
+  plan_email: 'violet',
   cadence_email: 'violet',
 }
 
@@ -91,7 +92,7 @@ function ActivityRow({ activity }: { activity: Activity }) {
 
 function ActivityList({ activities }: { activities: Activity[] }) {
   return (
-    <Stack gap="lg">
+    <Stack gap="md">
       {activities.map((activity) => (
         <ActivityRow key={activity.id} activity={activity} />
       ))}
@@ -121,9 +122,9 @@ export function ActivityFeed({ activities, onAddNote }: ActivityFeedProps) {
 
   return (
     <>
-      <Card withBorder radius="lg" p="lg">
-        <Group justify="space-between" align="center" mb="md">
-          <Title order={4}>Activity</Title>
+      <Card withBorder radius="lg" p="md">
+        <Group justify="space-between" align="center" mb="sm">
+          <Title order={5}>Activity</Title>
           {items.length > 0 ? (
             <Button variant="subtle" size="compact-sm" onClick={open}>
               View all activity
@@ -132,10 +133,12 @@ export function ActivityFeed({ activities, onAddNote }: ActivityFeedProps) {
         </Group>
 
         {onAddNote ? (
-          <Stack gap="sm" mb="lg">
+          <Stack gap="xs" mb="md">
             <Textarea
               placeholder="Add a note…"
               minRows={2}
+              autosize
+              maxRows={4}
               value={note}
               onChange={(e) => setNote(e.currentTarget.value)}
             />
@@ -157,7 +160,7 @@ export function ActivityFeed({ activities, onAddNote }: ActivityFeedProps) {
             No activity yet.
           </Text>
         ) : (
-          <Stack gap="lg">
+          <Stack gap="md">
             <ActivityList activities={preview} />
             {hasMore ? (
               <Text size="xs" c="dimmed">

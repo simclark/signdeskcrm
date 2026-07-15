@@ -413,6 +413,10 @@ def send_envelope(envelope: Envelope, request=None):
     for recipient in envelope.recipients.filter(role=Recipient.Role.CC):
         send_recipient_invite.delay(recipient.id)
 
+    from apps.contacts.follow_up_plans import start_stalled_plans_for_envelope
+
+    start_stalled_plans_for_envelope(envelope)
+
     return envelope
 
 
@@ -547,6 +551,10 @@ def complete_recipient_signing(recipient: Recipient, request=None):
             metadata={"envelope_id": recipient.envelope_id},
         )
 
+    from apps.contacts.follow_up_plans import cancel_enrollments_for_recipient
+
+    cancel_enrollments_for_recipient(recipient)
+
     envelope = recipient.envelope
     signers = envelope.recipients.filter(role=Recipient.Role.SIGNER)
     if signers.exclude(status=Recipient.Status.SIGNED).exists():
@@ -559,11 +567,27 @@ def complete_recipient_signing(recipient: Recipient, request=None):
             )
             if next_signer:
                 from apps.envelopes.tasks import send_recipient_invite
+                from apps.contacts.follow_up_plans import start_plan_for_recipient
+                from apps.contacts.models import FollowUpPlan
+                from datetime import timedelta
 
                 next_signer.status = Recipient.Status.SENT
                 next_signer.sent_at = timezone.now()
                 next_signer.save(update_fields=["status", "sent_at", "updated_at"])
                 send_recipient_invite.delay(next_signer.id)
+                plan = envelope.follow_up_plan
+                if (
+                    plan
+                    and plan.is_active
+                    and not plan.is_archived
+                    and plan.trigger == FollowUpPlan.Trigger.STALLED
+                ):
+                    started_at = next_signer.sent_at + timedelta(
+                        hours=max(int(plan.idle_hours or 0), 0)
+                    )
+                    start_plan_for_recipient(
+                        envelope, next_signer, plan, started_at=started_at
+                    )
         return envelope
 
     # All signers done — flatten PDF and complete
@@ -1103,6 +1127,8 @@ def finalize_envelope_sync(envelope_id: int):
         )
 
     from apps.envelopes.tasks import send_completion_emails
+    from apps.contacts.follow_up_plans import start_completed_plans_for_envelope
 
     send_completion_emails.delay(envelope.id)
+    start_completed_plans_for_envelope(envelope)
     return envelope

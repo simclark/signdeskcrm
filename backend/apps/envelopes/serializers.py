@@ -1,6 +1,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.contacts.models import FollowUpPlan
 from apps.envelopes.models import Envelope, Field, Recipient
 from apps.envelopes.services import validate_envelope_for_send
 
@@ -102,6 +103,14 @@ class EnvelopeSerializer(serializers.ModelSerializer):
     certificate_file_url = serializers.SerializerMethodField()
     document_file_url = serializers.SerializerMethodField()
     page_count = serializers.SerializerMethodField()
+    follow_up_plan_name = serializers.CharField(
+        source="follow_up_plan.name", read_only=True, default=None
+    )
+    follow_up_plan = serializers.PrimaryKeyRelatedField(
+        queryset=FollowUpPlan.objects.all(),
+        allow_null=True,
+        required=False,
+    )
 
     class Meta:
         model = Envelope
@@ -116,6 +125,8 @@ class EnvelopeSerializer(serializers.ModelSerializer):
             "template",
             "listing",
             "merge_data",
+            "follow_up_plan",
+            "follow_up_plan_name",
             "sent_at",
             "completed_at",
             "expires_at",
@@ -135,6 +146,7 @@ class EnvelopeSerializer(serializers.ModelSerializer):
             "id",
             "status",
             "document_version",
+            "follow_up_plan_name",
             "sent_at",
             "completed_at",
             "expires_at",
@@ -147,6 +159,14 @@ class EnvelopeSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request and getattr(request, "tenant", None):
+            self.fields["follow_up_plan"].queryset = FollowUpPlan.objects.for_tenant(
+                request.tenant
+            ).filter(is_archived=False, is_active=True)
 
     def _document_version(self, obj):
         return obj.document_version or (obj.document.current_version if obj.document_id else None)
@@ -197,7 +217,28 @@ class EnvelopeSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         if instance.status != Envelope.Status.DRAFT:
-            raise serializers.ValidationError("Only draft envelopes can be edited.")
+            # After send, only follow_up_plan may be changed (attach / clear plan).
+            allowed = {"follow_up_plan"}
+            extra = set(validated_data.keys()) - allowed
+            if extra:
+                raise serializers.ValidationError("Only draft envelopes can be edited.")
+            prev_plan_id = instance.follow_up_plan_id
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            plan = instance.follow_up_plan
+            if (
+                plan
+                and plan.trigger == FollowUpPlan.Trigger.STALLED
+                and instance.follow_up_plan_id != prev_plan_id
+                and instance.status
+                in (Envelope.Status.SENT, Envelope.Status.IN_PROGRESS)
+            ):
+                from apps.contacts.follow_up_plans import start_stalled_plans_for_envelope
+
+                start_stalled_plans_for_envelope(instance)
+            return instance
+
         recipients_data = validated_data.pop("recipients", None)
         fields_data = validated_data.pop("fields", None)
         for attr, value in validated_data.items():

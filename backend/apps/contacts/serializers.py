@@ -2,11 +2,11 @@ from rest_framework import serializers
 
 from apps.contacts.models import (
     Activity,
-    Cadence,
-    CadenceEnrollment,
-    CadenceStep,
     Company,
     Contact,
+    FollowUpPlan,
+    FollowUpPlanEnrollment,
+    FollowUpPlanStep,
     FollowUpTask,
     Listing,
 )
@@ -59,21 +59,6 @@ class ContactSerializer(serializers.ModelSerializer):
         if not isinstance(value, list):
             raise serializers.ValidationError("tags must be a list of strings.")
         return [str(t).strip()[:64] for t in value if str(t).strip()][:40]
-
-
-class ActivitySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Activity
-        fields = (
-            "id",
-            "contact",
-            "company",
-            "kind",
-            "message",
-            "metadata",
-            "created_at",
-        )
-        read_only_fields = fields
 
 
 class ListingSerializer(serializers.ModelSerializer):
@@ -132,12 +117,27 @@ class FollowUpTaskSerializer(serializers.ModelSerializer):
         )
 
 
-class CadenceStepSerializer(serializers.ModelSerializer):
+class ActivitySerializer(serializers.ModelSerializer):
     class Meta:
-        model = CadenceStep
+        model = Activity
         fields = (
             "id",
-            "cadence",
+            "contact",
+            "company",
+            "kind",
+            "message",
+            "metadata",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class FollowUpPlanStepSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FollowUpPlanStep
+        fields = (
+            "id",
+            "plan",
             "offset_days",
             "subject",
             "body",
@@ -145,18 +145,22 @@ class CadenceStepSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "plan", "created_at", "updated_at")
 
 
-class CadenceSerializer(serializers.ModelSerializer):
-    steps = CadenceStepSerializer(many=True, required=False)
+class FollowUpPlanSerializer(serializers.ModelSerializer):
+    steps = FollowUpPlanStepSerializer(many=True, required=False)
 
     class Meta:
-        model = Cadence
+        model = FollowUpPlan
         fields = (
             "id",
             "name",
             "description",
+            "trigger",
+            "idle_hours",
+            "create_agent_handoff",
+            "handoff_title",
             "is_active",
             "is_archived",
             "steps",
@@ -167,18 +171,18 @@ class CadenceSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         steps_data = validated_data.pop("steps", [])
-        request = self.context["request"]
-        cadence = Cadence.objects.create(tenant=request.tenant, **validated_data)
+        plan = FollowUpPlan.objects.create(**validated_data)
+        tenant = plan.tenant
         for idx, step in enumerate(steps_data):
-            CadenceStep.objects.create(
-                tenant=request.tenant,
-                cadence=cadence,
+            FollowUpPlanStep.objects.create(
+                tenant=tenant,
+                plan=plan,
                 order=step.get("order", idx + 1),
                 offset_days=step["offset_days"],
                 subject=step["subject"],
                 body=step["body"],
             )
-        return cadence
+        return plan
 
     def update(self, instance, validated_data):
         steps_data = validated_data.pop("steps", None)
@@ -187,11 +191,10 @@ class CadenceSerializer(serializers.ModelSerializer):
         instance.save()
         if steps_data is not None:
             instance.steps.all().delete()
-            request = self.context["request"]
             for idx, step in enumerate(steps_data):
-                CadenceStep.objects.create(
-                    tenant=request.tenant,
-                    cadence=instance,
+                FollowUpPlanStep.objects.create(
+                    tenant=instance.tenant,
+                    plan=instance,
                     order=step.get("order", idx + 1),
                     offset_days=step["offset_days"],
                     subject=step["subject"],
@@ -200,21 +203,29 @@ class CadenceSerializer(serializers.ModelSerializer):
         return instance
 
 
-class CadenceEnrollmentSerializer(serializers.ModelSerializer):
+class FollowUpPlanEnrollmentSerializer(serializers.ModelSerializer):
     contact_name = serializers.CharField(source="contact.full_name", read_only=True)
-    cadence_name = serializers.CharField(source="cadence.name", read_only=True)
+    plan_name = serializers.CharField(source="plan.name", read_only=True)
+    recipient_name = serializers.CharField(source="recipient.name", read_only=True)
+    envelope_title = serializers.CharField(source="envelope.title", read_only=True)
 
     class Meta:
-        model = CadenceEnrollment
+        model = FollowUpPlanEnrollment
         fields = (
             "id",
-            "cadence",
-            "cadence_name",
+            "plan",
+            "plan_name",
+            "envelope",
+            "envelope_title",
+            "recipient",
+            "recipient_name",
             "contact",
             "contact_name",
             "status",
             "current_step_order",
             "next_run_at",
+            "started_at",
+            "emails_sent",
             "enrolled_at",
             "completed_at",
             "created_at",
@@ -222,9 +233,13 @@ class CadenceEnrollmentSerializer(serializers.ModelSerializer):
         )
         read_only_fields = (
             "id",
+            "plan_name",
+            "envelope_title",
+            "recipient_name",
             "contact_name",
-            "cadence_name",
             "current_step_order",
+            "started_at",
+            "emails_sent",
             "enrolled_at",
             "completed_at",
             "created_at",

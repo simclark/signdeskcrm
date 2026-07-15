@@ -15,7 +15,7 @@ import { useForm } from '@mantine/form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconSearch, IconTrash } from '@tabler/icons-react'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../../shared/api'
 import { DataTable } from '../../shared/DataTable'
 import { useCreateEnvelope } from '../envelopes/CreateEnvelopeContext'
@@ -43,12 +43,15 @@ function contactsListUrl(search: string, company: string | null) {
 
 export function ContactsPage() {
   const qc = useQueryClient()
+  const [searchParams] = useSearchParams()
   const [opened, { open, close }] = useDisclosure(false)
   const { openCreateEnvelope } = useCreateEnvelope()
   const companyOptions = useCompaniesOptions()
   const [search, setSearch] = useState('')
   const [debouncedSearch] = useDebouncedValue(search, 300)
-  const [companyFilter, setCompanyFilter] = useState<string | null>(null)
+  const [companyFilter, setCompanyFilter] = useState<string | null>(
+    () => searchParams.get('company'),
+  )
 
   const { data } = useQuery({
     queryKey: ['contacts', { search: debouncedSearch.trim(), company: companyFilter }],

@@ -5,18 +5,20 @@ import {
   Group,
   Modal,
   Select,
+  SimpleGrid,
   Stack,
   Text,
   TextInput,
   Textarea,
   Title,
   TagsInput,
+  Divider,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { useForm } from '@mantine/form'
 import { notifications } from '@mantine/notifications'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../../shared/api'
 import { PageBreadcrumbs } from '../../shared/PageBreadcrumbs'
@@ -41,23 +43,43 @@ type Contact = {
   next_follow_up_at: string | null
 }
 
-type Cadence = { id: number; name: string }
-
 const STAGE_OPTIONS = [
   { value: 'lead', label: 'Lead' },
-  { value: 'nurture', label: 'Nurture' },
   { value: 'active', label: 'Active' },
   { value: 'under_contract', label: 'Under contract' },
   { value: 'closed', label: 'Closed' },
   { value: 'inactive', label: 'Inactive' },
 ]
 
+function formatFollowUp(value: string | null) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function SummaryField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Stack gap={4}>
+      <Text size="xs" c="dimmed" tt="uppercase" fw={600} lts={0.4}>
+        {label}
+      </Text>
+      {children}
+    </Stack>
+  )
+}
+
 export function ContactDetailPage() {
   const { id } = useParams()
   const qc = useQueryClient()
   const [editOpened, { open: openEdit, close: closeEdit }] = useDisclosure(false)
   const [followOpened, { open: openFollow, close: closeFollow }] = useDisclosure(false)
-  const [cadenceOpened, { open: openCadence, close: closeCadence }] = useDisclosure(false)
   const { openCreateEnvelope } = useCreateEnvelope()
   const companyOptions = useCompaniesOptions()
 
@@ -77,12 +99,6 @@ export function ContactDetailPage() {
     queryKey: ['contact-envelopes', id],
     queryFn: () => api<RelatedEnvelope[]>(`/api/contacts/${id}/envelopes/`),
     enabled: !!id,
-  })
-
-  const { data: cadences } = useQuery({
-    queryKey: ['cadences'],
-    queryFn: () => api<{ results: Cadence[] }>('/api/cadences/'),
-    enabled: cadenceOpened,
   })
 
   const form = useForm({
@@ -106,8 +122,6 @@ export function ContactDetailPage() {
       notes: '',
     },
   })
-
-  const [cadenceId, setCadenceId] = useState<string | null>(null)
 
   const openEditModal = () => {
     if (!contact) return
@@ -173,24 +187,6 @@ export function ContactDetailPage() {
       notifications.show({ color: 'red', title: 'Could not schedule', message: err.message }),
   })
 
-  const enrollCadence = useMutation({
-    mutationFn: () => {
-      if (!cadenceId) throw new Error('Choose a cadence')
-      return api(`/api/cadences/${cadenceId}/enroll/`, {
-        method: 'POST',
-        json: { contact: Number(id) },
-      })
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['contact-activities', id] })
-      closeCadence()
-      setCadenceId(null)
-      notifications.show({ color: 'forest', message: 'Enrolled in cadence' })
-    },
-    onError: (err: Error) =>
-      notifications.show({ color: 'red', title: 'Could not enroll', message: err.message }),
-  })
-
   if (!contact) return null
 
   return (
@@ -203,15 +199,21 @@ export function ContactDetailPage() {
       />
       <Group justify="space-between" align="flex-start">
         <div>
-          <Title order={2}>{contact.full_name}</Title>
-          <Text c="dimmed">{contact.email}</Text>
+          <Group gap="sm" align="center" mb={4}>
+            <Title order={2}>{contact.full_name}</Title>
+            <Badge tt="none" variant="light">
+              {STAGE_OPTIONS.find((s) => s.value === contact.stage)?.label ||
+                contact.stage ||
+                'Lead'}
+            </Badge>
+          </Group>
+          <Text c="dimmed" size="sm">
+            {contact.email}
+          </Text>
         </div>
         <Group>
           <Button variant="light" onClick={openFollow}>
             Schedule follow-up
-          </Button>
-          <Button variant="light" onClick={openCadence}>
-            Enroll in cadence
           </Button>
           <Button variant="light" onClick={openEditModal}>
             Edit
@@ -230,77 +232,65 @@ export function ContactDetailPage() {
         </Group>
       </Group>
 
-      <Card withBorder radius="lg" p="lg">
-        <Title order={4} mb="md">
-          Summary
-        </Title>
-        <Text size="sm" c="dimmed" mb="xs">
-          Stage
-        </Text>
-        <Badge mb="md" tt="none" variant="light">
-          {STAGE_OPTIONS.find((s) => s.value === contact.stage)?.label || contact.stage || 'Lead'}
-        </Badge>
-        <Text size="sm" c="dimmed" mb="xs">
-          Tags
-        </Text>
-        <Group gap="xs" mb="md">
-          {(contact.tags || []).length ? (
-            contact.tags.map((tag) => (
-              <Badge key={tag} variant="outline" tt="none">
-                {tag}
-              </Badge>
-            ))
-          ) : (
-            <Text c="dimmed">—</Text>
-          )}
-        </Group>
-        <Text size="sm" c="dimmed" mb="xs">
-          Next follow-up
-        </Text>
-        <Text mb="md" c={contact.next_follow_up_at ? undefined : 'dimmed'}>
-          {contact.next_follow_up_at
-            ? new Date(contact.next_follow_up_at).toLocaleString()
-            : '—'}
-        </Text>
-        {contact.title ? (
-          <>
-            <Text size="sm" c="dimmed" mb="xs">
-              Title
+      <Card withBorder radius="lg" p="md">
+        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md" verticalSpacing="sm">
+          <SummaryField label="Title">
+            <Text size="sm" c={contact.title ? undefined : 'dimmed'}>
+              {contact.title || '—'}
             </Text>
-            <Badge mb="md" tt="none">
-              {contact.title}
-            </Badge>
-          </>
+          </SummaryField>
+          <SummaryField label="Phone">
+            <Text size="sm" c={contact.phone ? undefined : 'dimmed'}>
+              {contact.phone || '—'}
+            </Text>
+          </SummaryField>
+          <SummaryField label="Company">
+            {contact.company && contact.company_name ? (
+              <Text
+                component={Link}
+                to={`/app/companies/${contact.company}`}
+                className="sd-table-primary"
+                size="sm"
+              >
+                {contact.company_name}
+              </Text>
+            ) : (
+              <Text size="sm" c="dimmed">
+                —
+              </Text>
+            )}
+          </SummaryField>
+          <SummaryField label="Next follow-up">
+            <Text size="sm" c={contact.next_follow_up_at ? undefined : 'dimmed'}>
+              {formatFollowUp(contact.next_follow_up_at) || '—'}
+            </Text>
+          </SummaryField>
+          <SummaryField label="Tags">
+            {(contact.tags || []).length ? (
+              <Group gap={6}>
+                {contact.tags.map((tag) => (
+                  <Badge key={tag} variant="outline" tt="none" size="sm">
+                    {tag}
+                  </Badge>
+                ))}
+              </Group>
+            ) : (
+              <Text size="sm" c="dimmed">
+                —
+              </Text>
+            )}
+          </SummaryField>
+        </SimpleGrid>
+        {contact.notes ? (
+          <Stack gap={4} mt="md" pt="md" style={{ borderTop: '1px solid var(--mantine-color-gray-2)' }}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={600} lts={0.4}>
+              Notes
+            </Text>
+            <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
+              {contact.notes}
+            </Text>
+          </Stack>
         ) : null}
-        <Text size="sm" c="dimmed" mb="xs">
-          Phone
-        </Text>
-        <Text mb="md" c={contact.phone ? undefined : 'dimmed'}>
-          {contact.phone || '—'}
-        </Text>
-        <Text size="sm" c="dimmed" mb="xs">
-          Company
-        </Text>
-        {contact.company && contact.company_name ? (
-          <Text
-            component={Link}
-            to={`/app/companies/${contact.company}`}
-            className="sd-table-primary"
-            mb="md"
-          >
-            {contact.company_name}
-          </Text>
-        ) : (
-          <Text mb="md" c="dimmed">
-            —
-          </Text>
-        )}
-        <Text size="sm" c="dimmed" mb="xs">
-          Notes
-        </Text>
-        <Text c={contact.notes ? undefined : 'dimmed'}>
-          {contact.notes || 'No notes yet.'}
-        </Text>
       </Card>
 
       <RelatedEnvelopesCard envelopes={relatedEnvelopes} />
@@ -313,27 +303,90 @@ export function ContactDetailPage() {
         }}
       />
 
-      <Modal opened={editOpened} onClose={closeEdit} title="Edit contact">
+      <Modal
+        opened={editOpened}
+        onClose={closeEdit}
+        title="Edit contact"
+        size="lg"
+        centered
+      >
         <form onSubmit={form.onSubmit((v) => update.mutate(v))}>
-          <Stack>
-            <TextInput label="First name" required {...form.getInputProps('first_name')} />
-            <TextInput label="Last name" {...form.getInputProps('last_name')} />
-            <TextInput label="Email" type="email" required {...form.getInputProps('email')} />
-            <TextInput label="Phone" {...form.getInputProps('phone')} />
-            <TextInput label="Title" {...form.getInputProps('title')} />
-            <Select label="Stage" data={STAGE_OPTIONS} {...form.getInputProps('stage')} />
-            <TagsInput label="Tags" {...form.getInputProps('tags')} />
-            <Select
-              label="Company"
-              data={companyOptions}
-              clearable
-              searchable
-              {...form.getInputProps('company')}
+          <Stack gap="md">
+            <div>
+              <Text size="xs" c="dimmed" tt="uppercase" fw={600} lts={0.4} mb="xs">
+                Identity
+              </Text>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                <TextInput
+                  label="First name"
+                  required
+                  {...form.getInputProps('first_name')}
+                />
+                <TextInput label="Last name" {...form.getInputProps('last_name')} />
+                <TextInput
+                  label="Email"
+                  type="email"
+                  required
+                  {...form.getInputProps('email')}
+                />
+                <TextInput label="Phone" {...form.getInputProps('phone')} />
+              </SimpleGrid>
+            </div>
+
+            <Divider />
+
+            <div>
+              <Text size="xs" c="dimmed" tt="uppercase" fw={600} lts={0.4} mb="xs">
+                Role
+              </Text>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                <TextInput label="Title" {...form.getInputProps('title')} />
+                <Select
+                  label="Company"
+                  data={companyOptions}
+                  clearable
+                  searchable
+                  {...form.getInputProps('company')}
+                />
+              </SimpleGrid>
+            </div>
+
+            <Divider />
+
+            <div>
+              <Text size="xs" c="dimmed" tt="uppercase" fw={600} lts={0.4} mb="xs">
+                Pipeline
+              </Text>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                <Select
+                  label="Stage"
+                  data={STAGE_OPTIONS}
+                  {...form.getInputProps('stage')}
+                />
+                <TagsInput
+                  label="Tags"
+                  placeholder="Add tag"
+                  {...form.getInputProps('tags')}
+                />
+              </SimpleGrid>
+            </div>
+
+            <Textarea
+              label="Notes"
+              minRows={3}
+              autosize
+              maxRows={6}
+              {...form.getInputProps('notes')}
             />
-            <Textarea label="Notes" minRows={3} {...form.getInputProps('notes')} />
-            <Button type="submit" loading={update.isPending}>
-              Save
-            </Button>
+
+            <Group justify="flex-end" mt="xs">
+              <Button variant="default" onClick={closeEdit} disabled={update.isPending}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={update.isPending}>
+                Save changes
+              </Button>
+            </Group>
           </Stack>
         </form>
       </Modal>
@@ -352,23 +405,6 @@ export function ContactDetailPage() {
             loading={scheduleFollowUp.isPending}
           >
             Schedule
-          </Button>
-        </Stack>
-      </Modal>
-
-      <Modal opened={cadenceOpened} onClose={closeCadence} title="Enroll in cadence">
-        <Stack>
-          <Select
-            label="Cadence"
-            data={(cadences?.results || []).map((c) => ({
-              value: String(c.id),
-              label: c.name,
-            }))}
-            value={cadenceId}
-            onChange={setCadenceId}
-          />
-          <Button onClick={() => enrollCadence.mutate()} loading={enrollCadence.isPending}>
-            Enroll
           </Button>
         </Stack>
       </Modal>

@@ -27,7 +27,6 @@ class Company(TenantOwnedModel):
 class Contact(TenantOwnedModel):
     class Stage(models.TextChoices):
         LEAD = "lead", "Lead"
-        NURTURE = "nurture", "Nurture"
         ACTIVE = "active", "Active"
         UNDER_CONTRACT = "under_contract", "Under contract"
         CLOSED = "closed", "Closed"
@@ -135,9 +134,32 @@ class FollowUpTask(TenantOwnedModel):
         return f"{self.title} ({self.status})"
 
 
-class Cadence(TenantOwnedModel):
+class FollowUpPlan(TenantOwnedModel):
+    """Envelope-triggered email sequence (stalled / declined / completed)."""
+
+    class Trigger(models.TextChoices):
+        STALLED = "stalled", "Signer idle after send"
+        DECLINED = "declined", "Recipient declined"
+        COMPLETED = "completed", "Envelope completed"
+
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    trigger = models.CharField(
+        max_length=20, choices=Trigger.choices, default=Trigger.STALLED
+    )
+    idle_hours = models.PositiveIntegerField(
+        default=48,
+        help_text="For stalled plans: hours after invite before the plan starts.",
+    )
+    create_agent_handoff = models.BooleanField(
+        default=False,
+        help_text="Create a Follow-up task after the last email.",
+    )
+    handoff_title = models.CharField(
+        max_length=255,
+        blank=True,
+        default="Call signer — stalled packet",
+    )
     is_active = models.BooleanField(default=True)
     is_archived = models.BooleanField(default=False)
 
@@ -148,14 +170,19 @@ class Cadence(TenantOwnedModel):
         return self.name
 
 
-class CadenceStep(TenantOwnedModel):
-    cadence = models.ForeignKey(Cadence, on_delete=models.CASCADE, related_name="steps")
+class FollowUpPlanStep(TenantOwnedModel):
+    plan = models.ForeignKey(
+        FollowUpPlan, on_delete=models.CASCADE, related_name="steps"
+    )
     offset_days = models.PositiveIntegerField(
-        help_text="Days after enrollment (or previous step) when this touch is due."
+        help_text="Days after plan start when this email is due."
     )
     subject = models.CharField(max_length=255)
     body = models.TextField(
-        help_text="Email body. Placeholders: {{contact_full_name}}, {{contact_first_name}}."
+        help_text=(
+            "Email body. Placeholders: {{recipient_name}}, {{envelope_title}}, "
+            "{{sign_link}}, {{listing_address}}, {{contact_first_name}}, {{contact_full_name}}."
+        )
     )
     order = models.PositiveIntegerField(default=1)
 
@@ -163,27 +190,47 @@ class CadenceStep(TenantOwnedModel):
         ordering = ["order", "id"]
 
     def __str__(self) -> str:
-        return f"{self.cadence_id}:{self.order} +{self.offset_days}d"
+        return f"{self.plan_id}:{self.order} +{self.offset_days}d"
 
 
-class CadenceEnrollment(TenantOwnedModel):
+class FollowUpPlanEnrollment(TenantOwnedModel):
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
         PAUSED = "paused", "Paused"
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
-    cadence = models.ForeignKey(
-        Cadence, on_delete=models.CASCADE, related_name="enrollments"
+    plan = models.ForeignKey(
+        FollowUpPlan, on_delete=models.CASCADE, related_name="enrollments"
+    )
+    envelope = models.ForeignKey(
+        "envelopes.Envelope",
+        on_delete=models.CASCADE,
+        related_name="follow_up_enrollments",
+        null=True,
+        blank=True,
+    )
+    recipient = models.ForeignKey(
+        "envelopes.Recipient",
+        on_delete=models.CASCADE,
+        related_name="follow_up_enrollments",
+        null=True,
+        blank=True,
     )
     contact = models.ForeignKey(
-        Contact, on_delete=models.CASCADE, related_name="cadence_enrollments"
+        Contact,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="follow_up_plan_enrollments",
     )
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE
     )
     current_step_order = models.PositiveIntegerField(default=1)
     next_run_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    emails_sent = models.PositiveIntegerField(default=0)
     enrolled_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
@@ -191,7 +238,7 @@ class CadenceEnrollment(TenantOwnedModel):
         ordering = ["-enrolled_at"]
 
     def __str__(self) -> str:
-        return f"{self.contact_id} → {self.cadence_id} ({self.status})"
+        return f"{self.recipient_id or self.contact_id} → {self.plan_id} ({self.status})"
 
 
 class Activity(TenantOwnedModel):
@@ -203,7 +250,8 @@ class Activity(TenantOwnedModel):
         ENVELOPE_COMPLETED = "envelope_completed", "Envelope completed"
         NOTE = "note", "Note"
         FOLLOW_UP = "follow_up", "Follow-up"
-        CADENCE_EMAIL = "cadence_email", "Cadence email"
+        PLAN_EMAIL = "plan_email", "Follow-up plan email"
+        CADENCE_EMAIL = "cadence_email", "Cadence email"  # legacy
 
     contact = models.ForeignKey(
         Contact, on_delete=models.CASCADE, related_name="activities", null=True, blank=True

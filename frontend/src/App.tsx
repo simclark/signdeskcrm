@@ -21,7 +21,7 @@ import { CompaniesPage } from './features/contacts/CompaniesPage'
 import { CompanyDetailPage } from './features/contacts/CompanyDetailPage'
 import { ListingsPage } from './features/contacts/ListingsPage'
 import { FollowUpsPage } from './features/contacts/FollowUpsPage'
-import { CadencesPage } from './features/contacts/CadencesPage'
+import { FollowUpPlansPage } from './features/contacts/FollowUpPlansPage'
 import { DocumentsPage } from './features/documents/DocumentsPage'
 import { TemplatesPage } from './features/documents/TemplatesPage'
 import { TemplatePreparePage } from './features/documents/TemplatePreparePage'
@@ -56,7 +56,8 @@ const router = createBrowserRouter([
       { path: 'companies/:id', element: <CompanyDetailPage /> },
       { path: 'listings', element: <ListingsPage /> },
       { path: 'follow-ups', element: <FollowUpsPage /> },
-      { path: 'cadences', element: <CadencesPage /> },
+      { path: 'follow-up-plans', element: <FollowUpPlansPage /> },
+      { path: 'cadences', element: <Navigate to="/app/follow-up-plans" replace /> },
       { path: 'documents', element: <DocumentsPage /> },
       { path: 'templates', element: <TemplatesPage /> },
       { path: 'templates/:id/prepare', element: <TemplatePreparePage /> },

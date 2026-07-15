@@ -1,6 +1,5 @@
 import csv
 import io
-from datetime import timedelta
 
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -10,19 +9,19 @@ from rest_framework.response import Response
 
 from apps.contacts.models import (
     Activity,
-    Cadence,
-    CadenceEnrollment,
     Company,
     Contact,
+    FollowUpPlan,
+    FollowUpPlanEnrollment,
     FollowUpTask,
     Listing,
 )
 from apps.contacts.serializers import (
     ActivitySerializer,
-    CadenceEnrollmentSerializer,
-    CadenceSerializer,
     CompanySerializer,
     ContactSerializer,
+    FollowUpPlanEnrollmentSerializer,
+    FollowUpPlanSerializer,
     FollowUpTaskSerializer,
     ListingSerializer,
 )
@@ -386,14 +385,15 @@ class FollowUpTaskViewSet(viewsets.ModelViewSet):
         return Response(FollowUpTaskSerializer(task).data)
 
 
-class CadenceViewSet(viewsets.ModelViewSet):
+class FollowUpPlanViewSet(viewsets.ModelViewSet):
     permission_classes = [IsTenantMember]
-    serializer_class = CadenceSerializer
+    serializer_class = FollowUpPlanSerializer
     search_fields = ("name",)
+    filterset_fields = ("trigger", "is_active")
 
     def get_queryset(self):
         return (
-            Cadence.objects.for_tenant(self.request.tenant)
+            FollowUpPlan.objects.for_tenant(self.request.tenant)
             .filter(is_archived=False)
             .prefetch_related("steps")
         )
@@ -405,59 +405,20 @@ class CadenceViewSet(viewsets.ModelViewSet):
         instance.is_archived = True
         instance.save(update_fields=["is_archived", "updated_at"])
 
-    @action(detail=True, methods=["post"])
-    def enroll(self, request, pk=None):
-        cadence = self.get_object()
-        contact_id = request.data.get("contact")
-        if not contact_id:
-            return Response({"detail": "contact is required."}, status=400)
-        contact = Contact.objects.for_tenant(request.tenant).filter(
-            pk=contact_id, is_archived=False
-        ).first()
-        if not contact:
-            return Response({"detail": "Contact not found."}, status=404)
-        first_step = cadence.steps.order_by("order").first()
-        next_run = timezone.now()
-        if first_step:
-            next_run = timezone.now() + timedelta(days=first_step.offset_days)
-        enrollment = (
-            CadenceEnrollment.objects.for_tenant(request.tenant)
-            .filter(cadence=cadence, contact=contact, status=CadenceEnrollment.Status.ACTIVE)
-            .first()
-        )
-        if enrollment:
-            enrollment.next_run_at = next_run
-            enrollment.current_step_order = first_step.order if first_step else 1
-            enrollment.save()
-            created = False
-        else:
-            enrollment = CadenceEnrollment.objects.create(
-                tenant=request.tenant,
-                cadence=cadence,
-                contact=contact,
-                status=CadenceEnrollment.Status.ACTIVE,
-                current_step_order=first_step.order if first_step else 1,
-                next_run_at=next_run,
-            )
-            created = True
-        return Response(
-            CadenceEnrollmentSerializer(enrollment).data,
-            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
-        )
 
-
-class CadenceEnrollmentViewSet(viewsets.ModelViewSet):
+class FollowUpPlanEnrollmentViewSet(viewsets.ModelViewSet):
     permission_classes = [IsTenantMember]
-    serializer_class = CadenceEnrollmentSerializer
+    serializer_class = FollowUpPlanEnrollmentSerializer
     http_method_names = ["get", "patch", "delete", "head", "options"]
-    filterset_fields = ("status", "cadence", "contact")
+    filterset_fields = ("status", "plan", "envelope", "contact")
 
     def get_queryset(self):
         return (
-            CadenceEnrollment.objects.for_tenant(self.request.tenant)
-            .select_related("contact", "cadence")
+            FollowUpPlanEnrollment.objects.for_tenant(self.request.tenant)
+            .select_related("contact", "plan", "envelope", "recipient")
         )
 
     def perform_destroy(self, instance):
-        instance.status = CadenceEnrollment.Status.CANCELLED
-        instance.save(update_fields=["status", "updated_at"])
+        instance.status = FollowUpPlanEnrollment.Status.CANCELLED
+        instance.next_run_at = None
+        instance.save(update_fields=["status", "next_run_at", "updated_at"])

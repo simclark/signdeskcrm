@@ -54,6 +54,13 @@ class Envelope(TenantOwnedModel):
         blank=True,
         related_name="envelopes",
     )
+    follow_up_plan = models.ForeignKey(
+        "contacts.FollowUpPlan",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="envelopes",
+    )
     # Freeform deal overrides for merge tokens (e.g. {"price": "450000", "closing_date": "..."})
     merge_data = models.JSONField(default=dict, blank=True)
     created_by = models.ForeignKey(

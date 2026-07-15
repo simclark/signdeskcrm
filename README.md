@@ -91,7 +91,7 @@ Horizontal capabilities (first design partner: real estate — see `docs/design-
 - **Form library** — curated templates with named roles + merge tokens (`seed_form_library --tenant-slug …`)
 - **Import** — `POST /api/templates/import/` (PDF AcroForm + optional JSON field map)
 - **Listings** — manual or CSV import → envelope prepare prefill
-- **Follow-ups & cadences** — contact nurture tasks and email sequences
+- **Follow-ups & follow-up plans** — agent tasks plus envelope-triggered email sequences (stalled / declined / completed)
 
 ```bash
 cd backend

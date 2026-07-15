@@ -21,7 +21,7 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLogout,
-  IconRepeat,
+  IconMailForward,
   IconSend,
   IconSettings,
   IconTemplate,
@@ -56,7 +56,7 @@ const MEMBER_LINKS: NavItem[] = [
   { to: '/app/contacts', label: 'Contacts', icon: IconUsers },
   { to: '/app/companies', label: 'Companies', icon: IconBuilding },
   { to: '/app/follow-ups', label: 'Follow-ups', icon: IconCalendarDue },
-  { to: '/app/cadences', label: 'Cadences', icon: IconRepeat },
+  { to: '/app/follow-up-plans', label: 'Follow-up plans', icon: IconMailForward },
 ]
 
 /** Extra navigation only for tenant owners and admins. */

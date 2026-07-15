@@ -76,10 +76,16 @@ def send_due_reminders():
             envelope__expires_at__gt=now,
             tenant__reminders_enabled=True,
         )
-        .select_related("envelope", "tenant")
+        .select_related("envelope", "envelope__follow_up_plan", "tenant")
     )
     for recipient in qs:
         tenant = recipient.tenant
+        plan = getattr(recipient.envelope, "follow_up_plan", None)
+        if plan is not None:
+            from apps.contacts.models import FollowUpPlan
+
+            if plan.trigger == FollowUpPlan.Trigger.STALLED:
+                continue
         interval_hours = max(int(tenant.reminder_interval_hours or 48), 1)
         max_count = int(tenant.reminder_max_count or 0)
         if max_count and recipient.reminder_count >= max_count:

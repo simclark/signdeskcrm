@@ -6,10 +6,10 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from apps.contacts.views import (
-    CadenceEnrollmentViewSet,
-    CadenceViewSet,
     CompanyViewSet,
     ContactViewSet,
+    FollowUpPlanEnrollmentViewSet,
+    FollowUpPlanViewSet,
     FollowUpTaskViewSet,
     ListingViewSet,
 )
@@ -54,8 +54,12 @@ router.register(r"companies", CompanyViewSet, basename="company")
 router.register(r"contacts", ContactViewSet, basename="contact")
 router.register(r"listings", ListingViewSet, basename="listing")
 router.register(r"follow-ups", FollowUpTaskViewSet, basename="follow-up")
-router.register(r"cadences", CadenceViewSet, basename="cadence")
-router.register(r"cadence-enrollments", CadenceEnrollmentViewSet, basename="cadence-enrollment")
+router.register(r"follow-up-plans", FollowUpPlanViewSet, basename="follow-up-plan")
+router.register(
+    r"follow-up-plan-enrollments",
+    FollowUpPlanEnrollmentViewSet,
+    basename="follow-up-plan-enrollment",
+)
 router.register(r"documents", DocumentViewSet, basename="document")
 router.register(r"templates", TemplateViewSet, basename="template")
 router.register(r"envelopes", EnvelopeViewSet, basename="envelope")
