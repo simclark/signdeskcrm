@@ -1,8 +1,8 @@
-"""Curated sample form-library definitions (horizontal; not TREC-licensed content).
+"""SignDesk platform form-library catalog (horizontal; not TREC-licensed content).
 
-TREC/official board PDFs must be uploaded by the design partner. This package
-ships a generic multi-party agreement PDF generated at seed time so tenants can
-demo library + roles + merge tokens immediately.
+Entries are copied into each workspace via ensure_form_library (signup + Form
+library list). Tenants upload official board PDFs themselves and may promote
+those templates into their Form library; they never edit catalog source here.
 """
 
 from __future__ import annotations

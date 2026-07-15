@@ -21,6 +21,7 @@ import { notifications } from '@mantine/notifications'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   IconArchive,
+  IconBooks,
   IconCopy,
   IconDotsVertical,
   IconFileTypePdf,
@@ -30,6 +31,7 @@ import {
 } from '@tabler/icons-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 import { api } from '../../shared/api'
 import { DataTable } from '../../shared/DataTable'
 import { formatDate } from '../../shared/formatDate'
@@ -44,6 +46,8 @@ type DocumentRow = {
 export function TemplatesPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { membership } = useAuth()
+  const isAdmin = membership?.role === 'owner' || membership?.role === 'admin'
   const [opened, { open, close }] = useDisclosure(false)
   const [importOpened, { open: openImport, close: closeImport }] = useDisclosure(false)
   const [pdfSource, setPdfSource] = useState<'upload' | 'existing'>('upload')
@@ -187,17 +191,47 @@ export function TemplatesPage() {
       notifications.show({ color: 'red', title: 'Could not archive', message: err.message }),
   })
 
+  const addToLibrary = useMutation({
+    mutationFn: (templateId: number) =>
+      api<TemplateListItem>(`/api/templates/${templateId}/add-to-library/`, {
+        method: 'POST',
+        json: {},
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['templates'] })
+      notifications.show({ color: 'forest', message: 'Added to Form library' })
+    },
+    onError: (err: Error) =>
+      notifications.show({ color: 'red', title: 'Could not add to library', message: err.message }),
+  })
+
+  const removeFromLibrary = useMutation({
+    mutationFn: (templateId: number) =>
+      api<TemplateListItem>(`/api/templates/${templateId}/remove-from-library/`, {
+        method: 'POST',
+        json: {},
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['templates'] })
+      notifications.show({ color: 'forest', message: 'Removed from Form library' })
+    },
+    onError: (err: Error) =>
+      notifications.show({
+        color: 'red',
+        title: 'Could not remove from library',
+        message: err.message,
+      }),
+  })
+
   return (
     <Stack>
       <Group justify="space-between" align="flex-start">
         <div>
           <Title order={2}>Templates</Title>
           <Text c="dimmed">
-            Field layouts and form library starters. Seed with{' '}
-            <Text span ff="monospace" size="sm">
-              seed_form_library
-            </Text>{' '}
-            or import a PDF / field map from DocuSign-style exports.
+            Reusable field layouts. Form library holds SignDesk sample starters plus forms your
+            workspace publishes for agents to clone. Import a PDF when you need to bring a layout
+            from another tool.
           </Text>
         </div>
         <Group>
@@ -230,7 +264,9 @@ export function TemplatesPage() {
       {(data?.results || []).length === 0 ? (
         <Text c="dimmed">
           {view === 'library'
-            ? 'No library forms yet. Run seed_form_library for your workspace or mark a template as library.'
+            ? isAdmin
+              ? 'No library forms yet. Create a template, then use Add to library.'
+              : 'No library forms yet. Ask a workspace admin to publish templates to the Form library.'
             : 'No templates yet. Upload a PDF, place signature fields, then reuse that layout.'}
         </Text>
       ) : (
@@ -247,13 +283,19 @@ export function TemplatesPage() {
             </DataTable.Tr>
           </DataTable.Thead>
           <DataTable.Tbody>
-            {(data?.results || []).map((t) => (
+            {(data?.results || []).map((t) => {
+              const isPlatform = Boolean(t.library_key)
+              return (
               <DataTable.Tr key={t.id}>
                 <DataTable.Td className="sd-table-primary">
                   <Group gap="xs">
                     <span>{t.name}</span>
-                    {t.is_library ? (
+                    {isPlatform ? (
                       <Badge size="sm" variant="light" color="blue">
+                        SignDesk
+                      </Badge>
+                    ) : t.is_library ? (
+                      <Badge size="sm" variant="light" color="teal">
                         Library
                       </Badge>
                     ) : null}
@@ -264,17 +306,19 @@ export function TemplatesPage() {
                     <Badge variant="light" color={t.is_active ? 'forest' : 'gray'}>
                       {t.is_active ? 'Active' : 'Inactive'}
                     </Badge>
-                    <Switch
-                      size="sm"
-                      checked={t.is_active}
-                      aria-label={`${t.is_active ? 'Deactivate' : 'Activate'} ${t.name}`}
-                      onChange={(e) =>
-                        setActive.mutate({
-                          templateId: t.id,
-                          is_active: e.currentTarget.checked,
-                        })
-                      }
-                    />
+                    {!isPlatform ? (
+                      <Switch
+                        size="sm"
+                        checked={t.is_active}
+                        aria-label={`${t.is_active ? 'Deactivate' : 'Activate'} ${t.name}`}
+                        onChange={(e) =>
+                          setActive.mutate({
+                            templateId: t.id,
+                            is_active: e.currentTarget.checked,
+                          })
+                        }
+                      />
+                    ) : null}
                   </Group>
                 </DataTable.Td>
                 <DataTable.Td className="sd-table-muted">{t.document_title || '—'}</DataTable.Td>
@@ -297,36 +341,65 @@ export function TemplatesPage() {
                       </ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown>
-                      <Menu.Item
-                        component={Link}
-                        to={`/app/templates/${t.id}/prepare`}
-                        leftSection={<IconLayout size={14} />}
-                      >
-                        Edit layout
-                      </Menu.Item>
+                      {isPlatform ? (
+                        <Menu.Item
+                          component={Link}
+                          to={`/app/templates/${t.id}/prepare`}
+                          leftSection={<IconLayout size={14} />}
+                        >
+                          View layout
+                        </Menu.Item>
+                      ) : (
+                        <Menu.Item
+                          component={Link}
+                          to={`/app/templates/${t.id}/prepare`}
+                          leftSection={<IconLayout size={14} />}
+                        >
+                          Edit layout
+                        </Menu.Item>
+                      )}
                       <Menu.Item
                         leftSection={<IconCopy size={14} />}
                         onClick={() => clone.mutate(t.id)}
                       >
                         Clone
                       </Menu.Item>
-                      <Menu.Item
-                        color="red"
-                        leftSection={<IconArchive size={14} />}
-                        disabled={archive.isPending}
-                        onClick={() => {
-                          if (window.confirm(`Archive template “${t.name}”?`)) {
-                            archive.mutate(t.id)
-                          }
-                        }}
-                      >
-                        Archive
-                      </Menu.Item>
+                      {isAdmin && !isPlatform && !t.is_library ? (
+                        <Menu.Item
+                          leftSection={<IconBooks size={14} />}
+                          onClick={() => addToLibrary.mutate(t.id)}
+                        >
+                          Add to library
+                        </Menu.Item>
+                      ) : null}
+                      {isAdmin && !isPlatform && t.is_library ? (
+                        <Menu.Item
+                          leftSection={<IconBooks size={14} />}
+                          onClick={() => removeFromLibrary.mutate(t.id)}
+                        >
+                          Remove from library
+                        </Menu.Item>
+                      ) : null}
+                      {!isPlatform ? (
+                        <Menu.Item
+                          color="red"
+                          leftSection={<IconArchive size={14} />}
+                          disabled={archive.isPending}
+                          onClick={() => {
+                            if (window.confirm(`Archive template “${t.name}”?`)) {
+                              archive.mutate(t.id)
+                            }
+                          }}
+                        >
+                          Archive
+                        </Menu.Item>
+                      ) : null}
                     </Menu.Dropdown>
                   </Menu>
                 </DataTable.Td>
               </DataTable.Tr>
-            ))}
+              )
+            })}
           </DataTable.Tbody>
         </DataTable>
       )}

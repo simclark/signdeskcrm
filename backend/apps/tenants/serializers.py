@@ -152,6 +152,9 @@ class SignupSerializer(serializers.Serializer):
             role=Membership.Role.OWNER,
         )
         ensure_email_templates(tenant)
+        from apps.documents.form_library.ensure import ensure_form_library
+
+        ensure_form_library(tenant)
         return {"tenant": tenant, "user": user}
 
 

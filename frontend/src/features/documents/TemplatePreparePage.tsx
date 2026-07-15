@@ -1,4 +1,4 @@
-import { Badge, Button, Group, Stack, Switch, Text, Title } from '@mantine/core'
+import { Alert, Badge, Button, Group, Stack, Switch, Text, Title } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
@@ -33,7 +33,9 @@ export function TemplatePreparePage() {
     enabled: !!id,
   })
 
-  const isDirty = hydrated && draftsSnapshot(roles, fields) !== savedSnapshot
+  const isPlatform = Boolean(template?.library_key)
+  const isDirty =
+    !isPlatform && hydrated && draftsSnapshot(roles, fields) !== savedSnapshot
 
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     if (leaveRef.current) return false
@@ -88,6 +90,9 @@ export function TemplatePreparePage() {
   const save = useMutation({
     mutationFn: async ({ continueAfter }: { continueAfter: boolean }) => {
       if (!id) throw new Error('Missing template')
+      if (isPlatform) {
+        throw new Error('Platform library forms cannot be edited. Clone the template first.')
+      }
       if (!fields.length) throw new Error('Place at least one field on the document')
       for (let i = 0; i < roles.length; i++) {
         const hasSignature = fields.some(
@@ -127,6 +132,19 @@ export function TemplatePreparePage() {
       notifications.show({ color: 'red', title: 'Could not save', message: err.message }),
   })
 
+  const clone = useMutation({
+    mutationFn: () =>
+      api<TemplateDetail>(`/api/templates/${id}/clone/`, { method: 'POST', json: {} }),
+    onSuccess: (cloned) => {
+      qc.invalidateQueries({ queryKey: ['templates'] })
+      notifications.show({ color: 'forest', message: 'Template cloned — customize this copy' })
+      leaveRef.current = true
+      navigate(`/app/templates/${cloned.id}/prepare`)
+    },
+    onError: (err: Error) =>
+      notifications.show({ color: 'red', title: 'Could not clone', message: err.message }),
+  })
+
   const setActive = useMutation({
     mutationFn: (is_active: boolean) =>
       api<TemplateDetail>(`/api/templates/${id}/`, {
@@ -159,61 +177,103 @@ export function TemplatePreparePage() {
         <div>
           <Group gap="sm" mb={4}>
             <Title order={2}>Template: {template.name}</Title>
+            {isPlatform ? (
+              <Badge variant="light" color="blue">
+                SignDesk
+              </Badge>
+            ) : template.is_library ? (
+              <Badge variant="light" color="teal">
+                Library
+              </Badge>
+            ) : null}
             <Badge variant="light" color={template.is_active ? 'forest' : 'gray'}>
               {template.is_active ? 'Active' : 'Inactive'}
             </Badge>
           </Group>
           <Text c="dimmed">
-            Place fields on {template.document_title || 'the PDF'}. This layout can be applied to any
-            uploaded document when creating an envelope. Inactive templates stay editable but are
-            hidden from envelope dropdowns.
+            {isPlatform
+              ? 'This is a SignDesk platform starter. Clone it to place fields and customize the layout for your workspace.'
+              : `Place fields on ${template.document_title || 'the PDF'}. This layout can be applied to any uploaded document when creating an envelope. Inactive templates stay editable but are hidden from envelope dropdowns.`}
           </Text>
         </div>
-        <Switch
-          label={template.is_active ? 'Active' : 'Inactive'}
-          checked={template.is_active}
-          onChange={(e) => setActive.mutate(e.currentTarget.checked)}
-        />
+        {!isPlatform ? (
+          <Switch
+            label={template.is_active ? 'Active' : 'Inactive'}
+            checked={template.is_active}
+            onChange={(e) => setActive.mutate(e.currentTarget.checked)}
+          />
+        ) : null}
       </Group>
+
+      {isPlatform ? (
+        <Alert color="blue" title="Read-only platform form">
+          <Group justify="space-between" align="center" wrap="wrap">
+            <Text size="sm">
+              Edits are blocked on SignDesk library forms. Clone to create an editable workspace copy.
+            </Text>
+            <Button onClick={() => clone.mutate()} loading={clone.isPending}>
+              Clone to edit
+            </Button>
+          </Group>
+        </Alert>
+      ) : null}
 
       <PdfFieldMapper
         documentFileUrl={template.document_file_url}
         initialPageCount={template.page_count || 1}
         roles={roles}
         fields={fields}
-        onRolesChange={setRoles}
-        onFieldsChange={setFields}
+        onRolesChange={isPlatform ? () => undefined : setRoles}
+        onFieldsChange={isPlatform ? () => undefined : setFields}
         editableContacts={false}
         rolesTitle="Signer roles"
         addRoleLabel="Add role"
         sidebarActions={
-          <Stack gap="xs">
-            <Button
-              fullWidth
-              onClick={() => save.mutate({ continueAfter: true })}
-              loading={save.isPending && save.variables?.continueAfter === true}
-            >
-              Save & done
-            </Button>
-            <Group gap="xs" grow>
+          isPlatform ? (
+            <Stack gap="xs">
+              <Button fullWidth onClick={() => clone.mutate()} loading={clone.isPending}>
+                Clone to edit
+              </Button>
               <Button
                 variant="default"
+                fullWidth
                 onClick={() => {
-                  leaveRef.current = false
+                  leaveRef.current = true
                   navigate('/app/templates')
                 }}
               >
-                Cancel
+                Back to templates
               </Button>
+            </Stack>
+          ) : (
+            <Stack gap="xs">
               <Button
-                variant="light"
-                onClick={() => save.mutate({ continueAfter: false })}
-                loading={save.isPending && save.variables?.continueAfter === false}
+                fullWidth
+                onClick={() => save.mutate({ continueAfter: true })}
+                loading={save.isPending && save.variables?.continueAfter === true}
               >
-                Save
+                Save & done
               </Button>
-            </Group>
-          </Stack>
+              <Group gap="xs" grow>
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    leaveRef.current = false
+                    navigate('/app/templates')
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="light"
+                  onClick={() => save.mutate({ continueAfter: false })}
+                  loading={save.isPending && save.variables?.continueAfter === false}
+                >
+                  Save
+                </Button>
+              </Group>
+            </Stack>
+          )
         }
       />
     </Stack>

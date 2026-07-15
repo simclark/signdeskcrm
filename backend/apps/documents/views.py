@@ -7,6 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
+from apps.documents.form_library.ensure import ensure_form_library
 from apps.documents.merge import KNOWN_MERGE_TOKENS
 from apps.documents.models import Document, DocumentVersion, Template
 from apps.documents.pdf_import import extract_acroform_layout, layout_from_import_payload
@@ -17,7 +18,7 @@ from apps.documents.serializers import (
     validate_field_layout,
     validate_roles,
 )
-from apps.tenants.permissions import IsTenantMember
+from apps.tenants.permissions import IsTenantAdmin, IsTenantMember
 
 
 class DocumentViewSet(viewsets.ModelViewSet):
@@ -91,8 +92,51 @@ class TemplateViewSet(viewsets.ModelViewSet):
             qs = qs.filter(category=category)
         return qs
 
+    def list(self, request, *args, **kwargs):
+        library = request.query_params.get("library")
+        if library is not None and library.lower() in ("1", "true", "yes"):
+            ensure_form_library(request.tenant)
+        return super().list(request, *args, **kwargs)
+
     def perform_create(self, serializer):
-        serializer.save(tenant=self.request.tenant, created_by=self.request.user)
+        serializer.save(
+            tenant=self.request.tenant,
+            created_by=self.request.user,
+            is_library=False,
+            library_key=None,
+        )
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.library_key:
+            return Response(
+                {
+                    "detail": (
+                        "Platform library forms cannot be edited. "
+                        "Clone the template to customize it."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.library_key:
+            return Response(
+                {
+                    "detail": (
+                        "Platform library forms cannot be archived. "
+                        "Clone the template if you need a workspace copy."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
         instance.is_archived = True
@@ -139,12 +183,66 @@ class TemplateViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="add-to-library",
+        permission_classes=[IsTenantAdmin],
+    )
+    def add_to_library(self, request, pk=None):
+        """Promote a workspace template into the Form library (tenant-owned)."""
+        template = self.get_object()
+        if template.library_key:
+            return Response(
+                {"detail": "Platform library forms are already in the library."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if template.is_library:
+            return Response(
+                TemplateSerializer(template, context={"request": request}).data
+            )
+        template.is_library = True
+        template.save(update_fields=["is_library", "updated_at"])
+        return Response(
+            TemplateSerializer(template, context={"request": request}).data
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="remove-from-library",
+        permission_classes=[IsTenantAdmin],
+    )
+    def remove_from_library(self, request, pk=None):
+        """Remove a tenant-promoted form from the library shelf."""
+        template = self.get_object()
+        if template.library_key:
+            return Response(
+                {
+                    "detail": (
+                        "Platform library forms cannot be removed from the library. "
+                        "Clone the template to customize a workspace copy."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not template.is_library:
+            return Response(
+                TemplateSerializer(template, context={"request": request}).data
+            )
+        template.is_library = False
+        template.save(update_fields=["is_library", "updated_at"])
+        return Response(
+            TemplateSerializer(template, context={"request": request}).data
+        )
+
     @action(detail=False, methods=["post"], url_path="import")
     def import_template(self, request):
         """Import a PDF (+ optional JSON field map) as a new template.
 
         Tries AcroForm extraction first; falls back to provided `field_map` JSON
         (DocuSign-style or SignDesk layout). Empty layout is allowed for manual placement.
+        Promote into Form library afterward via add-to-library.
         """
         uploaded = request.FILES.get("file")
         if not uploaded:
@@ -206,7 +304,6 @@ class TemplateViewSet(viewsets.ModelViewSet):
         except Exception as exc:
             return Response({"detail": str(exc)}, status=400)
 
-        is_library = str(request.data.get("is_library", "")).lower() in ("1", "true", "yes")
         category = (request.data.get("category") or "general")[:64]
         description = request.data.get("description") or ""
 
@@ -218,7 +315,8 @@ class TemplateViewSet(viewsets.ModelViewSet):
             roles=roles,
             category=category,
             description=description,
-            is_library=is_library,
+            is_library=False,
+            library_key=None,
             is_active=True,
             created_by=request.user,
         )

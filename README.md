@@ -88,14 +88,17 @@ npm run dev
 
 Horizontal capabilities (first design partner: real estate — see `docs/design-partner/`):
 
-- **Form library** — curated templates with named roles + merge tokens (`seed_form_library --tenant-slug …`)
-- **Import** — `POST /api/templates/import/` (PDF AcroForm + optional JSON field map)
+- **Form library** — dual shelf: SignDesk platform starters (auto-copied on workspace signup / Form library list) plus tenant-published templates (`Add to library`). Platform rows have a `library_key` and are clone-only; customize via Clone.
+- **Import** — `POST /api/templates/import/` (PDF AcroForm + optional JSON field map), then optionally promote into the library
 - **Listings** — manual or CSV import → envelope prepare prefill
 - **Follow-ups & follow-up plans** — agent tasks plus envelope-triggered email sequences (stalled / declined / completed)
+
+Ops backfill / refresh of platform starters (internal only — not a customer tool):
 
 ```bash
 cd backend
 python manage.py seed_form_library --tenant-slug acme-esign
+# or: python manage.py seed_form_library --all-tenants [--replace]
 ```
 
 ## Tests

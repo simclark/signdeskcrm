@@ -249,6 +249,7 @@ class TemplateSerializer(serializers.ModelSerializer):
             "document_title",
             "document_file_url",
             "page_count",
+            "is_library",
             "library_key",
             "created_at",
             "updated_at",

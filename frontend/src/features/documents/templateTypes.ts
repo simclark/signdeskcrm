@@ -33,7 +33,7 @@ export type TemplateDetail = {
   category: string
   description: string
   is_library: boolean
-  library_key: string
+  library_key: string | null
   is_active: boolean
   is_archived: boolean
   created_at: string
@@ -52,7 +52,7 @@ export type TemplateListItem = {
   category?: string
   description?: string
   is_library?: boolean
-  library_key?: string
+  library_key?: string | null
   is_active: boolean
   created_at: string
 }
