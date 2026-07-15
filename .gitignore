@@ -16,3 +16,5 @@ frontend/dist/
 *.log
 .idea/
 .vscode/
+celerybeat-schedule
+celerybeat-schedule.*
