@@ -13,7 +13,8 @@ SignDesk stays a **horizontal** e-sign + light CRM product. Shapiro Group is the
 
 1. Create a workspace for Shapiro (or invite Mitchell into an existing tenant). New workspaces automatically receive SignDesk Form library starters (sample purchase agreement with roles + merge tokens). Existing workspaces pick up missing starters the first time Form library is opened.
 2. Agree commercial terms using [BETA_TERMS.md](./BETA_TERMS.md).
-3. (Optional, ops only) Backfill or refresh platform starters for an existing tenant:
+3. Follow [PILOT_OPS.md](./PILOT_OPS.md) for hosted URL, real SMTP, and counsel review of disclosure / Certificate of Completion.
+4. (Optional, ops only) Backfill or refresh platform starters for an existing tenant:
 
 ```bash
 cd backend

@@ -284,7 +284,10 @@ class EmailTemplateTests(TestCase):
                 "workspace_invite",
                 "signing_invite",
                 "signing_reminder",
+                "cc_notice",
                 "completion",
+                "envelope_voided",
+                "envelope_declined",
             ],
         )
         self.assertIn("available_placeholders", res.data[0])
@@ -360,5 +363,5 @@ class EmailTemplateTests(TestCase):
         tenant = Tenant.objects.get(slug="mail-co")
         self.assertEqual(
             self.EmailTemplate.objects.filter(tenant=tenant).count(),
-            4,
+            7,
         )

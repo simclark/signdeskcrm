@@ -27,17 +27,64 @@ def send_recipient_invite(recipient_id: int, is_reminder: bool = False):
     recipient = Recipient.objects.select_related("envelope", "tenant").get(pk=recipient_id)
     envelope = recipient.envelope
     sign_url = envelope.tenant.frontend_url(f"/sign/{recipient.access_token}")
-    key = (
-        EmailTemplateKey.SIGNING_REMINDER
-        if is_reminder
-        else EmailTemplateKey.SIGNING_INVITE
-    )
+    if recipient.role == Recipient.Role.CC:
+        key = EmailTemplateKey.CC_NOTICE
+    elif is_reminder:
+        key = EmailTemplateKey.SIGNING_REMINDER
+    else:
+        key = EmailTemplateKey.SIGNING_INVITE
     send_templated_email(
         tenant=envelope.tenant,
         key=key,
         to_email=recipient.email,
         context=_signing_context(recipient, sign_url),
         action_url=sign_url,
+    )
+
+
+@shared_task
+def send_void_emails(envelope_id: int):
+    envelope = Envelope.objects.select_related("tenant").get(pk=envelope_id)
+    reason = (envelope.void_reason or "").strip()
+    reason_block = f"Reason: {reason}" if reason else ""
+    for recipient in envelope.recipients.all():
+        send_templated_email(
+            tenant=envelope.tenant,
+            key=EmailTemplateKey.ENVELOPE_VOIDED,
+            to_email=recipient.email,
+            context={
+                "recipient_name": recipient.name,
+                "tenant_name": envelope.tenant.name,
+                "envelope_title": envelope.title,
+                "void_reason": reason_block,
+            },
+        )
+
+
+@shared_task
+def send_decline_notice(envelope_id: int, decliner_id: int):
+    envelope = Envelope.objects.select_related("tenant", "created_by").get(pk=envelope_id)
+    decliner = Recipient.objects.get(pk=decliner_id, envelope_id=envelope_id)
+    sender = envelope.created_by
+    if not sender or not sender.email:
+        return
+    reason = (decliner.decline_reason or "").strip()
+    reason_block = f"Reason: {reason}" if reason else ""
+    action_url = envelope.tenant.frontend_url(f"/app/envelopes/{envelope.id}")
+    send_templated_email(
+        tenant=envelope.tenant,
+        key=EmailTemplateKey.ENVELOPE_DECLINED,
+        to_email=sender.email,
+        context={
+            "recipient_name": sender.full_name or sender.email,
+            "tenant_name": envelope.tenant.name,
+            "envelope_title": envelope.title,
+            "decliner_name": decliner.name,
+            "decliner_email": decliner.email,
+            "decline_reason": reason_block,
+            "action_url": action_url,
+        },
+        action_url=action_url,
     )
 
 

@@ -181,6 +181,8 @@ EMAIL_BACKEND = os.getenv(
 EMAIL_HOST = os.getenv("EMAIL_HOST", "127.0.0.1")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "1025"))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "false").lower() == "true"
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "SignDesk <noreply@signdeskcrm.com>")
 
 BASE_DOMAIN = os.getenv("BASE_DOMAIN", "signdeskcrm.test")

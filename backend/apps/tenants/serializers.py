@@ -5,6 +5,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import serializers
 
+from apps.common.media import protected_media_url
 from apps.tenants.email_templates import DEFAULT_TEMPLATES, EmailTemplateKey
 from apps.tenants.models import (
     EmailTemplate,
@@ -55,6 +56,13 @@ class TenantSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = ("id", "slug", "status", "created_at", "esign_acknowledgement_version")
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        data["logo"] = protected_media_url(request, instance.logo)
+        data["icon"] = protected_media_url(request, instance.icon)
+        return data
 
     def validate_timezone(self, value):
         value = (value or "").strip() or "UTC"

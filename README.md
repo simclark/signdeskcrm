@@ -84,6 +84,8 @@ npm run dev
 6. Consent → complete fields → submit
 7. Signed PDF + Certificate of Completion + audit trail
 
+Live demo walkthrough: [docs/demo/ESIGN_DEMO.md](docs/demo/ESIGN_DEMO.md)
+
 ## Form library, listings & CRM outreach
 
 Horizontal capabilities (first design partner: real estate — see `docs/design-partner/`):
@@ -116,4 +118,4 @@ python manage.py test apps.documents.tests_merge_import
 docker compose -f docker-compose.prod.yml up --build -d
 ```
 
-Production hosts use `signdeskcrm.com` / `{slug}.signdeskcrm.com`. See `deploy/nginx.conf` for reverse-proxy routing of API, media, and SPA.
+Production hosts use `signdeskcrm.com` / `{slug}.signdeskcrm.com`. See [docs/ops/PRODUCTION.md](docs/ops/PRODUCTION.md) for TLS, secrets, SMTP, private media, backups, and Sentry. Design-partner pilot ops: [docs/design-partner/PILOT_OPS.md](docs/design-partner/PILOT_OPS.md).

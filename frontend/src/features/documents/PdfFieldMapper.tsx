@@ -51,6 +51,7 @@ import {
   type FieldDraft,
   type FieldType,
 } from '../envelopes/types'
+import { loadPdfDocument } from '../../shared/loadPdf'
 import {
   autoLabelForToken,
   buildMergeTokenSelectData,
@@ -81,7 +82,6 @@ import {
   roleInitials,
   roleLabel,
   screenRectToFieldCoords,
-  toAppMediaUrl,
   unionFieldTopLeftBox,
   type MapperHistorySnapshot,
   type ResizeHandle,
@@ -620,14 +620,13 @@ export function PdfFieldMapper({
   const multiSelectActive = selectedIds.length > 1
 
   useEffect(() => {
-    const fileUrl = toAppMediaUrl(documentFileUrl)
-    if (!fileUrl) return
+    if (!documentFileUrl) return
     let cancelled = false
     setPageSizes({})
     setPdfDoc(null)
     ;(async () => {
       try {
-        const doc = await pdfjs.getDocument({ url: fileUrl }).promise
+        const doc = await loadPdfDocument(documentFileUrl)
         if (cancelled) return
         setPdfDoc(doc)
         setPageCount(doc.numPages)

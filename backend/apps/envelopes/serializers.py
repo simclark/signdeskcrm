@@ -1,6 +1,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.common.media import protected_media_url
 from apps.contacts.models import FollowUpPlan
 from apps.envelopes.models import Envelope, Field, Recipient
 from apps.envelopes.services import validate_envelope_for_send
@@ -172,26 +173,16 @@ class EnvelopeSerializer(serializers.ModelSerializer):
         return obj.document_version or (obj.document.current_version if obj.document_id else None)
 
     def get_signed_file_url(self, obj):
-        request = self.context.get("request")
-        if obj.signed_file and request:
-            return request.build_absolute_uri(obj.signed_file.url)
-        return None
+        return protected_media_url(self.context.get("request"), obj.signed_file)
 
     def get_certificate_file_url(self, obj):
-        request = self.context.get("request")
-        if obj.certificate_file and request:
-            return request.build_absolute_uri(obj.certificate_file.url)
-        return None
+        return protected_media_url(self.context.get("request"), obj.certificate_file)
 
     def get_document_file_url(self, obj):
         version = self._document_version(obj)
         if not version or not version.file:
             return None
-        request = self.context.get("request")
-        if request:
-            return request.build_absolute_uri(version.file.url)
-        return version.file.url
-
+        return protected_media_url(self.context.get("request"), version.file)
     def get_page_count(self, obj):
         version = self._document_version(obj)
         return version.page_count if version else 1

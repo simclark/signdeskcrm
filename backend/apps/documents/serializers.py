@@ -1,6 +1,7 @@
 from pypdf import PdfReader
 from rest_framework import serializers
 
+from apps.common.media import protected_media_url
 from apps.documents.models import (
     ALLOWED_TEMPLATE_FIELD_TYPES,
     Document,
@@ -27,9 +28,7 @@ class DocumentVersionSerializer(serializers.ModelSerializer):
 
     def get_file_url(self, obj):
         request = self.context.get("request")
-        if obj.file and request:
-            return request.build_absolute_uri(obj.file.url)
-        return obj.file.url if obj.file else None
+        return protected_media_url(request, obj.file)
 
 
 class DocumentSerializer(serializers.ModelSerializer):
@@ -267,11 +266,7 @@ class TemplateSerializer(serializers.ModelSerializer):
         version = self._current_version(obj)
         if not version or not version.file:
             return None
-        request = self.context.get("request")
-        if request:
-            return request.build_absolute_uri(version.file.url)
-        return version.file.url
-
+        return protected_media_url(self.context.get("request"), version.file)
     def get_page_count(self, obj):
         version = self._current_version(obj)
         return version.page_count if version else None

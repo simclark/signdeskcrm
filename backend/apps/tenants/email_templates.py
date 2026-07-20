@@ -18,20 +18,29 @@ class EmailTemplateKey:
     WORKSPACE_INVITE = "workspace_invite"
     SIGNING_INVITE = "signing_invite"
     SIGNING_REMINDER = "signing_reminder"
+    CC_NOTICE = "cc_notice"
     COMPLETION = "completion"
+    ENVELOPE_VOIDED = "envelope_voided"
+    ENVELOPE_DECLINED = "envelope_declined"
 
     CHOICES = (
         (WORKSPACE_INVITE, "Workspace invitation"),
         (SIGNING_INVITE, "Signing invitation"),
         (SIGNING_REMINDER, "Signing reminder"),
+        (CC_NOTICE, "CC copy notice"),
         (COMPLETION, "Document completed"),
+        (ENVELOPE_VOIDED, "Envelope voided"),
+        (ENVELOPE_DECLINED, "Envelope declined"),
     )
 
     ALL = (
         WORKSPACE_INVITE,
         SIGNING_INVITE,
         SIGNING_REMINDER,
+        CC_NOTICE,
         COMPLETION,
+        ENVELOPE_VOIDED,
+        ENVELOPE_DECLINED,
     )
 
 
@@ -96,6 +105,27 @@ DEFAULT_TEMPLATES: dict[str, TemplateDefault] = {
         ),
         "cta_label": "Review and sign",
     },
+    EmailTemplateKey.CC_NOTICE: {
+        "label": "CC copy notice",
+        "description": "Sent to CC recipients when an envelope is sent (view-only).",
+        "subject": "Copy: {{envelope_title}}",
+        "body": (
+            "Hello {{recipient_name}},\n\n"
+            "{{tenant_name}} has sent '{{envelope_title}}' for signature. You were "
+            "added as a copy recipient (CC) and are not required to sign.\n\n"
+            "{{envelope_message}}\n\n"
+            "Open the link below to review the document. You will receive another "
+            "email when signing is complete."
+        ),
+        "placeholders": (
+            "recipient_name",
+            "tenant_name",
+            "envelope_title",
+            "envelope_message",
+            "action_url",
+        ),
+        "cta_label": "View document",
+    },
     EmailTemplateKey.COMPLETION: {
         "label": "Document completed",
         "description": "Sent to all parties when every signature is complete.",
@@ -116,6 +146,47 @@ DEFAULT_TEMPLATES: dict[str, TemplateDefault] = {
         ),
         "cta_label": "Download documents",
     },
+    EmailTemplateKey.ENVELOPE_VOIDED: {
+        "label": "Envelope voided",
+        "description": "Sent to all recipients when the sender voids an envelope.",
+        "subject": "Voided: {{envelope_title}}",
+        "body": (
+            "Hello {{recipient_name}},\n\n"
+            "{{tenant_name}} has voided the envelope '{{envelope_title}}'. "
+            "Signing links for this document no longer work.\n\n"
+            "{{void_reason}}\n\n"
+            "Contact the sender if you have questions."
+        ),
+        "placeholders": (
+            "recipient_name",
+            "tenant_name",
+            "envelope_title",
+            "void_reason",
+        ),
+        "cta_label": "",
+    },
+    EmailTemplateKey.ENVELOPE_DECLINED: {
+        "label": "Envelope declined",
+        "description": "Sent to the sender when a signer declines to sign.",
+        "subject": "Declined: {{envelope_title}}",
+        "body": (
+            "Hello {{recipient_name}},\n\n"
+            "{{decliner_name}} ({{decliner_email}}) declined to sign "
+            "'{{envelope_title}}'.\n\n"
+            "{{decline_reason}}\n\n"
+            "Open the envelope in SignDesk to review status or send a new packet."
+        ),
+        "placeholders": (
+            "recipient_name",
+            "tenant_name",
+            "envelope_title",
+            "decliner_name",
+            "decliner_email",
+            "decline_reason",
+            "action_url",
+        ),
+        "cta_label": "Open envelope",
+    },
 }
 
 
@@ -127,4 +198,4 @@ def get_default(key: str) -> TemplateDefault:
 
 
 def get_cta_label(key: str) -> str:
-    return get_default(key)["cta_label"]
+    return get_default(key).get("cta_label") or ""

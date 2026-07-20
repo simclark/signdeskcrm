@@ -2,25 +2,13 @@ import { Text } from '@mantine/core'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import { loadPdfDocument } from '../../shared/loadPdf'
 import type { AdoptedAssets } from './SignatureAdoptDialog'
 import { fieldToOverlayStyle, fieldTypeLabel, type SignField } from './fieldOverlay'
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker
 
 const MAX_DOC_WIDTH = 900
-
-function toAppMediaUrl(url: string | null | undefined) {
-  if (!url) return null
-  try {
-    const parsed = new URL(url, window.location.origin)
-    if (parsed.pathname.startsWith('/media/')) {
-      return `${parsed.pathname}${parsed.search}`
-    }
-  } catch {
-    /* keep original */
-  }
-  return url
-}
 
 function formatDisplayDate(iso: string) {
   const parsed = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/)
@@ -317,16 +305,14 @@ export function SigningDocumentViewer({
   const [pageCount, setPageCount] = useState(0)
   const [loadError, setLoadError] = useState(false)
 
-  const resolvedUrl = useMemo(() => toAppMediaUrl(fileUrl), [fileUrl])
-
   useEffect(() => {
-    if (!resolvedUrl) return
+    if (!fileUrl) return
     let cancelled = false
     setLoadError(false)
     setPdfDoc(null)
     ;(async () => {
       try {
-        const doc = await pdfjs.getDocument({ url: resolvedUrl }).promise
+        const doc = await loadPdfDocument(fileUrl)
         if (cancelled) return
         setPdfDoc(doc)
         setPageCount(doc.numPages)
@@ -337,7 +323,7 @@ export function SigningDocumentViewer({
     return () => {
       cancelled = true
     }
-  }, [resolvedUrl])
+  }, [fileUrl])
 
   const fieldsByPage = useMemo(() => {
     const map = new Map<number, SignField[]>()

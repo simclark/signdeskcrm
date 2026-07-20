@@ -34,18 +34,7 @@ export type RoleDraft = {
   role_key?: string
 }
 
-export function toAppMediaUrl(url: string | null | undefined) {
-  if (!url) return null
-  try {
-    const parsed = new URL(url, window.location.origin)
-    if (parsed.pathname.startsWith('/media/')) {
-      return `${parsed.pathname}${parsed.search}`
-    }
-  } catch {
-    /* keep original */
-  }
-  return url
-}
+export { toAppMediaUrl } from '../../shared/mediaUrl'
 
 export function draftsSnapshot(roles: RoleDraft[], fields: FieldDraft[]) {
   return JSON.stringify({

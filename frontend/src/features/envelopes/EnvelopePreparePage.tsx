@@ -481,9 +481,9 @@ export function EnvelopePreparePage() {
       const nextFields = fieldsToDrafts(next)
       setFields(nextFields)
       const customBag = next.merge_data?.custom
-      if (customBag && typeof customBag === 'object' && !Array.isArray(customObj)) {
+      if (customBag && typeof customBag === 'object' && !Array.isArray(customBag)) {
         setCustomEntries(
-          Object.entries(customObj).map(([key, value]) => ({
+          Object.entries(customBag).map(([key, value]) => ({
             key,
             value: String(value ?? ''),
           })),

@@ -109,10 +109,12 @@ class SigningSessionView(views.APIView):
             consent_text, consent_version = resolve_acknowledgement(tenant)
         logo_url = None
         icon_url = None
+        from apps.common.media import protected_media_url
+
         if tenant.logo:
-            logo_url = request.build_absolute_uri(tenant.logo.url)
+            logo_url = protected_media_url(request, tenant.logo)
         if tenant.icon:
-            icon_url = request.build_absolute_uri(tenant.icon.url)
+            icon_url = protected_media_url(request, tenant.icon)
         payload = {
             "consent_version": consent_version,
             "consent_text": consent_text,
@@ -139,11 +141,18 @@ class SigningSessionView(views.APIView):
                 "document_retention_days": tenant.document_retention_days,
                 "retention_purged": bool(envelope.retention_purged_at),
             },
-            "document": DocumentVersionSerializer(
-                version, context={"request": request}
-            ).data
-            if version
-            else None,
+            "document": (
+                {
+                    **DocumentVersionSerializer(
+                        version, context={"request": request}
+                    ).data,
+                    "file_url": request.build_absolute_uri(
+                        f"/api/sign/{token}/document/"
+                    ),
+                }
+                if version
+                else None
+            ),
             "fields": FieldSerializer(
                 envelope.fields.filter(
                     recipient=recipient,
@@ -224,6 +233,52 @@ class SigningDownloadView(views.APIView):
         content_type = mimetypes.guess_type(safe_name)[0] or "application/pdf"
         response = FileResponse(file_field.open("rb"), content_type=content_type)
         response["Content-Disposition"] = f'attachment; filename="{safe_name}"'
+        return response
+
+
+class SigningDocumentView(views.APIView):
+    """Stream the source PDF for a signing session (token auth, no open /media/)."""
+
+    permission_classes = [AllowAny]
+    throttle_classes = [SigningThrottle]
+
+    def get(self, request, token):
+        try:
+            recipient = get_recipient_by_token(token)
+        except Recipient.DoesNotExist:
+            return Response({"detail": "Invalid link."}, status=status.HTTP_404_NOT_FOUND)
+
+        envelope = recipient.envelope
+        if envelope.status in (
+            Envelope.Status.VOIDED,
+            Envelope.Status.EXPIRED,
+            Envelope.Status.DECLINED,
+        ):
+            return Response(
+                {"detail": f"This envelope is {envelope.status}."},
+                status=status.HTTP_410_GONE,
+            )
+        if (
+            envelope.status != Envelope.Status.COMPLETED
+            and envelope.expires_at
+            and envelope.expires_at < timezone.now()
+        ):
+            return Response({"detail": "This envelope has expired."}, status=410)
+
+        if envelope.status != Envelope.Status.COMPLETED:
+            try:
+                require_signer_turn(recipient)
+            except PermissionError as exc:
+                return _turn_denied_response(exc)
+
+        version = envelope.document_version
+        if not version or not version.file:
+            return Response({"detail": "Document not available."}, status=404)
+
+        filename = f"{envelope.title}.pdf"
+        safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in filename)
+        response = FileResponse(version.file.open("rb"), content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="{safe_name}"'
         return response
 
 
@@ -358,6 +413,8 @@ class SigningDeclineView(views.APIView):
             payload={"reason": reason},
         )
         from apps.contacts.follow_up_plans import start_declined_plan_for_recipient
+        from apps.envelopes.tasks import send_decline_notice
 
         start_declined_plan_for_recipient(recipient)
+        send_decline_notice.delay(envelope.id, recipient.id)
         return Response({"status": "declined"})

@@ -88,6 +88,9 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
             actor_name=request.user.full_name,
             payload={"reason": envelope.void_reason},
         )
+        from apps.envelopes.tasks import send_void_emails
+
+        send_void_emails.delay(envelope.id)
         return Response(EnvelopeSerializer(envelope, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
@@ -146,17 +149,18 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
         envelope = self.get_object()
         from apps.envelopes.tasks import send_recipient_invite
 
-        pending = envelope.recipients.filter(
+        # Only re-invite signers who already have an active turn. PENDING
+        # sequential signers must not receive premature invites.
+        active = envelope.recipients.filter(
             role=Recipient.Role.SIGNER,
             status__in=[
                 Recipient.Status.SENT,
                 Recipient.Status.VIEWED,
-                Recipient.Status.PENDING,
             ],
         )
-        for recipient in pending:
+        for recipient in active:
             send_recipient_invite.delay(recipient.id)
-        return Response({"resent": pending.count()})
+        return Response({"resent": active.count()})
 
     @action(detail=True, methods=["get"])
     def audit(self, request, pk=None):

@@ -3,7 +3,7 @@ import { IconDownload } from '@tabler/icons-react'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { useEffect, useRef, useState } from 'react'
-import { toAppMediaUrl } from './pdfFieldMapperUtils'
+import { downloadMediaFile, loadPdfDocument } from '../../shared/loadPdf'
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker
 
@@ -126,8 +126,7 @@ export function PdfViewerDialog({
       return
     }
 
-    const resolvedUrl = toAppMediaUrl(fileUrl)
-    if (!resolvedUrl) {
+    if (!fileUrl) {
       setLoadError(true)
       return
     }
@@ -137,7 +136,7 @@ export function PdfViewerDialog({
     setPdfDoc(null)
     ;(async () => {
       try {
-        const doc = await pdfjs.getDocument({ url: resolvedUrl }).promise
+        const doc = await loadPdfDocument(fileUrl)
         if (cancelled) return
         setPdfDoc(doc)
         setPageCount(doc.numPages)
@@ -152,25 +151,15 @@ export function PdfViewerDialog({
   }, [opened, fileUrl])
 
   async function handleDownload() {
-    const resolvedUrl = toAppMediaUrl(fileUrl)
-    if (!resolvedUrl) return
+    if (!fileUrl) return
     setDownloading(true)
     try {
-      const res = await fetch(resolvedUrl)
-      if (!res.ok) throw new Error('Download failed')
-      const blob = await res.blob()
-      const objectUrl = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = objectUrl
-      anchor.download = downloadFileName.endsWith('.pdf')
-        ? downloadFileName
-        : `${downloadFileName}.pdf`
-      document.body.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-      URL.revokeObjectURL(objectUrl)
+      await downloadMediaFile(
+        fileUrl,
+        downloadFileName.endsWith('.pdf') ? downloadFileName : `${downloadFileName}.pdf`,
+      )
     } catch {
-      window.open(resolvedUrl, '_blank', 'noopener,noreferrer')
+      /* ignore — button stays usable for retry */
     } finally {
       setDownloading(false)
     }

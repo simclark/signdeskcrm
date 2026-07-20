@@ -629,3 +629,163 @@ class FieldRecipientFillModeValidationTests(TestCase):
         self.assertEqual(doc_fields.count(), 1)
         self.assertIsNone(doc_fields.first().recipient_id)
         self.assertEqual(clone.fields.filter(fill_mode=Field.FillMode.SIGNER).count(), 1)
+
+
+@override_settings(
+    CELERY_TASK_ALWAYS_EAGER=True,
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class EnvelopeNotificationTests(TestCase):
+    def setUp(self):
+        from django.core import mail
+        from rest_framework.test import APIClient
+
+        from apps.envelopes.services import send_envelope
+        from apps.tenants.models import ensure_email_templates
+
+        self.mail = mail
+        self.send_envelope = send_envelope
+        self.client = APIClient()
+        self.tenant = Tenant.objects.create(name="Acme", slug="acme-notify")
+        ensure_email_templates(self.tenant)
+        self.user = User.objects.create_user(
+            email="owner@acme-notify.test",
+            password="password123",
+            first_name="Pat",
+            last_name="Owner",
+        )
+        Membership.objects.create(tenant=self.tenant, user=self.user, role=Membership.Role.OWNER)
+        pdf = SimpleUploadedFile("doc.pdf", _multi_page_pdf(1), content_type="application/pdf")
+        self.document = Document.objects.create(
+            tenant=self.tenant,
+            title="NDA",
+            original_filename="doc.pdf",
+            created_by=self.user,
+        )
+        self.version = DocumentVersion(
+            tenant=self.tenant, document=self.document, version_number=1, file=pdf
+        )
+        self.version.save()
+        self.version.compute_hash()
+        self.version.page_count = 1
+        self.version.save()
+        self.envelope = Envelope.objects.create(
+            tenant=self.tenant,
+            title="NDA Packet",
+            document=self.document,
+            document_version=self.version,
+            created_by=self.user,
+            routing=Envelope.Routing.SEQUENTIAL,
+        )
+        self.signer1 = Recipient.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            name="Buyer",
+            email="buyer@example.com",
+            routing_order=1,
+        )
+        self.signer2 = Recipient.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            name="Seller",
+            email="seller@example.com",
+            routing_order=2,
+        )
+        self.cc = Recipient.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            name="Broker",
+            email="cc@example.com",
+            role=Recipient.Role.CC,
+            routing_order=1,
+        )
+        Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.signer1,
+            field_type=Field.FieldType.SIGNATURE,
+            page=1,
+            x=0.1,
+            y=0.1,
+            w=0.3,
+            h=0.05,
+            required=True,
+        )
+        Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.signer2,
+            field_type=Field.FieldType.SIGNATURE,
+            page=1,
+            x=0.1,
+            y=0.3,
+            w=0.3,
+            h=0.05,
+            required=True,
+        )
+        self.host = {
+            "HTTP_HOST": f"{self.tenant.slug}.signdeskcrm.test",
+            "HTTP_X_TENANT_SLUG": self.tenant.slug,
+        }
+        self.client.force_authenticate(self.user)
+
+    def test_cc_gets_copy_notice_not_signing_invite(self):
+        self.mail.outbox.clear()
+        self.send_envelope(self.envelope)
+        cc_mails = [m for m in self.mail.outbox if m.to == ["cc@example.com"]]
+        self.assertEqual(len(cc_mails), 1)
+        self.assertTrue(cc_mails[0].subject.startswith("Copy:"))
+        self.assertIn("copy recipient", cc_mails[0].body.lower())
+        self.assertNotIn("Review and sign", cc_mails[0].alternatives[0][0])
+        self.assertIn("View document", cc_mails[0].alternatives[0][0])
+
+    def test_void_emails_all_recipients(self):
+        self.send_envelope(self.envelope)
+        self.mail.outbox.clear()
+        res = self.client.post(
+            f"/api/envelopes/{self.envelope.id}/void/",
+            {"reason": "Wrong party"},
+            format="json",
+            **self.host,
+        )
+        self.assertEqual(res.status_code, 200)
+        void_mails = [m for m in self.mail.outbox if m.subject.startswith("Voided:")]
+        self.assertEqual(len(void_mails), 3)
+        self.assertTrue(any("Wrong party" in m.body for m in void_mails))
+
+    def test_decline_emails_sender(self):
+        from rest_framework.test import APIClient
+
+        self.send_envelope(self.envelope)
+        self.signer1.refresh_from_db()
+        self.mail.outbox.clear()
+        guest = APIClient()
+        res = guest.post(
+            f"/api/sign/{self.signer1.access_token}/decline/",
+            {"reason": "Not ready"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        declined = [m for m in self.mail.outbox if m.subject.startswith("Declined:")]
+        self.assertEqual(len(declined), 1)
+        self.assertEqual(declined[0].to, [self.user.email])
+        self.assertIn("Not ready", declined[0].body)
+        self.assertIn("Buyer", declined[0].body)
+
+    def test_resend_skips_pending_sequential_signers(self):
+        self.send_envelope(self.envelope)
+        self.signer1.refresh_from_db()
+        self.signer2.refresh_from_db()
+        self.assertEqual(self.signer1.status, Recipient.Status.SENT)
+        self.assertEqual(self.signer2.status, Recipient.Status.PENDING)
+        self.mail.outbox.clear()
+        res = self.client.post(
+            f"/api/envelopes/{self.envelope.id}/resend/",
+            format="json",
+            **self.host,
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["resent"], 1)
+        recipients = {tuple(m.to) for m in self.mail.outbox}
+        self.assertEqual(recipients, {("buyer@example.com",)})
