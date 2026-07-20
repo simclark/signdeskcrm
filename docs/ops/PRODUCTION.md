@@ -88,6 +88,49 @@ Production nginx does **not** expose `/media/`. PDFs are served only via:
 
 Branding assets under `tenant_logos/` and `tenant_icons/` remain publicly readable through `/api/media/` (needed on the guest signing page).
 
+## Platform console (staff)
+
+Primary ops surface for partner lifecycle. Prefer Platform over CLI for routine work.
+
+1. Create a staff user (one-time bootstrap):
+
+   ```bash
+   docker compose exec api python manage.py createsuperuser
+   ```
+
+2. Log in at **https://platform.yourdomain.com/login** (local: http://platform.signdeskcrm.test:5173/login). Apex `/platform` redirects there. Staff only.
+3. **Tenants** — provision partners, suspend/reactivate, edit contacts, send/resend/revoke admin invites, refresh starter forms, open a read-only support snapshot.
+4. **Health** — database/redis checks plus `BASE_DOMAIN` / signing-host warnings before pitches.
+5. **Media orphans** — report (and optionally delete) files on disk with no DB reference.
+6. **Audit log** — who provisioned, suspended, reset demo, deleted orphans, etc.
+7. **Demo workspace** — reset the reserved `demo` tenant before pitches.
+
+Add `platform.yourdomain.com` to DNS (wildcard `*.yourdomain.com` covers it). Locally add `platform.signdeskcrm.test` to `/etc/hosts`.
+
+### Orphaned media (storage control)
+
+Django CASCADE deletes remove DB rows but **do not** remove FieldFiles from disk.
+SignDesk now:
+
+1. Deletes field files on model delete / replace (signals in `apps.common.signals`)
+2. Offers Platform → **Media orphans** (preferred) and a break-glass CLI
+
+```bash
+# Break-glass CLI (Platform UI preferred)
+docker compose exec api python manage.py audit_media_orphans
+docker compose exec api python manage.py audit_media_orphans --delete
+docker compose exec api python manage.py audit_media_orphans --prefix documents --prefix signed
+```
+
+Also run after bulk tenant cleanup. Retention purge (`document_retention_days`) only clears completed envelope signed/certificate downloads — it does not replace this audit.
+
+Break-glass CLI equivalents (use when Platform is unavailable):
+
+```bash
+docker compose exec api python manage.py provision_tenant --name "..." --slug ... --owner-email ... --password ...
+docker compose exec api python manage.py reset_demo_tenant
+```
+
 ## Backups
 
 ```bash
@@ -100,7 +143,7 @@ Schedule daily via cron. Store off-host. Test restore before launch.
 ## Observability
 
 - Set `SENTRY_DSN` to enable error tracking (Django + Celery).
-- Scrape `/api/health/` from uptime monitoring.
+- Scrape `/api/health/` from uptime monitoring (Platform → Health also surfaces checks).
 - Keep Celery worker + beat logs attached to your log drain.
 
 ## Admin

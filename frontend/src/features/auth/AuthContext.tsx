@@ -1,5 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, clearTokens, getTokens, setTokens, getTenantSlug } from '../../shared/api'
+import {
+  api,
+  clearTokens,
+  getTokens,
+  isPlatformHost,
+  setTokens,
+  getTenantSlug,
+} from '../../shared/api'
 
 type User = {
   id: number
@@ -7,6 +14,7 @@ type User = {
   first_name: string
   last_name: string
   full_name: string
+  is_staff?: boolean
 }
 
 type Tenant = {
@@ -51,6 +59,7 @@ type AuthState = {
   tenant: Tenant | null
   membership: Membership | null
   loading: boolean
+  isStaff: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   refreshMe: () => Promise<void>
@@ -65,12 +74,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const refreshMe = async () => {
-    if (!getTenantSlug() || !getTokens().access) {
+    if (!getTokens().access) {
       setUser(null)
       setTenant(null)
       setMembership(null)
       return
     }
+
+    if (isPlatformHost()) {
+      const data = await api<{ user: User }>('/api/platform/me/')
+      setUser(data.user)
+      setTenant(null)
+      setMembership(null)
+      return
+    }
+
+    if (!getTenantSlug()) {
+      setUser(null)
+      setTenant(null)
+      setMembership(null)
+      return
+    }
+
     const data = await api<{ user: User; tenant: Tenant; membership: Membership }>(
       '/api/tenant/me/',
     )
@@ -96,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       tenant,
       membership,
       loading,
+      isStaff: Boolean(user?.is_staff),
       refreshMe,
       logout: () => {
         clearTokens()
@@ -110,6 +136,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           user: User
         }>('/api/auth/login/', { method: 'POST', json: { email, password } })
         setTokens(data.access, data.refresh)
+        if (isPlatformHost()) {
+          if (!data.user.is_staff) {
+            clearTokens()
+            throw new Error('Staff access required for the platform console.')
+          }
+          setUser(data.user)
+          setTenant(null)
+          setMembership(null)
+          return
+        }
         await refreshMe()
       },
     }),

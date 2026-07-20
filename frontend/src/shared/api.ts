@@ -1,36 +1,18 @@
 const ACCESS_KEY = 'sd_access'
 const REFRESH_KEY = 'sd_refresh'
 
-/** Local default matches BASE_DOMAIN; override in production builds. */
-export const BASE_DOMAIN = (import.meta.env.VITE_BASE_DOMAIN as string) || 'signdeskcrm.test'
+export {
+  BASE_DOMAIN,
+  PLATFORM_SUBDOMAIN,
+  getHostPort,
+  getTenantSlug,
+  isApexHost,
+  isPlatformHost,
+  platformOrigin,
+  platformUrl,
+} from './host'
 
-export function getTenantSlug(): string | null {
-  const host = window.location.hostname.toLowerCase()
-  if (
-    host === BASE_DOMAIN ||
-    host === `www.${BASE_DOMAIN}` ||
-    host === 'localhost' ||
-    host === '127.0.0.1'
-  ) {
-    return null
-  }
-  const suffix = `.${BASE_DOMAIN}`
-  if (host.endsWith(suffix)) {
-    const sub = host.slice(0, -suffix.length)
-    if (!sub || sub.includes('.')) return null
-    return sub
-  }
-  // Fallback for alternate apex domains (e.g. production when env differs).
-  const parts = host.split('.')
-  if (parts.length >= 3 && parts[0] !== 'www') {
-    return parts[0]
-  }
-  return null
-}
-
-export function isApexHost(): boolean {
-  return !getTenantSlug()
-}
+import { getTenantSlug } from './host'
 
 export function getTokens() {
   return {

@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import User
+from .models import PasswordResetToken, User
 
 
 @admin.register(User)
@@ -27,3 +27,11 @@ class UserAdmin(DjangoUserAdmin):
             },
         ),
     )
+
+
+@admin.register(PasswordResetToken)
+class PasswordResetTokenAdmin(admin.ModelAdmin):
+    list_display = ("user", "tenant", "expires_at", "used_at", "created_at")
+    list_filter = ("used_at",)
+    search_fields = ("user__email", "token", "tenant__slug")
+    readonly_fields = ("token", "created_at")

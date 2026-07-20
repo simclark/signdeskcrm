@@ -7,7 +7,13 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from apps.accounts.views import ChangePasswordView, ProfileView
+from apps.accounts.views import (
+    ChangePasswordView,
+    PasswordResetConfirmView,
+    PasswordResetDetailView,
+    PasswordResetRequestView,
+    ProfileView,
+)
 from apps.common.media import ProtectedMediaView
 from apps.contacts.views import (
     CompanyViewSet,
@@ -28,6 +34,21 @@ from apps.signing.views import (
     SigningSessionView,
     SigningSubmitView,
 )
+from apps.tenants.platform_views import (
+    PlatformDemoResetView,
+    PlatformHealthView,
+    PlatformInvitationResendView,
+    PlatformInvitationRevokeView,
+    PlatformInviteOwnerView,
+    PlatformMeView,
+    PlatformMediaOrphansView,
+    PlatformOpsEventListView,
+    PlatformSeedFormLibraryView,
+    PlatformSupportSnapshotView,
+    PlatformTenantDetailView,
+    PlatformTenantInvitationsView,
+    PlatformTenantListCreateView,
+)
 from apps.tenants.views import (
     AcceptInvitationView,
     EmailTemplateDetailView,
@@ -38,6 +59,8 @@ from apps.tenants.views import (
     InvitationResendView,
     InvitationRevokeView,
     MembershipListView,
+    MembershipSendPasswordResetView,
+    MembershipUpdateView,
     RestoreEsignAcknowledgementView,
     SignupView,
     SuggestSlugView,
@@ -101,6 +124,21 @@ urlpatterns = [
     path("api/auth/profile/", ProfileView.as_view(), name="auth-profile"),
     path("api/auth/change-password/", ChangePasswordView.as_view(), name="auth-change-password"),
     path(
+        "api/auth/password-reset/",
+        PasswordResetRequestView.as_view(),
+        name="password-reset-request",
+    ),
+    path(
+        "api/auth/password-reset/<str:token>/",
+        PasswordResetDetailView.as_view(),
+        name="password-reset-detail",
+    ),
+    path(
+        "api/auth/password-reset/<str:token>/confirm/",
+        PasswordResetConfirmView.as_view(),
+        name="password-reset-confirm",
+    ),
+    path(
         "api/auth/invitations/<str:token>/",
         InvitationDetailView.as_view(),
         name="invitation-detail",
@@ -133,6 +171,73 @@ urlpatterns = [
         name="tenant-email-template-restore",
     ),
     path("api/tenant/members/", MembershipListView.as_view(), name="tenant-members"),
+    path(
+        "api/tenant/members/<int:pk>/",
+        MembershipUpdateView.as_view(),
+        name="tenant-member-update",
+    ),
+    path(
+        "api/tenant/members/<int:pk>/send-password-reset/",
+        MembershipSendPasswordResetView.as_view(),
+        name="tenant-member-send-password-reset",
+    ),
+    path("api/platform/me/", PlatformMeView.as_view(), name="platform-me"),
+    path("api/platform/health/", PlatformHealthView.as_view(), name="platform-health"),
+    path(
+        "api/platform/media/orphans/",
+        PlatformMediaOrphansView.as_view(),
+        name="platform-media-orphans",
+    ),
+    path(
+        "api/platform/ops-events/",
+        PlatformOpsEventListView.as_view(),
+        name="platform-ops-events",
+    ),
+    path(
+        "api/platform/tenants/",
+        PlatformTenantListCreateView.as_view(),
+        name="platform-tenants",
+    ),
+    path(
+        "api/platform/tenants/<int:pk>/",
+        PlatformTenantDetailView.as_view(),
+        name="platform-tenant-detail",
+    ),
+    path(
+        "api/platform/tenants/<int:pk>/invite-owner/",
+        PlatformInviteOwnerView.as_view(),
+        name="platform-invite-owner",
+    ),
+    path(
+        "api/platform/tenants/<int:pk>/invitations/",
+        PlatformTenantInvitationsView.as_view(),
+        name="platform-tenant-invitations",
+    ),
+    path(
+        "api/platform/tenants/<int:pk>/invitations/<int:invite_id>/resend/",
+        PlatformInvitationResendView.as_view(),
+        name="platform-invitation-resend",
+    ),
+    path(
+        "api/platform/tenants/<int:pk>/invitations/<int:invite_id>/",
+        PlatformInvitationRevokeView.as_view(),
+        name="platform-invitation-revoke",
+    ),
+    path(
+        "api/platform/tenants/<int:pk>/seed-form-library/",
+        PlatformSeedFormLibraryView.as_view(),
+        name="platform-seed-form-library",
+    ),
+    path(
+        "api/platform/tenants/<int:pk>/support-snapshot/",
+        PlatformSupportSnapshotView.as_view(),
+        name="platform-support-snapshot",
+    ),
+    path(
+        "api/platform/demo/reset/",
+        PlatformDemoResetView.as_view(),
+        name="platform-demo-reset",
+    ),
     path(
         "api/tenant/invitations/",
         InvitationListCreateView.as_view(),

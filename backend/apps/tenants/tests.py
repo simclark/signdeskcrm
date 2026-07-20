@@ -4,7 +4,7 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import User
 from apps.contacts.models import Contact
-from apps.tenants.models import Membership, Tenant
+from apps.tenants.models import Invitation, Membership, PlatformOpsEvent, Tenant
 
 
 @override_settings(
@@ -365,3 +365,277 @@ class EmailTemplateTests(TestCase):
             self.EmailTemplate.objects.filter(tenant=tenant).count(),
             7,
         )
+
+
+@override_settings(
+    CELERY_TASK_ALWAYS_EAGER=True,
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class MembershipLifecycleTests(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Acme", slug="acme-members")
+        self.owner = User.objects.create_user(email="owner@acme.test", password="password123")
+        self.admin = User.objects.create_user(email="admin@acme.test", password="password123")
+        self.member = User.objects.create_user(email="member@acme.test", password="password123")
+        Membership.objects.create(tenant=self.tenant, user=self.owner, role=Membership.Role.OWNER)
+        Membership.objects.create(tenant=self.tenant, user=self.admin, role=Membership.Role.ADMIN)
+        self.member_membership = Membership.objects.create(
+            tenant=self.tenant, user=self.member, role=Membership.Role.MEMBER
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.owner)
+        self.headers = {
+            "HTTP_HOST": "acme-members.signdeskcrm.test",
+            "HTTP_X_TENANT_SLUG": "acme-members",
+        }
+
+    def test_promote_member_to_admin(self):
+        res = self.client.patch(
+            f"/api/tenant/members/{self.member_membership.id}/",
+            {"role": "admin"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200)
+        self.member_membership.refresh_from_db()
+        self.assertEqual(self.member_membership.role, Membership.Role.ADMIN)
+
+    def test_deactivate_member(self):
+        res = self.client.patch(
+            f"/api/tenant/members/{self.member_membership.id}/",
+            {"is_active": False},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200)
+        self.member_membership.refresh_from_db()
+        self.assertFalse(self.member_membership.is_active)
+
+    def test_cannot_deactivate_owner(self):
+        owner_membership = Membership.objects.get(tenant=self.tenant, user=self.owner)
+        res = self.client.patch(
+            f"/api/tenant/members/{owner_membership.id}/",
+            {"is_active": False},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 400)
+
+    def test_list_includes_inactive_and_reactivate(self):
+        self.member_membership.is_active = False
+        self.member_membership.save(update_fields=["is_active"])
+        res = self.client.get("/api/tenant/members/", **self.headers)
+        self.assertEqual(res.status_code, 200)
+        rows = res.data["results"] if isinstance(res.data, dict) and "results" in res.data else res.data
+        by_id = {row["id"]: row for row in rows}
+        self.assertFalse(by_id[self.member_membership.id]["is_active"])
+
+        reactivate = self.client.patch(
+            f"/api/tenant/members/{self.member_membership.id}/",
+            {"is_active": True},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(reactivate.status_code, 200)
+        self.member_membership.refresh_from_db()
+        self.assertTrue(self.member_membership.is_active)
+
+    def test_admin_send_password_reset(self):
+        from django.core import mail
+        from django.test import override_settings
+        from apps.tenants.models import ensure_email_templates
+
+        ensure_email_templates(self.tenant)
+        with override_settings(
+            CELERY_TASK_ALWAYS_EAGER=True,
+            EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        ):
+            res = self.client.post(
+                f"/api/tenant/members/{self.member_membership.id}/send-password-reset/",
+                **self.headers,
+            )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(len(mail.outbox), 1)
+        from apps.accounts.models import PasswordResetToken
+
+        self.assertTrue(
+            PasswordResetToken.objects.filter(user=self.member, tenant=self.tenant).exists()
+        )
+
+
+@override_settings(
+    CELERY_TASK_ALWAYS_EAGER=True,
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class PlatformOpsTests(TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user(
+            email="ops@signdesk.test",
+            password="password123",
+            is_staff=True,
+        )
+        self.user = User.objects.create_user(email="user@signdesk.test", password="password123")
+        self.client = APIClient()
+
+    def test_platform_requires_staff(self):
+        self.client.force_authenticate(self.user)
+        res = self.client.get("/api/platform/tenants/")
+        self.assertEqual(res.status_code, 403)
+
+    def test_provision_tenant_via_platform(self):
+        self.client.force_authenticate(self.staff)
+        res = self.client.post(
+            "/api/platform/tenants/",
+            {
+                "name": "Partner Co",
+                "slug": "partner-co",
+                "owner_email": "owner@partner.test",
+                "owner_password": "password123",
+                "owner_first_name": "Pat",
+                "owner_last_name": "Owner",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        tenant = Tenant.objects.get(slug="partner-co")
+        self.assertEqual(tenant.primary_contact_email, "owner@partner.test")
+        self.assertEqual(tenant.primary_contact_name, "Pat Owner")
+        self.assertTrue(
+            Membership.objects.filter(
+                tenant=tenant,
+                user__email="owner@partner.test",
+                role=Membership.Role.OWNER,
+            ).exists()
+        )
+        self.assertTrue(
+            PlatformOpsEvent.objects.filter(
+                action=PlatformOpsEvent.Action.PROVISION, tenant=tenant
+            ).exists()
+        )
+
+    def test_provision_without_password_sends_admin_invite(self):
+        self.client.force_authenticate(self.staff)
+        res = self.client.post(
+            "/api/platform/tenants/",
+            {
+                "name": "Invite Co",
+                "slug": "invite-co",
+                "owner_email": "admin@invite.test",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertIsNotNone(res.data["invitation_id"])
+        self.assertIsNotNone(res.data["invite_url"])
+        self.assertEqual(res.data["invite_role"], Invitation.Role.ADMIN)
+        tenant = Tenant.objects.get(slug="invite-co")
+        self.assertEqual(tenant.primary_contact_email, "admin@invite.test")
+
+    def test_demo_slug_is_reserved(self):
+        from django.core.exceptions import ValidationError
+
+        from apps.tenants.models import validate_tenant_slug
+
+        with self.assertRaises(ValidationError):
+            validate_tenant_slug("demo")
+
+    def test_platform_health(self):
+        self.client.force_authenticate(self.staff)
+        res = self.client.get("/api/platform/health/")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("checks", res.data)
+        self.assertIn("config", res.data)
+        self.assertIn("base_domain", res.data["config"])
+
+    def test_seed_form_library(self):
+        self.client.force_authenticate(self.staff)
+        tenant = Tenant.objects.create(name="Seed Co", slug="seed-co")
+        res = self.client.post(
+            f"/api/platform/tenants/{tenant.id}/seed-form-library/",
+            {"replace": False},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertGreaterEqual(res.data.get("created", 0), 1)
+
+    def test_support_snapshot(self):
+        self.client.force_authenticate(self.staff)
+        tenant = Tenant.objects.create(name="Support Co", slug="support-co")
+        res = self.client.get(f"/api/platform/tenants/{tenant.id}/support-snapshot/")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("envelope_counts", res.data)
+        self.assertIn("note", res.data)
+
+    def test_media_orphans_report(self):
+        self.client.force_authenticate(self.staff)
+        res = self.client.get("/api/platform/media/orphans/")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("orphan_count", res.data)
+        self.assertTrue(res.data["dry_run"])
+
+    def test_ops_events_list(self):
+        self.client.force_authenticate(self.staff)
+        self.client.post(
+            "/api/platform/tenants/",
+            {
+                "name": "Audit Co",
+                "slug": "audit-co",
+                "owner_email": "a@audit.test",
+                "owner_password": "password123",
+            },
+            format="json",
+        )
+        res = self.client.get("/api/platform/ops-events/")
+        self.assertEqual(res.status_code, 200)
+        rows = res.data if isinstance(res.data, list) else res.data.get("results", [])
+        self.assertTrue(any(r["action"] == PlatformOpsEvent.Action.PROVISION for r in rows))
+
+    def test_reset_demo_tenant(self):
+        from apps.contacts.models import Contact
+        from apps.documents.models import Template
+        from apps.tenants.services.demo import reset_demo_tenant
+
+        result = reset_demo_tenant(owner_password="demo-pass-123")
+        self.assertEqual(result.tenant.slug, "demo")
+        self.assertTrue(
+            Template.objects.filter(
+                tenant=result.tenant, library_key="sample-purchase-agreement"
+            ).exists()
+        )
+        self.assertEqual(Contact.objects.filter(tenant=result.tenant).count(), 2)
+
+        self.client.force_authenticate(self.staff)
+        res = self.client.post("/api/platform/demo/reset/", {}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["owner_email"], result.owner_email)
+        self.assertIn("workspace_url", res.data)
+
+@override_settings(
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class PlatformHostMiddlewareTests(TestCase):
+    def test_platform_subdomain_is_not_a_tenant(self):
+        from django.test import RequestFactory
+
+        from apps.tenants.middleware import TenantMiddleware
+
+        def get_response(request):
+            return type("Resp", (), {"status_code": 200})()
+
+        mw = TenantMiddleware(get_response)
+        request = RequestFactory().get("/api/platform/me/", HTTP_HOST="platform.signdeskcrm.test")
+        mw(request)
+        self.assertTrue(request.is_platform)
+        self.assertIsNone(request.tenant)
+        self.assertFalse(request.is_apex)
+
+    def test_platform_api_works_on_platform_host(self):
+        staff = User.objects.create_user(
+            email="ops2@signdesk.test", password="password123", is_staff=True
+        )
+        client = APIClient()
+        client.force_authenticate(staff)
+        res = client.get("/api/platform/tenants/", HTTP_HOST="platform.signdeskcrm.test")
+        self.assertEqual(res.status_code, 200)

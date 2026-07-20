@@ -36,6 +36,8 @@ RESERVED_SLUGS = frozenset(
         "auth",
         "cdn",
         "assets",
+        "platform",
+        "demo",
     }
 )
 
@@ -243,3 +245,46 @@ def ensure_email_templates(tenant: Tenant) -> list[EmailTemplate]:
             )
         )
     return list(existing.values()) + created
+
+
+class PlatformOpsEvent(TimeStampedModel):
+    """Append-only log of staff actions on the platform console."""
+
+    class Action(models.TextChoices):
+        PROVISION = "provision", "Provision tenant"
+        SUSPEND = "suspend", "Suspend tenant"
+        REACTIVATE = "reactivate", "Reactivate tenant"
+        UPDATE = "update", "Update tenant"
+        INVITE = "invite", "Invite admin"
+        INVITE_RESEND = "invite_resend", "Resend invite"
+        INVITE_REVOKE = "invite_revoke", "Revoke invite"
+        DEMO_RESET = "demo_reset", "Reset demo workspace"
+        MEDIA_AUDIT = "media_audit", "Media orphan audit"
+        MEDIA_DELETE = "media_delete", "Delete media orphans"
+        FORM_SEED = "form_seed", "Seed form library"
+        SUPPORT_SNAPSHOT = "support_snapshot", "View support snapshot"
+
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="platform_ops_events",
+    )
+    actor_email = models.EmailField(blank=True)
+    action = models.CharField(max_length=64, choices=Action.choices, db_index=True)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="platform_ops_events",
+    )
+    tenant_slug = models.SlugField(max_length=63, blank=True, db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.action} by {self.actor_email or '?'} @ {self.tenant_slug or '—'}"

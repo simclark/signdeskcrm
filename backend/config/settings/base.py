@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "django_filters",
+    "apps.common.apps.CommonConfig",
     "apps.accounts",
     "apps.tenants",
     "apps.contacts",
@@ -131,6 +132,7 @@ REST_FRAMEWORK = {
         "user": "600/min",
         "signup": "10/hour",
         "login": "30/min",
+        "password_reset": "10/hour",
         "signing": "60/min",
     },
 }

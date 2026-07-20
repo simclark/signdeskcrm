@@ -6,6 +6,7 @@ import {
   FileButton,
   Group,
   Image,
+  Menu,
   Modal,
   NumberInput,
   Select,
@@ -686,6 +687,35 @@ export function SettingsPage() {
     },
   })
 
+  const updateMember = useMutation({
+    mutationFn: ({ id, ...json }: { id: number; role?: string; is_active?: boolean }) =>
+      api(`/api/tenant/members/${id}/`, { method: 'PATCH', json }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['members'] })
+      notifications.show({ color: 'forest', message: 'Member updated' })
+    },
+    onError: (err) => {
+      notifications.show({
+        color: 'red',
+        message: err instanceof ApiError ? err.message : 'Could not update member',
+      })
+    },
+  })
+
+  const sendPasswordReset = useMutation({
+    mutationFn: (id: number) =>
+      api(`/api/tenant/members/${id}/send-password-reset/`, { method: 'POST' }),
+    onSuccess: () => {
+      notifications.show({ color: 'forest', message: 'Password reset email sent' })
+    },
+    onError: (err) => {
+      notifications.show({
+        color: 'red',
+        message: err instanceof ApiError ? err.message : 'Could not send password reset',
+      })
+    },
+  })
+
   const cancelAcknowledgementEdit = () => {
     acknowledgementForm.setValues({
       esign_acknowledgement: tenant?.esign_acknowledgement || '',
@@ -731,6 +761,8 @@ export function SettingsPage() {
 
   const memberRows = Array.isArray(members) ? members : members?.results || []
   const inviteRows = Array.isArray(invitations) ? invitations : invitations?.results || []
+  const activeMemberCount = memberRows.filter((m: { is_active?: boolean }) => m.is_active !== false)
+    .length
   const accountOwner = memberRows.find(
     (m: { role: string }) => m.role === 'owner',
   ) as { full_name?: string; email?: string; role: string } | undefined
@@ -1350,7 +1382,7 @@ export function SettingsPage() {
           <Stack gap="lg">
             <SettingsSection
               title="Members"
-              description={`${memberRows.length} ${memberRows.length === 1 ? 'person' : 'people'} with access to this workspace.`}
+              description={`${activeMemberCount} active ${activeMemberCount === 1 ? 'person' : 'people'} with access to this workspace.`}
               wide
               headerAction={
                 <Anchor component="button" type="button" fw={600} onClick={openInvite}>
@@ -1364,11 +1396,19 @@ export function SettingsPage() {
                     <DataTable.Th>Name</DataTable.Th>
                     <DataTable.Th>Email</DataTable.Th>
                     <DataTable.Th>Role</DataTable.Th>
+                    <DataTable.Th>Status</DataTable.Th>
+                    <DataTable.Th>Actions</DataTable.Th>
                   </DataTable.Tr>
                 </DataTable.Thead>
                 <DataTable.Tbody>
                   {memberRows.map(
-                    (m: { id: number; full_name: string; email: string; role: string }) => (
+                    (m: {
+                      id: number
+                      full_name: string
+                      email: string
+                      role: string
+                      is_active: boolean
+                    }) => (
                       <DataTable.Tr key={m.id}>
                         <DataTable.Td className="sd-table-primary">{m.full_name}</DataTable.Td>
                         <DataTable.Td className="sd-table-muted">{m.email}</DataTable.Td>
@@ -1381,6 +1421,75 @@ export function SettingsPage() {
                           >
                             {m.role}
                           </Badge>
+                        </DataTable.Td>
+                        <DataTable.Td>
+                          <Badge
+                            variant="light"
+                            color={m.is_active ? 'forest' : 'gray'}
+                            radius="sm"
+                          >
+                            {m.is_active ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </DataTable.Td>
+                        <DataTable.Td>
+                          {m.role === 'owner' ? (
+                            <Text size="sm" c="dimmed">
+                              —
+                            </Text>
+                          ) : (
+                            <Menu position="bottom-end" withinPortal>
+                              <Menu.Target>
+                                <Button size="compact-xs" variant="subtle">
+                                  Manage
+                                </Button>
+                              </Menu.Target>
+                              <Menu.Dropdown>
+                                {m.is_active ? (
+                                  <>
+                                    {m.role === 'member' ? (
+                                      <Menu.Item
+                                        onClick={() =>
+                                          updateMember.mutate({ id: m.id, role: 'admin' })
+                                        }
+                                      >
+                                        Make admin
+                                      </Menu.Item>
+                                    ) : (
+                                      <Menu.Item
+                                        onClick={() =>
+                                          updateMember.mutate({ id: m.id, role: 'member' })
+                                        }
+                                      >
+                                        Make member
+                                      </Menu.Item>
+                                    )}
+                                    <Menu.Item
+                                      onClick={() => sendPasswordReset.mutate(m.id)}
+                                      disabled={sendPasswordReset.isPending}
+                                    >
+                                      Send password reset
+                                    </Menu.Item>
+                                    <Menu.Item
+                                      color="red"
+                                      onClick={() =>
+                                        updateMember.mutate({ id: m.id, is_active: false })
+                                      }
+                                    >
+                                      Deactivate
+                                    </Menu.Item>
+                                  </>
+                                ) : (
+                                  <Menu.Item
+                                    onClick={() =>
+                                      updateMember.mutate({ id: m.id, is_active: true })
+                                    }
+                                  >
+                                    Reactivate
+                                  </Menu.Item>
+                                )}
+                              </Menu.Dropdown>
+                            </Menu>
+                          )}
                         </DataTable.Td>
                       </DataTable.Tr>
                     ),

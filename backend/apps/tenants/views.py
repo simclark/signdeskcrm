@@ -26,6 +26,7 @@ from apps.tenants.serializers import (
     EmailTemplateUpdateSerializer,
     InvitationSerializer,
     MembershipSerializer,
+    MembershipUpdateSerializer,
     SignupSerializer,
     TenantSerializer,
 )
@@ -142,6 +143,7 @@ class TenantMeView(views.APIView):
                     "first_name": request.user.first_name,
                     "last_name": request.user.last_name,
                     "full_name": request.user.full_name,
+                    "is_staff": request.user.is_staff,
                 },
             }
         )
@@ -239,7 +241,119 @@ class MembershipListView(generics.ListAPIView):
     serializer_class = MembershipSerializer
 
     def get_queryset(self):
-        return Membership.objects.filter(tenant=self.request.tenant, is_active=True)
+        return (
+            Membership.objects.filter(tenant=self.request.tenant)
+            .select_related("user")
+            .order_by("-is_active", "user__email")
+        )
+
+
+class MembershipUpdateView(views.APIView):
+    """Change role (admin/member) or soft-deactivate a membership."""
+
+    permission_classes = [IsAuthenticated, IsTenantAdmin]
+
+    def patch(self, request, pk):
+        try:
+            membership = Membership.objects.select_related("user").get(
+                pk=pk, tenant=request.tenant
+            )
+        except Membership.DoesNotExist:
+            return Response({"detail": "Member not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        actor = Membership.objects.get(
+            tenant=request.tenant, user=request.user, is_active=True
+        )
+        serializer = MembershipUpdateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        if membership.role == Membership.Role.OWNER:
+            if "role" in data and data["role"] != Membership.Role.OWNER:
+                return Response(
+                    {"detail": "Cannot change the owner role via this endpoint."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if data.get("is_active") is False:
+                active_owners = Membership.objects.filter(
+                    tenant=request.tenant,
+                    role=Membership.Role.OWNER,
+                    is_active=True,
+                ).count()
+                if active_owners <= 1:
+                    return Response(
+                        {"detail": "Cannot deactivate the sole owner."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+        if actor.role == Membership.Role.ADMIN and membership.role == Membership.Role.OWNER:
+            return Response(
+                {"detail": "Admins cannot change the owner."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if membership.user_id == request.user.id and data.get("is_active") is False:
+            return Response(
+                {"detail": "You cannot deactivate yourself."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if membership.user_id == request.user.id and "role" in data:
+            return Response(
+                {"detail": "You cannot change your own role."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        update_fields = ["updated_at"]
+        if "role" in data:
+            membership.role = data["role"]
+            update_fields.append("role")
+        if "is_active" in data:
+            membership.is_active = data["is_active"]
+            update_fields.append("is_active")
+        membership.save(update_fields=update_fields)
+        return Response(MembershipSerializer(membership).data)
+
+
+class MembershipSendPasswordResetView(views.APIView):
+    """Admin/owner: email a password-reset link to an active member."""
+
+    permission_classes = [IsAuthenticated, IsTenantAdmin]
+
+    def post(self, request, pk):
+        try:
+            membership = Membership.objects.select_related("user").get(
+                pk=pk, tenant=request.tenant
+            )
+        except Membership.DoesNotExist:
+            return Response({"detail": "Member not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        actor = Membership.objects.get(
+            tenant=request.tenant, user=request.user, is_active=True
+        )
+        if actor.role == Membership.Role.ADMIN and membership.role == Membership.Role.OWNER:
+            return Response(
+                {"detail": "Admins cannot reset the owner's password."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not membership.is_active:
+            return Response(
+                {"detail": "Cannot send a password reset to a deactivated member."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not membership.user.is_active:
+            return Response(
+                {"detail": "Cannot send a password reset to an inactive account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from apps.accounts.services import issue_password_reset
+
+        issue_password_reset(user=membership.user, tenant=request.tenant)
+        return Response(
+            {"detail": "Password reset email sent."},
+            status=status.HTTP_200_OK,
+        )
 
 
 class InvitationListCreateView(generics.ListCreateAPIView):

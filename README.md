@@ -9,7 +9,7 @@ Multi-tenant e-signature + lightweight CRM built with Django 5, DRF, React, Mant
 - **Data:** Single shared MySQL database with row-level `tenant_id` isolation
 - **Tenancy:** Subdomain slugs (`acme-esign.signdeskcrm.test` → tenant `acme-esign`; production `*.signdeskcrm.com`)
 - **Async:** Celery + Redis (invites, reminders, PDF flatten, certificates)
-- **Dev email:** Mailpit (`http://localhost:8025`)
+- **Dev email:** Mailpit (`http://localhost:8026`; ProgressPhase uses `8025` when both run locally)
 
 ## Quick start
 
@@ -24,7 +24,7 @@ docker compose up --build
 `.test` domains do not auto-resolve. Add entries (or use dnsmasq for `*.signdeskcrm.test`):
 
 ```text
-127.0.0.1 signdeskcrm.test www.signdeskcrm.test acme-esign.signdeskcrm.test
+127.0.0.1 signdeskcrm.test www.signdeskcrm.test platform.signdeskcrm.test acme-esign.signdeskcrm.test
 ```
 
 Add a line for each workspace slug you create (for example `globex.signdeskcrm.test`).
@@ -34,10 +34,30 @@ Services:
 | Service | URL |
 |---|---|
 | Marketing (apex) | http://signdeskcrm.test:5173 or http://www.signdeskcrm.test:5173 |
+| Platform (staff) | http://platform.signdeskcrm.test:5173 |
 | Tenant login | http://acme-esign.signdeskcrm.test:5173 (redirects `/` → `/login`) |
-| API | http://localhost:8000/api/health/ |
-| Mailpit | http://localhost:8025 |
-| MySQL | localhost:3306 |
+| API (direct host) | http://localhost:8001/api/health/ |
+| Mailpit | http://localhost:8026 |
+| MySQL | localhost:3307 |
+| Redis | localhost:6379 |
+
+Browser traffic uses the Vite proxy on `:5173` → `api:8000` inside Docker; `API_HOST_PORT` is only for host tools (curl, Postman).
+
+### Running beside ProgressPhase
+
+Keep separate containers per product. SignDesk defaults are shifted so both stacks can bind host ports at once:
+
+| Resource | ProgressPhase | SignDeskCRM |
+|---|---|---|
+| HTTP / HTTPS | Traefik `80` / `443` | — (Vite `:5173` + `*.signdeskcrm.test`) |
+| Web / apps | `3001`–`3003` | `5173` (`FRONTEND_PORT`) |
+| API (host) | `8000` (`API_PORT`) | `8001` (`API_HOST_PORT`) |
+| MySQL (host) | `3306` (`MYSQL_PORT`) | `3307` (`MYSQL_HOST_PORT`) |
+| Redis (host) | — | `6379` (`REDIS_HOST_PORT`) |
+| Mailpit UI | `8025` (`MAILPIT_PORT`) | `8026` (`MAILPIT_UI_PORT`) |
+| Mailpit SMTP (host) | — (internal `1025`) | `1026` (`MAILPIT_SMTP_PORT`) |
+
+In-container service ports are unchanged (`mysql:3306`, `api:8000`, `mailpit:1025`, `redis:6379`).
 
 ### Create a workspace
 

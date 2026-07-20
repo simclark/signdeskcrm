@@ -51,11 +51,30 @@ Celery **worker** must be running or invites never leave the queue.
 
 ## 3. Partner workspace
 
-1. Create the partner tenant (signup) or invite Mitchell into an existing workspace.
-2. Confirm Form library starters exist (`seed_form_library --tenant-slug …` if needed).
-3. Add members via **Administration → Settings → Members**.
+1. Provision via **Platform** at https://platform.yourdomain.com (local: http://platform.signdeskcrm.test:5173) — staff login. After provision, use the handoff dialog for invite/workspace links.
+
+   Break-glass CLI:
+
+   ```bash
+   docker compose exec api python manage.py provision_tenant \
+     --name "Shapiro Realty" \
+     --slug shapiro \
+     --owner-email mitchell@partner.com \
+     --password '<temporary>'
+   ```
+
+2. Confirm Form library starters exist (Platform tenant detail → **Refresh starter forms**, or `seed_form_library --tenant-slug …` if needed).
+3. Add members via **Administration → Settings → Members** (invite, change role, deactivate).
 4. Agree commercial terms using [BETA_TERMS.md](./BETA_TERMS.md).
 5. Optionally customize email templates (CC notice, void, decline, completion) under Settings.
+
+Reset the pitch demo workspace between live demos from Platform → **Demo workspace** (type `RESET` to confirm), or break-glass:
+
+```bash
+docker compose exec api python manage.py reset_demo_tenant
+```
+
+Before a pitch, glance at Platform → **Health** for database/redis and `BASE_DOMAIN` warnings.
 
 ## 4. First practice packets
 

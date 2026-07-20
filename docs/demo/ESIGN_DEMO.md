@@ -6,21 +6,31 @@ Use this script for live pitches. Goal: show a trustworthy **Buyer → Seller se
 
 1. `docker compose up --build` — wait until healthy.
 2. Confirm:
-   - API: http://localhost:8000/api/health/
+   - API: http://localhost:8001/api/health/
    - Frontend apex: http://signdeskcrm.test:5173
-   - Mailpit: http://localhost:8025
+   - Mailpit: http://localhost:8026
    - **Celery worker + beat are running** (without the worker, invites and PDF finalize stall)
 3. `/etc/hosts` includes:
    ```text
-   127.0.0.1 signdeskcrm.test www.signdeskcrm.test demo.signdeskcrm.test
+   127.0.0.1 signdeskcrm.test www.signdeskcrm.test platform.signdeskcrm.test demo.signdeskcrm.test
    ```
 4. Optional: clear Mailpit so invites are easy to find.
 
-## Setup (once per machine)
+## Setup (once per machine, or before each pitch)
 
-1. Open http://signdeskcrm.test:5173/signup
-2. Create workspace e.g. company `Demo Realty`, slug `demo`
-3. After redirect to `http://demo.signdeskcrm.test:5173/app`, confirm Form library has the sample purchase agreement (auto-seeded on signup)
+Reset the reserved **`demo`** workspace (Sample Purchase Agreement + Buyer/Seller contacts). Prefer **Platform → Demo workspace** at http://platform.signdeskcrm.test:5173/demo (staff login; type `RESET` to confirm). Glance at **Platform → Health** before the pitch.
+
+Break-glass CLI:
+
+```bash
+docker compose exec api python manage.py reset_demo_tenant
+```
+
+Default owner: `owner@demo.signdeskcrm.test` (set password with `--password` on first reset).
+
+Log in at http://demo.signdeskcrm.test:5173/login and confirm **Templates → Form library** has the sample purchase agreement.
+
+The `demo` slug is reserved for Platform reset — do not create it via signup.
 
 If the library is empty for an existing tenant:
 
@@ -36,7 +46,7 @@ docker compose exec api python manage.py seed_form_library --tenant-slug demo
 
 ### 1. Contacts (30s)
 
-- Open **Contacts** → add **Buyer Ada** (`buyer@example.com`) and **Seller Sam** (`seller@example.com`)
+- Open **Contacts** — **Buyer Ada** and **Seller Sam** are pre-seeded after `reset_demo_tenant` (or add manually)
 - Say: *“Recipients can be CRM contacts so follow-ups and history stay attached.”*
 
 ### 2. Create envelope from Form library (60s)

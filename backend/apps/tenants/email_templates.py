@@ -16,6 +16,7 @@ class TemplateDefault(TypedDict):
 
 class EmailTemplateKey:
     WORKSPACE_INVITE = "workspace_invite"
+    PASSWORD_RESET = "password_reset"
     SIGNING_INVITE = "signing_invite"
     SIGNING_REMINDER = "signing_reminder"
     CC_NOTICE = "cc_notice"
@@ -25,6 +26,7 @@ class EmailTemplateKey:
 
     CHOICES = (
         (WORKSPACE_INVITE, "Workspace invitation"),
+        (PASSWORD_RESET, "Password reset"),
         (SIGNING_INVITE, "Signing invitation"),
         (SIGNING_REMINDER, "Signing reminder"),
         (CC_NOTICE, "CC copy notice"),
@@ -35,6 +37,7 @@ class EmailTemplateKey:
 
     ALL = (
         WORKSPACE_INVITE,
+        PASSWORD_RESET,
         SIGNING_INVITE,
         SIGNING_REMINDER,
         CC_NOTICE,
@@ -65,6 +68,24 @@ DEFAULT_TEMPLATES: dict[str, TemplateDefault] = {
             "action_url",
         ),
         "cta_label": "Accept invitation",
+    },
+    EmailTemplateKey.PASSWORD_RESET: {
+        "label": "Password reset",
+        "description": "Sent when a workspace member requests or is sent a password reset.",
+        "subject": "Reset your {{tenant_name}} password",
+        "body": (
+            "Hello {{user_name}},\n\n"
+            "We received a request to reset your password for {{tenant_name}} on SignDesk.\n\n"
+            "Open the link below to choose a new password. This link expires in 24 hours.\n\n"
+            "{{action_url}}\n\n"
+            "If you did not request this, you can ignore this email."
+        ),
+        "placeholders": (
+            "tenant_name",
+            "user_name",
+            "action_url",
+        ),
+        "cta_label": "Reset password",
     },
     EmailTemplateKey.SIGNING_INVITE: {
         "label": "Signing invitation",

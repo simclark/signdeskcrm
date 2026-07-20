@@ -11,6 +11,8 @@ from apps.tenants.models import Tenant
 logger = logging.getLogger(__name__)
 _thread_local = threading.local()
 
+PLATFORM_SUBDOMAIN = "platform"
+
 
 def get_current_tenant() -> Tenant | None:
     return getattr(_thread_local, "tenant", None)
@@ -44,6 +46,7 @@ class TenantMiddleware:
         set_current_tenant(None)
         request.tenant = None
         request.is_apex = True
+        request.is_platform = False
 
         host = request.get_host()
         slug = extract_subdomain(host, settings.BASE_DOMAIN)
@@ -51,6 +54,16 @@ class TenantMiddleware:
         header_slug = request.headers.get("X-Tenant-Slug")
         if header_slug:
             slug = header_slug.strip().lower()
+
+        if slug == PLATFORM_SUBDOMAIN:
+            # Reserved ops console host — not a tenant workspace.
+            request.is_apex = False
+            request.is_platform = True
+            request.tenant = None
+            try:
+                return self.get_response(request)
+            finally:
+                set_current_tenant(None)
 
         if slug:
             request.is_apex = False
@@ -67,7 +80,6 @@ class TenantMiddleware:
                 set_current_tenant(tenant)
 
         try:
-            response = self.get_response(request)
+            return self.get_response(request)
         finally:
             set_current_tenant(None)
-        return response

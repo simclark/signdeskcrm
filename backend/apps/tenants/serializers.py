@@ -119,7 +119,22 @@ class MembershipSerializer(serializers.ModelSerializer):
     class Meta:
         model = Membership
         fields = ("id", "email", "full_name", "role", "is_active", "created_at")
-        read_only_fields = fields
+        read_only_fields = ("id", "email", "full_name", "created_at")
+
+
+class MembershipUpdateSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(
+        choices=[Membership.Role.ADMIN, Membership.Role.MEMBER],
+        required=False,
+    )
+    is_active = serializers.BooleanField(required=False)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError("Provide role and/or is_active.")
+        if "role" in attrs and attrs["role"] == Membership.Role.OWNER:
+            raise serializers.ValidationError({"role": "Cannot assign owner via this endpoint."})
+        return attrs
 
 
 class SignupSerializer(serializers.Serializer):

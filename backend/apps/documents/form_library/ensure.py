@@ -56,6 +56,20 @@ def ensure_form_library(tenant: Tenant, *, replace: bool = False) -> dict[str, i
                 existing.is_active = True
                 existing.is_archived = False
                 existing.save()
+                # Refresh the PDF on disk so --replace repairs missing/corrupt files.
+                document = existing.document
+                next_version = (document.versions.count() or 0) + 1
+                with open(tmp_path, "rb") as fh:
+                    version = DocumentVersion(
+                        tenant=tenant,
+                        document=document,
+                        version_number=next_version,
+                    )
+                    version.file.save(f"{key}.pdf", File(fh), save=False)
+                    version.page_count = 1
+                    version.save()
+                    version.compute_hash()
+                    version.save(update_fields=["sha256", "byte_size"])
                 updated += 1
             else:
                 document = Document.objects.create(
