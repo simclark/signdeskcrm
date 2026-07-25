@@ -7,5 +7,16 @@ ARG VITE_BASE_DOMAIN=signdeskcrm.com
 ENV VITE_BASE_DOMAIN=$VITE_BASE_DOMAIN
 RUN npm run build
 
+# nginx image runs /docker-entrypoint.d/*.sh before starting. Sync the built SPA
+# into the shared frontend_dist volume on every container start so rebuilds
+# actually update what the gateway nginx serves (named volumes keep the first
+# copy otherwise).
 FROM nginx:1.27-alpine
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY --from=build /app/dist /opt/frontend-dist
+RUN printf '%s\n' \
+  '#!/bin/sh' \
+  'set -eu' \
+  'find /usr/share/nginx/html -mindepth 1 -maxdepth 1 -exec rm -rf {} +' \
+  'cp -a /opt/frontend-dist/. /usr/share/nginx/html/' \
+  > /docker-entrypoint.d/40-sync-frontend-dist.sh \
+  && chmod +x /docker-entrypoint.d/40-sync-frontend-dist.sh
