@@ -192,7 +192,7 @@ export function PlatformHealthPage() {
         })}
       </SimpleGrid>
 
-      <Grid gutter="md">
+      <Grid gap="md">
         <Grid.Col span={{ base: 12, md: 7 }}>
           <Paper p="lg" withBorder radius="md" h="100%">
             <Stack gap={4}>

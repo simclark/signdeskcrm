@@ -186,11 +186,14 @@ export function PlatformTenantDetailPage() {
 
   const seedForms = useMutation({
     mutationFn: (replace: boolean) =>
-      api(`/api/platform/tenants/${id}/seed-form-library/`, {
-        method: 'POST',
-        json: { replace },
-      }),
-    onSuccess: (result: { created?: number; updated?: number; skipped?: number }) => {
+      api<{ created?: number; updated?: number; skipped?: number }>(
+        `/api/platform/tenants/${id}/seed-form-library/`,
+        {
+          method: 'POST',
+          json: { replace },
+        },
+      ),
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['platform-ops-events'] })
       notifications.show({
         color: 'forest',
