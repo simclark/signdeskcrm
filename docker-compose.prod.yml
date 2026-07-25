@@ -84,13 +84,10 @@ services:
       - frontend
     labels:
       - traefik.enable=true
-      - traefik.docker.network=signdesk_default
       - traefik.http.services.signdesk.loadbalancer.server.port=80
-      # Traefik v3 HostRegexp uses Go regexp (not v2 {name:pattern} syntax).
-      # BASE_DOMAIN_REGEX is BASE_DOMAIN with dots escaped, e.g. signdeskcrm\.com
-      - traefik.http.routers.signdesk.rule=Host(`${BASE_DOMAIN}`) || HostRegexp(`^[a-z0-9-]+\.${BASE_DOMAIN_REGEX:-signdeskcrm\\.com}$$`)
+      # Apex + any subdomain (Traefik v3 Go regexp).
+      - traefik.http.routers.signdesk.rule=HostRegexp(`(?i)^([a-z0-9-]+\.)?${BASE_DOMAIN}$$`)
       - traefik.http.routers.signdesk.entrypoints=websecure
-      - traefik.http.routers.signdesk.tls=true
       - traefik.http.routers.signdesk.tls.certresolver=le
       - traefik.http.routers.signdesk.tls.domains[0].main=${BASE_DOMAIN}
       - traefik.http.routers.signdesk.tls.domains[0].sans=*.${BASE_DOMAIN}
@@ -107,7 +104,7 @@ services:
     command:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
-      - --providers.docker.network=signdesk_default
+      - --providers.docker.watch=true
       - --entrypoints.web.address=:80
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
@@ -116,8 +113,9 @@ services:
       - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
       - --certificatesresolvers.le.acme.dnschallenge=true
       - --certificatesresolvers.le.acme.dnschallenge.provider=digitalocean
+      - --certificatesresolvers.le.acme.dnschallenge.delayBeforeCheck=10
       - --certificatesresolvers.le.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
-      - --log.level=INFO
+      - --log.level=DEBUG
       - --accesslog=true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
