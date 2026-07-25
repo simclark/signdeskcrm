@@ -6,27 +6,16 @@
 
 1. Unique secrets (never commit these):
    - `DJANGO_SECRET_KEY` — ≥32 random characters
-   - `MYSQL_PASSWORD` / `MYSQL_ROOT_PASSWORD`
-   - SMTP credentials
-2. DNS:
-   - Apex + `www`
-   - Wildcard `*.yourdomain.com` for tenant subdomains
-3. TLS certificates in `deploy/certs/`:
-   - `fullchain.pem`
-   - `privkey.pem`
+   - MySQL password (managed DB or Compose)
+   - `DO_AUTH_TOKEN` — DigitalOcean API token with **read/write** on Domains (ACME DNS-01)
+   - Spaces keys + SMTP credentials
+2. DNS on **DigitalOcean** (required for Traefik wildcard certs):
+   - Apex `A` → droplet IP
+   - `www` `A` or `CNAME` → apex / droplet
+   - Wildcard `*.yourdomain.com` `A` → droplet IP (tenants + `platform`)
+3. Managed MySQL CA (if using DO Databases): `deploy/certs/mysql-ca.crt`
 
-### Self-signed (staging only)
-
-```bash
-openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
-  -keyout deploy/certs/privkey.pem \
-  -out deploy/certs/fullchain.pem \
-  -subj "/CN=signdeskcrm.com"
-```
-
-### Let's Encrypt (production)
-
-Use certbot on the host (or a sidecar) and copy/symlink into `deploy/certs/`, or bind-mount `/etc/letsencrypt/live/<domain>/`.
+TLS is automatic via **Traefik + Let's Encrypt** (DNS-01 / DigitalOcean). You do not place `fullchain.pem` / `privkey.pem` for this stack.
 
 ## Example `.env` (production)
 
@@ -37,12 +26,13 @@ DJANGO_DEBUG=false
 DJANGO_ALLOWED_HOSTS=.signdeskcrm.com,signdeskcrm.com
 CSRF_TRUSTED_ORIGINS=https://signdeskcrm.com,https://www.signdeskcrm.com
 
-MYSQL_DATABASE=signdesk
+# Managed MySQL (DigitalOcean)
+MYSQL_DATABASE=signdeskcrm
 MYSQL_USER=signdesk
 MYSQL_PASSWORD=<strong>
-MYSQL_ROOT_PASSWORD=<strong>
-MYSQL_HOST=mysql
-MYSQL_PORT=3306
+MYSQL_HOST=....db.ondigitalocean.com
+MYSQL_PORT=25060
+MYSQL_SSL_CA=/certs/mysql-ca.crt
 
 CELERY_BROKER_URL=redis://redis:6379/0
 CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -61,6 +51,17 @@ API_PROTOCOL=https
 FRONTEND_PORT=
 VITE_BASE_DOMAIN=signdeskcrm.com
 
+# Traefik / Let's Encrypt (DNS-01 via DigitalOcean)
+ACME_EMAIL=ops@signdeskcrm.com
+DO_AUTH_TOKEN=<digitalocean-api-token-with-domain-write>
+
+# DigitalOcean Spaces — private bucket for PDFs / signatures / certificates
+DO_SPACES_BUCKET=signdesk-media
+DO_SPACES_KEY=<spaces-access-key>
+DO_SPACES_SECRET=<spaces-secret>
+DO_SPACES_REGION=nyc3
+DO_SPACES_ENDPOINT=https://nyc3.digitaloceanspaces.com
+
 SECURE_SSL_REDIRECT=true
 SENTRY_DSN=https://...@o....ingest.sentry.io/...
 SENTRY_ENVIRONMENT=production
@@ -69,13 +70,58 @@ LOG_LEVEL=INFO
 
 Leave `FRONTEND_PORT` empty for standard HTTPS (tenant `host()` omits port when not on `.test`).
 
+## Traefik + Let's Encrypt
+
+Edge flow:
+
+```text
+Internet → Traefik :80/:443 (TLS, HTTP→HTTPS)
+        → nginx :80 (internal) → api / static SPA
+```
+
+1. Create a DigitalOcean **Personal Access Token** with Domains read/write.
+2. Set `ACME_EMAIL` and `DO_AUTH_TOKEN` in `.env`.
+3. Point DNS at the droplet **before** first start (ACME creates `_acme-challenge` TXT records via the DO API).
+4. Traefik requests a cert for `BASE_DOMAIN` + `*.BASE_DOMAIN` and stores it in the `traefik_letsencrypt` volume.
+
+Check issuance:
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.prod.do.yml logs traefik | grep -i acme
+```
+
+## DigitalOcean Managed MySQL
+
+1. Create a database/user (e.g. `signdeskcrm` / `signdesk`).
+2. **Trusted sources** → add the droplet’s public IP (or VPC).
+3. Download the **CA certificate** → save as `deploy/certs/mysql-ca.crt`.
+4. Point `.env` at the managed host (`MYSQL_HOST`, port `25060`, `MYSQL_SSL_CA=/certs/mysql-ca.crt`).
+5. Do **not** start the Compose `mysql` service (it uses profile `builtin-mysql`).
+
+## DigitalOcean Spaces
+
+E-sign PDFs, signed copies, certificates, signature images, and tenant branding are stored in Spaces when `DO_SPACES_BUCKET` is set. Objects stay **private**; the app streams them through `/api/media/` and signing routes (nginx never serves `/media/` directly).
+
+1. Create a Space (e.g. `signdesk-media` in `nyc3`).
+2. API → Spaces Keys → generate key + secret.
+3. Set the `DO_SPACES_*` variables above. Keep the bucket private (no public listing).
+
+Without `DO_SPACES_BUCKET`, media uses the Docker `media_data` volume (local filesystem).
+
 ## Deploy
 
 ```bash
-# Place TLS certs first
-docker compose -f docker-compose.prod.yml up --build -d
+# Place mysql-ca.crt for managed DB; DNS must already point at this droplet
+
+docker compose -f docker-compose.prod.yml -f docker-compose.prod.do.yml up --build -d
+
+# Self-hosted MySQL in Compose instead of managed:
+# docker compose -f docker-compose.prod.yml --profile builtin-mysql up --build -d
+
 curl -fsS https://yourdomain.com/api/health/
 ```
+
+On first `api` start, `entrypoint.sh` runs `migrate` against MySQL (schema create/update). Worker/beat skip migrations.
 
 Health returns `checks.database` and `checks.redis`. Expect HTTP 200 when both are ok.
 
@@ -88,6 +134,8 @@ Production nginx does **not** expose `/media/`. PDFs are served only via:
 
 Branding assets under `tenant_logos/` and `tenant_icons/` remain publicly readable through `/api/media/` (needed on the guest signing page).
 
+With Spaces enabled, those same paths are object keys in the bucket; the API still authorizes and streams them.
+
 ## Platform console (staff)
 
 Primary ops surface for partner lifecycle. Prefer Platform over CLI for routine work.
@@ -95,7 +143,7 @@ Primary ops surface for partner lifecycle. Prefer Platform over CLI for routine 
 1. Create a staff user (one-time bootstrap):
 
    ```bash
-   docker compose exec api python manage.py createsuperuser
+   docker compose -f docker-compose.prod.yml -f docker-compose.prod.do.yml exec api python manage.py createsuperuser
    ```
 
 2. Log in at **https://platform.yourdomain.com/login** (local: http://platform.signdeskcrm.test:5173/login). Apex `/platform` redirects there. Staff only.
@@ -138,7 +186,7 @@ chmod +x deploy/backup.sh
 ./deploy/backup.sh ./backups
 ```
 
-Schedule daily via cron. Store off-host. Test restore before launch.
+Schedule daily via cron. Store off-host. Test restore before launch. For managed MySQL, also enable DO automated backups.
 
 ## Observability
 

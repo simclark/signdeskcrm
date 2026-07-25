@@ -2,6 +2,7 @@ from pypdf import PdfReader
 from rest_framework import serializers
 
 from apps.common.media import protected_media_url
+from apps.common.storage_utils import field_file_stream
 from apps.documents.models import (
     ALLOWED_TEMPLATE_FIELD_TYPES,
     Document,
@@ -79,7 +80,7 @@ class DocumentUploadSerializer(serializers.Serializer):
         )
         version.save()
         try:
-            reader = PdfReader(version.file.path)
+            reader = PdfReader(field_file_stream(version.file))
             version.page_count = len(reader.pages) or 1
         except Exception:
             version.page_count = 1

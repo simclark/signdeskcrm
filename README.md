@@ -135,7 +135,11 @@ python manage.py test apps.documents.tests_merge_import
 ## Production
 
 ```bash
-docker compose -f docker-compose.prod.yml up --build -d
+# DigitalOcean (managed MySQL + Spaces + Traefik/Let's Encrypt)
+docker compose -f docker-compose.prod.yml -f docker-compose.prod.do.yml up --build -d
+
+# Or bundled MySQL in Compose:
+# docker compose -f docker-compose.prod.yml --profile builtin-mysql up --build -d
 ```
 
-Production hosts use `signdeskcrm.com` / `{slug}.signdeskcrm.com`. See [docs/ops/PRODUCTION.md](docs/ops/PRODUCTION.md) for TLS, secrets, SMTP, private media, backups, and Sentry. Design-partner pilot ops: [docs/design-partner/PILOT_OPS.md](docs/design-partner/PILOT_OPS.md).
+Production hosts use `signdeskcrm.com` / `{slug}.signdeskcrm.com`. Traefik terminates TLS (Let's Encrypt DNS-01 on DigitalOcean). See [docs/ops/PRODUCTION.md](docs/ops/PRODUCTION.md) for DNS, ACME, secrets, SMTP, private media, backups, and Sentry. Design-partner pilot ops: [docs/design-partner/PILOT_OPS.md](docs/design-partner/PILOT_OPS.md).

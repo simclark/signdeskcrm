@@ -340,7 +340,7 @@ class SigningFieldCompleteView(views.APIView):
             filename = f"{uuid.uuid4().hex}.png"
             asset = SignatureAsset(tenant=recipient.tenant, recipient=recipient, kind=field.field_type)
             asset.image.save(filename, ContentFile(raw), save=True)
-            value = asset.image.path
+            value = asset.image.name
 
         field.value = str(value)
         field.completed_at = timezone.now()

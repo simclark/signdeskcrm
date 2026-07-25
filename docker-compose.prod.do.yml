@@ -1,0 +1,23 @@
+# DigitalOcean Managed MySQL / Spaces / Traefik overlay.
+# Usage:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.prod.do.yml up --build -d
+#
+# Place the cluster CA at deploy/certs/mysql-ca.crt (download from DO Databases →
+# your cluster → Connection details → Download CA certificate).
+# Set ACME_EMAIL + DO_AUTH_TOKEN in .env for Let's Encrypt DNS-01.
+
+services:
+  api:
+    volumes:
+      - media_data:/app/media
+      - static_data:/app/staticfiles
+      - ./deploy/certs/mysql-ca.crt:/certs/mysql-ca.crt:ro
+
+  worker:
+    volumes:
+      - media_data:/app/media
+      - ./deploy/certs/mysql-ca.crt:/certs/mysql-ca.crt:ro
+
+  beat:
+    volumes:
+      - ./deploy/certs/mysql-ca.crt:/certs/mysql-ca.crt:ro

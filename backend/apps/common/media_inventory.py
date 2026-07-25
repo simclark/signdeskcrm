@@ -1,14 +1,13 @@
-"""Inventory helpers for MEDIA_ROOT vs FileField references."""
+"""Inventory helpers for stored media vs FileField references."""
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from django.conf import settings
+from django.core.files.storage import default_storage
 
-# Only walk these trees — ignore anything else under MEDIA_ROOT.
+# Only walk these trees — ignore anything else under media storage.
 MEDIA_PREFIXES = (
     "documents/",
     "signed/",
@@ -32,7 +31,7 @@ class MediaInventory:
 
     @property
     def missing(self) -> set[str]:
-        """DB FileField names whose files are absent on disk."""
+        """DB FileField names whose files are absent in storage."""
         return self.referenced - self.on_disk
 
 
@@ -61,24 +60,37 @@ def collect_referenced_media() -> set[str]:
     return names
 
 
+def _listdir_recursive(prefix: str) -> set[str]:
+    """Recursively list files under a storage prefix."""
+    found: set[str] = set()
+    # Normalize to no leading slash; ensure trailing slash for "directory" walk
+    base = prefix.strip("/")
+    if base and not base.endswith("/"):
+        base = f"{base}/"
+    stack = [base]
+    while stack:
+        current = stack.pop()
+        try:
+            dirs, files = default_storage.listdir(current)
+        except Exception:
+            continue
+        for name in files:
+            if name in IGNORE_NAMES:
+                continue
+            rel = f"{current}{name}" if current else name
+            found.add(rel)
+        for name in dirs:
+            child = f"{current}{name}/" if current else f"{name}/"
+            stack.append(child)
+    return found
+
+
 def collect_on_disk_media(*, prefixes: tuple[str, ...] | None = None) -> set[str]:
-    """Return relative paths under MEDIA_ROOT for known upload trees."""
-    root = Path(settings.MEDIA_ROOT)
-    if not root.exists():
-        return set()
+    """Return relative paths in storage for known upload trees."""
     use_prefixes = prefixes or MEDIA_PREFIXES
     found: set[str] = set()
     for prefix in use_prefixes:
-        base = root / prefix.rstrip("/")
-        if not base.exists():
-            continue
-        for path in base.rglob("*"):
-            if not path.is_file():
-                continue
-            if path.name in IGNORE_NAMES:
-                continue
-            rel = path.relative_to(root).as_posix()
-            found.add(rel)
+        found |= _listdir_recursive(prefix)
     return found
 
 
@@ -90,30 +102,21 @@ def build_media_inventory(*, prefixes: tuple[str, ...] | None = None) -> MediaIn
 
 
 def delete_orphan_files(orphans: set[str]) -> tuple[int, list[str]]:
-    """Unlink orphan relative paths under MEDIA_ROOT. Returns (deleted, errors)."""
-    root = Path(settings.MEDIA_ROOT).resolve()
+    """Delete orphan relative paths from default storage. Returns (deleted, errors)."""
     deleted = 0
     errors: list[str] = []
     for rel in sorted(orphans):
-        # Refuse path traversal
         if ".." in Path(rel).parts or rel.startswith("/"):
             errors.append(f"skipped unsafe path: {rel}")
             continue
-        full = (root / rel).resolve()
-        if not str(full).startswith(str(root) + os.sep) and full != root:
-            errors.append(f"skipped outside MEDIA_ROOT: {rel}")
-            continue
-        if not full.is_file():
-            continue
         try:
-            full.unlink()
+            if not default_storage.exists(rel):
+                continue
+            default_storage.delete(rel)
             deleted += 1
-            # Clean empty parent dirs under MEDIA_ROOT (best-effort)
-            parent = full.parent
-            while parent != root and parent.is_dir() and not any(parent.iterdir()):
-                parent.rmdir()
-                parent = parent.parent
         except OSError as exc:
+            errors.append(f"{rel}: {exc}")
+        except Exception as exc:  # noqa: BLE001 — report and continue
             errors.append(f"{rel}: {exc}")
     return deleted, errors
 

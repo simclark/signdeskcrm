@@ -18,6 +18,7 @@ from apps.documents.serializers import (
     validate_field_layout,
     validate_roles,
 )
+from apps.common.storage_utils import field_file_stream
 from apps.tenants.permissions import IsTenantAdmin, IsTenantMember
 
 
@@ -282,14 +283,14 @@ class TemplateViewSet(viewsets.ModelViewSet):
         try:
             from pypdf import PdfReader
 
-            reader = PdfReader(version.file.path)
+            reader = PdfReader(field_file_stream(version.file))
             version.page_count = len(reader.pages) or 1
         except Exception:
             version.page_count = 1
         version.compute_hash()
         version.save(update_fields=["page_count", "sha256", "byte_size"])
 
-        acro_layout = extract_acroform_layout(version.file.path)
+        acro_layout = extract_acroform_layout(field_file_stream(version.file))
         import_source = "empty"
         if acro_layout:
             layout = acro_layout

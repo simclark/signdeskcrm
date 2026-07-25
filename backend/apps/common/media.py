@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import mimetypes
 import os
-from pathlib import Path
 
-from django.conf import settings
+from django.core.files.storage import default_storage
 from django.http import FileResponse, Http404
 from rest_framework.exceptions import NotAuthenticated, PermissionDenied
 from rest_framework.permissions import AllowAny
@@ -28,17 +27,13 @@ def protected_media_url(request, file_field) -> str | None:
     return f"/api/media/{file_field.name}"
 
 
-def _safe_media_path(relative: str) -> Path:
+def _safe_media_name(relative: str) -> str:
     relative = (relative or "").lstrip("/")
     if not relative or ".." in relative.split("/"):
         raise Http404("Invalid path.")
-    root = Path(settings.MEDIA_ROOT).resolve()
-    full = (root / relative).resolve()
-    if not str(full).startswith(str(root) + os.sep) and full != root:
-        raise Http404("Invalid path.")
-    if not full.is_file():
+    if not default_storage.exists(relative):
         raise Http404("Not found.")
-    return full
+    return relative
 
 
 def _tenant_owns_path(tenant: Tenant, relative: str) -> bool:
@@ -57,19 +52,20 @@ def _tenant_owns_path(tenant: Tenant, relative: str) -> bool:
     return False
 
 
-def _file_response(full: Path) -> FileResponse:
-    content_type, _ = mimetypes.guess_type(str(full))
+def _file_response(relative: str) -> FileResponse:
+    content_type, _ = mimetypes.guess_type(relative)
+    fh = default_storage.open(relative, "rb")
     return FileResponse(
-        full.open("rb"),
+        fh,
         content_type=content_type or "application/octet-stream",
         as_attachment=False,
-        filename=full.name,
+        filename=os.path.basename(relative),
     )
 
 
 class ProtectedMediaView(APIView):
     """
-    Serve MEDIA_ROOT files.
+    Serve stored media files (local MEDIA_ROOT or Spaces).
 
     - tenant_logos / tenant_icons: public (signing UI branding)
     - everything else: JWT + active tenant membership + ownership check
@@ -78,11 +74,10 @@ class ProtectedMediaView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, path: str):
-        relative = path.lstrip("/")
-        full = _safe_media_path(relative)
+        relative = _safe_media_name(path.lstrip("/"))
 
         if relative.startswith(PUBLIC_MEDIA_PREFIXES):
-            return _file_response(full)
+            return _file_response(relative)
 
         if not request.user or not request.user.is_authenticated:
             raise NotAuthenticated()
@@ -100,4 +95,4 @@ class ProtectedMediaView(APIView):
         if not _tenant_owns_path(tenant, relative):
             raise Http404("Not found.")
 
-        return _file_response(full)
+        return _file_response(relative)

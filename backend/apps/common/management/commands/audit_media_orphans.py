@@ -1,6 +1,6 @@
-"""Audit (and optionally delete) orphaned files under MEDIA_ROOT.
+"""Audit (and optionally delete) orphaned files in media storage.
 
-Orphans are files on disk that no FileField currently references. Django does
+Orphans are stored objects that no FileField currently references. Django does
 not delete FieldFiles on CASCADE, so tenant/document/envelope deletes leave
 files behind unless cleaned up.
 
@@ -28,7 +28,7 @@ from apps.common.media_inventory import (
 
 
 class Command(BaseCommand):
-    help = "List (and optionally delete) MEDIA_ROOT files not referenced by the DB."
+    help = "List (and optionally delete) media files not referenced by the DB."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -67,8 +67,8 @@ class Command(BaseCommand):
 
         self.stdout.write(
             f"Referenced by DB: {len(inventory.referenced)}\n"
-            f"On disk (scanned): {len(inventory.on_disk)}\n"
-            f"Orphans (disk only): {len(orphans)}\n"
+            f"In storage (scanned): {len(inventory.on_disk)}\n"
+            f"Orphans (storage only): {len(orphans)}\n"
             f"Missing (DB only): {len(missing)}"
         )
 
@@ -80,8 +80,8 @@ class Command(BaseCommand):
             self.stdout.write(f"  … {len(orphans) - limit} more")
 
         if missing:
-            self.stdout.write(self.style.WARNING("DB references with no file on disk:"))
-            for rel in missing[:limit or None]:
+            self.stdout.write(self.style.WARNING("DB references with no file in storage:"))
+            for rel in missing[: limit or None]:
                 self.stdout.write(f"  missing: {rel}")
 
         if not options["delete"]:

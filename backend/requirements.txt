@@ -9,9 +9,11 @@ click-didyoumean==0.3.1
 click-plugins==1.1.1.2
 click-repl==0.3.0
 cryptography==45.0.3
+boto3==1.38.36
 Django==5.2.16
 django-cors-headers==4.9.0
 django-filter==25.2
+django-storages==1.14.6
 djangorestframework==3.17.1
 djangorestframework_simplejwt==5.5.1
 gunicorn==26.0.0
@@ -36,3 +38,4 @@ vine==5.1.0
 wcwidth==0.8.2
 wheel==0.45.1
 whitenoise==6.12.0
+

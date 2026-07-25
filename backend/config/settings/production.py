@@ -27,6 +27,11 @@ if SECRET_KEY in ("dev-insecure-change-me", "dev-change-me-in-production-use-32c
         "DJANGO_SECRET_KEY must be a unique value of at least 32 characters in production."
     )
 
+if DO_SPACES_BUCKET and (not DO_SPACES_KEY or not DO_SPACES_SECRET):
+    raise RuntimeError(
+        "DO_SPACES_KEY and DO_SPACES_SECRET are required when DO_SPACES_BUCKET is set."
+    )
+
 _sentry_dsn = os.getenv("SENTRY_DSN", "").strip()
 if _sentry_dsn:
     import sentry_sdk

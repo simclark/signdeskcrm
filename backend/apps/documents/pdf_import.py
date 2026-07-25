@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from pypdf import PdfReader
 from pypdf.generic import IndirectObject, NumberObject
 
@@ -55,13 +53,15 @@ def _field_type_from_annot(annot) -> str | None:
     return None
 
 
-def extract_acroform_layout(pdf_path: str | Path, *, recipient_index: int = 0) -> list[dict]:
+def extract_acroform_layout(pdf_source, *, recipient_index: int = 0) -> list[dict]:
     """Extract AcroForm widget annotations into normalized field_layout items.
 
     Fields without geometry or unsupported types are skipped. When the PDF has
     no form fields, returns an empty list (caller places fields manually).
+
+    ``pdf_source`` may be a filesystem path or a binary file-like object.
     """
-    reader = PdfReader(str(pdf_path))
+    reader = PdfReader(pdf_source)
     layout: list[dict] = []
 
     for page_idx, page in enumerate(reader.pages):

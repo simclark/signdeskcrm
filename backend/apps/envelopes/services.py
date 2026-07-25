@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import io
-import os
 import re
 from datetime import timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
@@ -18,6 +16,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from apps.audit.models import AuditEvent
+from apps.common.storage_utils import field_file_stream, resolve_image_source
 from apps.contacts.models import Activity
 from apps.envelopes.models import Envelope, Field, Recipient, SignatureAsset
 from apps.tenants.esign_disclosure import (
@@ -214,7 +213,7 @@ def validate_envelope_for_send(envelope: Envelope) -> list[str]:
 
 def _overlay_fields_on_pdf(version, fields) -> bytes:
     """Draw the given fields onto a copy of the PDF version and return bytes."""
-    reader = PdfReader(version.file.path)
+    reader = PdfReader(field_file_stream(version.file))
     writer = PdfWriter()
     fields = list(fields)
 
@@ -237,7 +236,7 @@ def _overlay_fields_on_pdf(version, fields) -> bytes:
                 Field.FieldType.SIGNATURE,
                 Field.FieldType.INITIALS,
             ):
-                path = _resolve_image_path(field.value)
+                path = resolve_image_source(field.value)
                 if path:
                     try:
                         img = ImageReader(path)
@@ -614,23 +613,6 @@ def flatten_envelope_pdf(envelope: Envelope) -> bytes:
     return _overlay_fields_on_pdf(version, fields)
 
 
-def _resolve_image_path(value: str | None) -> str | None:
-    """Resolve a Field.value or media path to a readable filesystem path."""
-    if not value:
-        return None
-    path = value
-    if path.startswith("data:image"):
-        return None
-    media_url = settings.MEDIA_URL or "/media/"
-    if path.startswith(media_url):
-        path = os.path.join(settings.MEDIA_ROOT, path[len(media_url) :])
-    elif path.startswith("/media/"):
-        path = os.path.join(settings.MEDIA_ROOT, path[len("/media/") :])
-    if os.path.exists(path):
-        return path
-    return None
-
-
 def _wrap_text(text: str, max_chars: int) -> list[str]:
     text = (text or "").strip()
     if not text:
@@ -651,7 +633,8 @@ def _wrap_text(text: str, max_chars: int) -> list[str]:
     return lines or [""]
 
 
-def _signer_asset_path(recipient: Recipient, kind: str) -> str | None:
+def _signer_asset_source(recipient: Recipient, kind: str):
+    """Return an ImageReader-compatible source for a signer signature/initials."""
     asset = (
         SignatureAsset.objects.filter(recipient=recipient, kind=kind)
         .order_by("-created_at")
@@ -659,9 +642,7 @@ def _signer_asset_path(recipient: Recipient, kind: str) -> str | None:
     )
     if asset and asset.image:
         try:
-            path = asset.image.path
-            if os.path.exists(path):
-                return path
+            return field_file_stream(asset.image)
         except Exception:
             pass
     field = (
@@ -674,7 +655,7 @@ def _signer_asset_path(recipient: Recipient, kind: str) -> str | None:
         .first()
     )
     if field:
-        return _resolve_image_path(field.value)
+        return resolve_image_source(field.value)
     return None
 
 
@@ -848,10 +829,10 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
         y -= 16
 
     for idx, recipient in enumerate(recipients, start=1):
-        sig_path = _signer_asset_path(recipient, "signature")
-        initials_path = _signer_asset_path(recipient, "initials")
+        sig_source = _signer_asset_source(recipient, "signature")
+        initials_source = _signer_asset_source(recipient, "initials")
         has_consent = bool(recipient.consented_at or recipient.consent_text_sha256)
-        block_height = 118 if (sig_path or initials_path) else 72
+        block_height = 118 if (sig_source or initials_source) else 72
         if has_consent:
             block_height += 36
         y = ensure_space(y, block_height + 12)
@@ -920,12 +901,12 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
         # Signature / initials images
         image_y = y - 36
         col_x = left + 12
-        if sig_path:
+        if sig_source:
             c.setFont("Helvetica", 7)
             c.setFillColor(MUTED_GRAY)
             c.drawString(col_x, y, "SIGNATURE")
             try:
-                img = ImageReader(sig_path)
+                img = ImageReader(sig_source)
                 c.drawImage(
                     img,
                     col_x,
@@ -941,12 +922,12 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
                 c.drawString(col_x, image_y + 14, recipient.name)
             col_x += 180
 
-        if initials_path:
+        if initials_source:
             c.setFont("Helvetica", 7)
             c.setFillColor(MUTED_GRAY)
             c.drawString(col_x, y, "INITIALS")
             try:
-                img = ImageReader(initials_path)
+                img = ImageReader(initials_source)
                 c.drawImage(
                     img,
                     col_x,
@@ -961,7 +942,7 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
                 c.setFont("Helvetica-Oblique", 10)
                 c.drawString(col_x, image_y + 14, "—")
 
-        if sig_path or initials_path:
+        if sig_source or initials_source:
             y = image_y - 14
         else:
             c.setFont("Helvetica-Oblique", 8)

@@ -67,6 +67,19 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
+_db_options = {
+    "charset": "utf8mb4",
+    "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+}
+# DigitalOcean Managed MySQL requires SSL. Download the cluster CA and set
+# MYSQL_SSL_CA to its path inside the container (e.g. /certs/mysql-ca.crt).
+_mysql_ssl_ca = os.getenv("MYSQL_SSL_CA", "").strip()
+if _mysql_ssl_ca:
+    _db_options["ssl"] = {"ca": _mysql_ssl_ca}
+elif os.getenv("MYSQL_SSL_REQUIRED", "").lower() in ("1", "true", "yes"):
+    # Enable TLS without a custom CA file (system trust store).
+    _db_options["ssl"] = {}
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
@@ -75,10 +88,7 @@ DATABASES = {
         "PASSWORD": os.getenv("MYSQL_PASSWORD", "signdesk"),
         "HOST": os.getenv("MYSQL_HOST", "127.0.0.1"),
         "PORT": os.getenv("MYSQL_PORT", "3306"),
-        "OPTIONS": {
-            "charset": "utf8mb4",
-            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
-        },
+        "OPTIONS": _db_options,
     }
 }
 
@@ -96,15 +106,49 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-    },
-}
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# DigitalOcean Spaces (S3-compatible). When DO_SPACES_BUCKET is set, media
+# (PDFs, signatures, certificates, branding) goes to Spaces. Leave unset for
+# local FileSystemStorage (dev default).
+DO_SPACES_BUCKET = os.getenv("DO_SPACES_BUCKET", "").strip()
+DO_SPACES_KEY = os.getenv("DO_SPACES_KEY", "").strip()
+DO_SPACES_SECRET = os.getenv("DO_SPACES_SECRET", "").strip()
+DO_SPACES_REGION = os.getenv("DO_SPACES_REGION", "nyc3").strip() or "nyc3"
+DO_SPACES_ENDPOINT = os.getenv(
+    "DO_SPACES_ENDPOINT",
+    f"https://{DO_SPACES_REGION}.digitaloceanspaces.com",
+).strip()
+DO_SPACES_CDN_DOMAIN = os.getenv("DO_SPACES_CDN_DOMAIN", "").strip()
+
+if DO_SPACES_BUCKET:
+    # django-storages / boto3 use AWS_* names even for Spaces.
+    AWS_ACCESS_KEY_ID = DO_SPACES_KEY
+    AWS_SECRET_ACCESS_KEY = DO_SPACES_SECRET
+    AWS_STORAGE_BUCKET_NAME = DO_SPACES_BUCKET
+    AWS_S3_REGION_NAME = DO_SPACES_REGION
+    AWS_S3_ENDPOINT_URL = DO_SPACES_ENDPOINT
+    AWS_S3_CUSTOM_DOMAIN = DO_SPACES_CDN_DOMAIN or None
+    AWS_DEFAULT_ACL = "private"
+    AWS_QUERYSTRING_AUTH = True
+    AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "max-age=86400"}
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_S3_SIGNATURE_VERSION = "s3v4"
+    STORAGES = {
+        "default": {"BACKEND": "storages.backends.s3boto3.S3Boto3Storage"},
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
+else:
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.User"
