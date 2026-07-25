@@ -231,6 +231,15 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "SignDesk <noreply@signdeskcrm.com>")
 
+# Postmark HTTP API (same approach as ProgressPhase prod) — preferred on DO
+# droplets where outbound :587 is blocked. Set SMTP_PROVIDER=postmark.
+SMTP_PROVIDER = os.getenv("SMTP_PROVIDER", "").strip().lower()
+POSTMARK_SERVER_TOKEN = os.getenv("POSTMARK_SERVER_TOKEN", "").strip()
+if SMTP_PROVIDER == "postmark" and POSTMARK_SERVER_TOKEN:
+    EMAIL_BACKEND = "apps.common.postmark_backend.PostmarkAPIEmailBackend"
+elif SMTP_PROVIDER == "postmark" and not POSTMARK_SERVER_TOKEN:
+    raise RuntimeError("SMTP_PROVIDER=postmark requires POSTMARK_SERVER_TOKEN")
+
 BASE_DOMAIN = os.getenv("BASE_DOMAIN", "signdeskcrm.test")
 FRONTEND_PORT = os.getenv("FRONTEND_PORT", "5173")
 FRONTEND_PROTOCOL = os.getenv("FRONTEND_PROTOCOL", "http")

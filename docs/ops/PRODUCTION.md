@@ -45,6 +45,11 @@ EMAIL_HOST_USER=...
 EMAIL_HOST_PASSWORD=...
 DEFAULT_FROM_EMAIL=SignDesk <noreply@signdeskcrm.com>
 
+# Preferred on DigitalOcean (Postmark HTTPS API — avoids blocked :587):
+# SMTP_PROVIDER=postmark
+# POSTMARK_SERVER_TOKEN=<server-api-token>
+# DEFAULT_FROM_EMAIL=SignDesk <noreply@signdeskcrm.com>
+
 BASE_DOMAIN=signdeskcrm.com
 FRONTEND_PROTOCOL=https
 API_PROTOCOL=https
