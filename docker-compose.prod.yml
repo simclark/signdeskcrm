@@ -94,7 +94,8 @@ services:
       - traefik.http.routers.signdesk.service=signdesk
 
   traefik:
-    image: traefik:v3.3
+    # v3.6.1+ required for Docker Engine 29 (API negotiation; older Traefik hardcodes 1.24)
+    image: traefik:v3.6
     restart: unless-stopped
     ports:
       - "80:80"
@@ -115,7 +116,7 @@ services:
       - --certificatesresolvers.le.acme.dnschallenge.provider=digitalocean
       - --certificatesresolvers.le.acme.dnschallenge.delayBeforeCheck=10
       - --certificatesresolvers.le.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
-      - --log.level=DEBUG
+      - --log.level=INFO
       - --accesslog=true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
