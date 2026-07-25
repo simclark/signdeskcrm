@@ -54,6 +54,8 @@ VITE_BASE_DOMAIN=signdeskcrm.com
 # Traefik / Let's Encrypt (DNS-01 via DigitalOcean)
 ACME_EMAIL=ops@signdeskcrm.com
 DO_AUTH_TOKEN=<digitalocean-api-token-with-domain-write>
+# Escape dots in BASE_DOMAIN for Traefik v3 HostRegexp
+BASE_DOMAIN_REGEX=signdeskcrm\.com
 
 # DigitalOcean Spaces — private bucket for PDFs / signatures / certificates
 DO_SPACES_BUCKET=signdesk-media

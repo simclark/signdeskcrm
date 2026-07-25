@@ -86,8 +86,9 @@ services:
       - traefik.enable=true
       - traefik.docker.network=signdesk_default
       - traefik.http.services.signdesk.loadbalancer.server.port=80
-      # Apex + www + tenant / platform subdomains
-      - traefik.http.routers.signdesk.rule=Host(`${BASE_DOMAIN}`) || Host(`www.${BASE_DOMAIN}`) || HostRegexp(`{subdomain:[a-z0-9-]+}.${BASE_DOMAIN}`)
+      # Traefik v3 HostRegexp uses Go regexp (not v2 {name:pattern} syntax).
+      # BASE_DOMAIN_REGEX is BASE_DOMAIN with dots escaped, e.g. signdeskcrm\.com
+      - traefik.http.routers.signdesk.rule=Host(`${BASE_DOMAIN}`) || HostRegexp(`^[a-z0-9-]+\.${BASE_DOMAIN_REGEX:-signdeskcrm\\.com}$$`)
       - traefik.http.routers.signdesk.entrypoints=websecure
       - traefik.http.routers.signdesk.tls=true
       - traefik.http.routers.signdesk.tls.certresolver=le
@@ -117,6 +118,7 @@ services:
       - --certificatesresolvers.le.acme.dnschallenge.provider=digitalocean
       - --certificatesresolvers.le.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
       - --log.level=INFO
+      - --accesslog=true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik_letsencrypt:/letsencrypt
