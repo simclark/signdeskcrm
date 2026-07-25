@@ -36,6 +36,18 @@ def extract_subdomain(host: str, base_domain: str) -> str | None:
     return None
 
 
+def normalize_tenant_slug(raw: str | None, base_domain: str) -> str | None:
+    """Accept a bare slug or a full host like demo.example.com."""
+    if not raw:
+        return None
+    value = raw.strip().lower().split(":")[0]
+    if not value:
+        return None
+    if "." in value:
+        return extract_subdomain(value, base_domain)
+    return value
+
+
 class TenantMiddleware:
     """Resolve tenant from Host subdomain and bind to request + thread-local."""
 
@@ -50,10 +62,13 @@ class TenantMiddleware:
 
         host = request.get_host()
         slug = extract_subdomain(host, settings.BASE_DOMAIN)
-        # Also accept X-Tenant-Slug for API clients / Vite proxy in dev
-        header_slug = request.headers.get("X-Tenant-Slug")
+        # Prefer X-Tenant-Slug when present (Vite proxy / API clients). Accept a
+        # bare slug or a full host — never treat "demo.example.com" as a slug.
+        header_slug = normalize_tenant_slug(
+            request.headers.get("X-Tenant-Slug"), settings.BASE_DOMAIN
+        )
         if header_slug:
-            slug = header_slug.strip().lower()
+            slug = header_slug
 
         if slug == PLATFORM_SUBDOMAIN:
             # Reserved ops console host — not a tenant workspace.
