@@ -266,13 +266,6 @@ export function PlatformTenantDetailPage() {
         )}
         <Button
           variant="default"
-          loading={inviteOwner.isPending}
-          onClick={() => inviteOwner.mutate(data.primary_contact_email || undefined)}
-        >
-          Invite admin
-        </Button>
-        <Button
-          variant="default"
           loading={seedForms.isPending}
           onClick={() => seedForms.mutate(false)}
         >
