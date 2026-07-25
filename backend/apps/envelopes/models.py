@@ -5,6 +5,11 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from apps.common.upload_paths import (
+    certificate_upload_to,
+    signature_upload_to,
+    signed_upload_to,
+)
 from apps.tenants.models_base import TenantOwnedModel
 
 
@@ -74,8 +79,12 @@ class Envelope(TenantOwnedModel):
     expires_at = models.DateTimeField(null=True, blank=True)
     voided_at = models.DateTimeField(null=True, blank=True)
     void_reason = models.TextField(blank=True)
-    signed_file = models.FileField(upload_to="signed/%Y/%m/", blank=True, null=True)
-    certificate_file = models.FileField(upload_to="certificates/%Y/%m/", blank=True, null=True)
+    signed_file = models.FileField(
+        upload_to=signed_upload_to, blank=True, null=True
+    )
+    certificate_file = models.FileField(
+        upload_to=certificate_upload_to, blank=True, null=True
+    )
     pre_sign_sha256 = models.CharField(max_length=64, blank=True)
     post_sign_sha256 = models.CharField(max_length=64, blank=True)
     retention_purged_at = models.DateTimeField(null=True, blank=True)
@@ -199,5 +208,5 @@ class SignatureAsset(TenantOwnedModel):
         Recipient, on_delete=models.CASCADE, related_name="signature_assets"
     )
     kind = models.CharField(max_length=20, default="signature")  # signature | initials
-    image = models.ImageField(upload_to="signatures/%Y/%m/")
+    image = models.ImageField(upload_to=signature_upload_to)
     created_at = models.DateTimeField(auto_now_add=True)

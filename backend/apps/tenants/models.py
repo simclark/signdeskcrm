@@ -8,6 +8,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
 
+from apps.common.upload_paths import tenant_icon_upload_to, tenant_logo_upload_to
 from apps.tenants.email_templates import DEFAULT_TEMPLATES, EmailTemplateKey
 from apps.tenants.esign_disclosure import (
     DEFAULT_ESIGN_ACKNOWLEDGEMENT,
@@ -77,8 +78,12 @@ class Tenant(TimeStampedModel):
     primary_contact_name = models.CharField(max_length=255, blank=True)
     primary_contact_email = models.EmailField(blank=True)
     primary_contact_phone = models.CharField(max_length=64, blank=True)
-    logo = models.ImageField(upload_to="tenant_logos/", blank=True, null=True)
-    icon = models.ImageField(upload_to="tenant_icons/", blank=True, null=True)
+    logo = models.ImageField(
+        upload_to=tenant_logo_upload_to, blank=True, null=True
+    )
+    icon = models.ImageField(
+        upload_to=tenant_icon_upload_to, blank=True, null=True
+    )
     accent_color = models.CharField(max_length=7, default="#0B6E4F")
     timezone = models.CharField(max_length=64, default="UTC")
     default_expiration_days = models.PositiveIntegerField(default=14)

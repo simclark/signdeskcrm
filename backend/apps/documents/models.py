@@ -4,6 +4,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.common.upload_paths import document_upload_to
 from apps.tenants.models_base import TenantOwnedModel
 
 # settings used for AUTH_USER_MODEL and upload limits
@@ -42,7 +43,10 @@ class Document(TenantOwnedModel):
 class DocumentVersion(TenantOwnedModel):
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="versions")
     version_number = models.PositiveIntegerField(default=1)
-    file = models.FileField(upload_to="documents/%Y/%m/", validators=[validate_pdf])
+    file = models.FileField(
+        upload_to=document_upload_to,
+        validators=[validate_pdf],
+    )
     page_count = models.PositiveIntegerField(default=1)
     sha256 = models.CharField(max_length=64, blank=True)
     byte_size = models.PositiveIntegerField(default=0)

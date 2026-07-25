@@ -109,6 +109,28 @@ docker compose -f docker-compose.prod.yml -f docker-compose.prod.do.yml logs tra
 
 E-sign PDFs, signed copies, certificates, signature images, and tenant branding are stored in Spaces when `DO_SPACES_BUCKET` is set. Objects stay **private**; the app streams them through `/api/media/` and signing routes (nginx never serves `/media/` directly).
 
+Object keys are tenant-scoped:
+
+```text
+tenants/<tenant_id>/documents/<YYYY>/<MM>/<file>.pdf
+tenants/<tenant_id>/signed/<YYYY>/<MM>/…
+tenants/<tenant_id>/certificates/<YYYY>/<MM>/…
+tenants/<tenant_id>/signatures/<YYYY>/<MM>/…
+tenants/<tenant_id>/branding/logo|icon/…
+```
+
+After deploying a release that introduces this layout, rewrite legacy flat keys
+for the demo tenant once:
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.prod.do.yml \
+  exec api python manage.py migrate_media_to_tenant_paths
+docker compose -f docker-compose.prod.yml -f docker-compose.prod.do.yml \
+  exec api python manage.py migrate_media_to_tenant_paths --apply
+```
+
+(Defaults to slug `demo`. Use `--all-tenants` or `--tenant-slug <slug>` later if needed.)
+
 1. Create a Space (e.g. `signdesk-media` in `nyc3`).
 2. API → Spaces Keys → generate key + secret.
 3. Set the `DO_SPACES_*` variables above. Keep the bucket private (no public listing).

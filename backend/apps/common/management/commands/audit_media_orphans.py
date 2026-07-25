@@ -43,7 +43,7 @@ class Command(BaseCommand):
             choices=[p.rstrip("/") for p in MEDIA_PREFIXES],
             help=(
                 "Limit scan to one upload tree (repeatable). "
-                "Choices: documents, signed, certificates, signatures, "
+                "Choices: tenants, documents, signed, certificates, signatures, "
                 "tenant_logos, tenant_icons."
             ),
         )

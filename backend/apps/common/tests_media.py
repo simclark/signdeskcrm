@@ -1,10 +1,9 @@
-import tempfile
 from pathlib import Path
+from io import StringIO
 
 from django.core.files.base import ContentFile
-from django.test import TestCase, override_settings
 from django.core.management import call_command
-from io import StringIO
+from django.test import TestCase, override_settings
 
 from apps.accounts.models import User
 from apps.common.media_inventory import build_media_inventory
@@ -24,6 +23,14 @@ class MediaOrphanCleanupTests(TestCase):
         Membership.objects.create(
             tenant=self.tenant, user=self.user, role=Membership.Role.OWNER
         )
+
+    def test_new_document_upload_uses_tenant_prefix(self):
+        document = Document.objects.create(
+            tenant=self.tenant, title="Doc", original_filename="a.pdf", created_by=self.user
+        )
+        version = DocumentVersion(tenant=self.tenant, document=document, version_number=1)
+        version.file.save("a.pdf", ContentFile(b"%PDF-1.4 orphan-test"), save=True)
+        self.assertTrue(version.file.name.startswith(f"tenants/{self.tenant.pk}/documents/"))
 
     def test_document_version_delete_removes_file(self):
         document = Document.objects.create(

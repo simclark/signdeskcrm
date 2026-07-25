@@ -7,8 +7,10 @@ from pathlib import Path
 
 from django.core.files.storage import default_storage
 
-# Only walk these trees — ignore anything else under media storage.
+# Primary tree is tenants/<id>/… Legacy flat trees are still scanned so orphan
+# cleanup and migration remain safe until old objects are rewritten.
 MEDIA_PREFIXES = (
+    "tenants/",
     "documents/",
     "signed/",
     "certificates/",

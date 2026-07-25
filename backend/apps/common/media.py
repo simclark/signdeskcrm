@@ -6,6 +6,7 @@ import mimetypes
 import os
 
 from django.core.files.storage import default_storage
+from django.db.models import Q
 from django.http import FileResponse, Http404
 from rest_framework.exceptions import NotAuthenticated, PermissionDenied
 from rest_framework.permissions import AllowAny
@@ -16,6 +17,22 @@ from apps.envelopes.models import Envelope, SignatureAsset
 from apps.tenants.models import Membership, Tenant
 
 PUBLIC_MEDIA_PREFIXES = ("tenant_logos/", "tenant_icons/")
+
+
+def _is_public_branding(relative: str) -> bool:
+    """Logos/icons are public for the signing UI (legacy + tenant-prefixed)."""
+    if relative.startswith(PUBLIC_MEDIA_PREFIXES):
+        return True
+    parts = relative.split("/")
+    # tenants/<id>/branding/<logo|icon>/...
+    if (
+        len(parts) >= 4
+        and parts[0] == "tenants"
+        and parts[2] == "branding"
+        and parts[3] in ("logo", "icon")
+    ):
+        return Tenant.objects.filter(Q(logo=relative) | Q(icon=relative)).exists()
+    return False
 
 
 def protected_media_url(request, file_field) -> str | None:
@@ -67,7 +84,7 @@ class ProtectedMediaView(APIView):
     """
     Serve stored media files (local MEDIA_ROOT or Spaces).
 
-    - tenant_logos / tenant_icons: public (signing UI branding)
+    - tenant branding (legacy tenant_logos/icons or tenants/*/branding/*): public
     - everything else: JWT + active tenant membership + ownership check
     """
 
@@ -76,7 +93,7 @@ class ProtectedMediaView(APIView):
     def get(self, request, path: str):
         relative = _safe_media_name(path.lstrip("/"))
 
-        if relative.startswith(PUBLIC_MEDIA_PREFIXES):
+        if _is_public_branding(relative):
             return _file_response(relative)
 
         if not request.user or not request.user.is_authenticated:
