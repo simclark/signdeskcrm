@@ -30,8 +30,6 @@ import {
   IconUser,
   IconX,
 } from '@tabler/icons-react'
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
-import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import {
   useEffect,
   useMemo,
@@ -52,6 +50,7 @@ import {
   type FieldType,
 } from '../envelopes/types'
 import { loadPdfDocument } from '../../shared/loadPdf'
+import { pdfjs } from '../../shared/pdfjs'
 import {
   autoLabelForToken,
   buildMergeTokenSelectData,
@@ -87,8 +86,6 @@ import {
   type ResizeHandle,
   type RoleDraft,
 } from './pdfFieldMapperUtils'
-
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker
 
 export type PdfFieldMapperProps = {
   documentFileUrl: string | null | undefined

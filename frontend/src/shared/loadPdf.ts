@@ -1,6 +1,6 @@
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { fetchAuthed } from './api'
 import { toAppMediaUrl } from './mediaUrl'
+import { pdfjs } from './pdfjs'
 
 /** Load a PDF via auth-aware fetch (for /api/media/) or public fetch (signing links). */
 export async function loadPdfDocument(

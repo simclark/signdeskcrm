@@ -1,12 +1,9 @@
 import { Text } from '@mantine/core'
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
-import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { loadPdfDocument } from '../../shared/loadPdf'
+import { pdfjs } from '../../shared/pdfjs'
 import type { AdoptedAssets } from './SignatureAdoptDialog'
 import { fieldToOverlayStyle, fieldTypeLabel, type SignField } from './fieldOverlay'
-
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker
 
 const MAX_DOC_WIDTH = 900
 

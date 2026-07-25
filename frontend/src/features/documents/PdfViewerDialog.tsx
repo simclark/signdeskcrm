@@ -1,11 +1,8 @@
 import { Button, Center, Group, Loader, Modal, Stack, Text } from '@mantine/core'
 import { IconDownload } from '@tabler/icons-react'
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
-import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { useEffect, useRef, useState } from 'react'
 import { downloadMediaFile, loadPdfDocument } from '../../shared/loadPdf'
-
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker
+import { pdfjs } from '../../shared/pdfjs'
 
 const MAX_PAGE_WIDTH = 820
 
