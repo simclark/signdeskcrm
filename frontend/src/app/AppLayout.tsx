@@ -8,10 +8,11 @@ import {
   Image,
   Menu,
   NavLink,
+  Overlay,
   Text,
   Tooltip,
 } from '@mantine/core'
-import { useDisclosure, useLocalStorage } from '@mantine/hooks'
+import { useDisclosure, useLocalStorage, useMediaQuery } from '@mantine/hooks'
 import {
   IconBuilding,
   IconCalendarDue,
@@ -69,12 +70,15 @@ function isPathActive(pathname: string, to: string) {
 }
 
 function AppShellContent() {
-  const [mobileOpened, { toggle: toggleMobile }] = useDisclosure()
+  const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure()
   const [profileOpened, { open: openProfile, close: closeProfile }] = useDisclosure()
   const [desktopCollapsed, setDesktopCollapsed] = useLocalStorage({
     key: 'sd-nav-collapsed',
     defaultValue: false,
   })
+  const isDesktop = useMediaQuery('(min-width: 48em)')
+  // Collapsed icon rail is desktop-only; mobile drawer always shows labels.
+  const navCollapsed = Boolean(isDesktop && desktopCollapsed)
   const { user, tenant, membership, logout } = useAuth()
   const location = useLocation()
   const { openCreateEnvelope } = useCreateEnvelope()
@@ -92,11 +96,15 @@ function AppShellContent() {
     return () => setDocumentFavicon(null)
   }, [iconUrl])
 
+  useEffect(() => {
+    closeMobile()
+  }, [location.pathname, closeMobile])
+
   const renderLink = (link: NavItem) => {
     const childActive = link.children?.some((child) => isPathActive(location.pathname, child.to))
     const active = isPathActive(location.pathname, link.to) || Boolean(childActive)
 
-    if (link.children?.length && !desktopCollapsed) {
+    if (link.children?.length && !navCollapsed) {
       return (
         <NavLink
           key={link.to}
@@ -126,13 +134,13 @@ function AppShellContent() {
       <NavLink
         component={Link}
         to={target}
-        label={desktopCollapsed ? undefined : link.label}
+        label={navCollapsed ? undefined : link.label}
         leftSection={<link.icon size={20} stroke={1.5} />}
         active={active}
         mb={4}
         aria-label={link.label}
         styles={
-          desktopCollapsed
+          navCollapsed
             ? {
                 root: {
                   padding: '10px',
@@ -146,7 +154,7 @@ function AppShellContent() {
       />
     )
 
-    if (!desktopCollapsed) {
+    if (!navCollapsed) {
       return <div key={link.to}>{item}</div>
     }
 
@@ -161,7 +169,7 @@ function AppShellContent() {
     <AppShell
       header={{ height: 64 }}
       navbar={{
-        width: desktopCollapsed ? NAV_COLLAPSED : NAV_EXPANDED,
+        width: navCollapsed ? NAV_COLLAPSED : NAV_EXPANDED,
         breakpoint: 'sm',
         collapsed: { mobile: !mobileOpened },
       }}
@@ -176,8 +184,8 @@ function AppShellContent() {
           backdropFilter: 'blur(10px)',
         }}
       >
-        <Group h="100%" px="md" justify="space-between">
-          <Group gap="sm">
+        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
+          <Group gap="sm" wrap="nowrap">
             <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" />
             <Tooltip
               label={desktopCollapsed ? 'Expand navigation' : 'Collapse navigation'}
@@ -197,7 +205,7 @@ function AppShellContent() {
                 )}
               </ActionIcon>
             </Tooltip>
-            <Group gap="sm">
+            <Group gap="sm" wrap="nowrap">
               {iconUrl ? (
                 <Image src={iconUrl} alt="" w={28} h={28} radius="sm" fit="contain" />
               ) : (
@@ -218,9 +226,12 @@ function AppShellContent() {
               </Text>
             </Group>
           </Group>
-          <Group>
-            <Button variant="filled" onClick={() => openCreateEnvelope()}>
+          <Group wrap="nowrap" gap="sm">
+            <Button variant="filled" onClick={() => openCreateEnvelope()} visibleFrom="sm">
               Send for signature
+            </Button>
+            <Button variant="filled" onClick={() => openCreateEnvelope()} hiddenFrom="sm" px="sm">
+              Send
             </Button>
             <Menu>
               <Menu.Target>
@@ -250,12 +261,26 @@ function AppShellContent() {
         </Group>
       </AppShell.Header>
 
+      {mobileOpened ? (
+        <Overlay
+          fixed
+          color="#102a23"
+          backgroundOpacity={0.35}
+          zIndex={100}
+          hiddenFrom="sm"
+          onClick={closeMobile}
+        />
+      ) : null}
+
       <AppShell.Navbar
-        p={desktopCollapsed ? 'sm' : 'md'}
-        style={{ background: 'transparent' }}
-        className={desktopCollapsed ? 'sd-nav-collapsed' : undefined}
+        p={navCollapsed ? 'sm' : 'md'}
+        style={{
+          background: 'var(--sd-surface)',
+          borderRight: '1px solid rgba(16,42,35,0.08)',
+        }}
+        className={navCollapsed ? 'sd-nav-collapsed' : undefined}
       >
-        {desktopCollapsed && iconUrl ? (
+        {navCollapsed && iconUrl ? (
           <Group justify="center" mb="md">
             <Image src={iconUrl} alt={tenant!.name} w={32} h={32} radius="sm" fit="contain" />
           </Group>
@@ -263,7 +288,7 @@ function AppShellContent() {
         {memberLinks.map((link) => renderLink(link))}
         {isAdmin && (
           <>
-            {!desktopCollapsed ? (
+            {!navCollapsed ? (
               <>
                 <Text
                   size="xs"

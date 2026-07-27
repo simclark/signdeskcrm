@@ -29,6 +29,20 @@ const EVENT_BADGE_COLOR: Record<string, string> = {
   sent: 'blue',
 }
 
+const RECIPIENT_STATUS_COLOR: Record<string, string> = {
+  signed: 'forest',
+  sent: 'blue',
+  viewed: 'teal',
+  pending: 'gray',
+  not_required: 'gray',
+  declined: 'red',
+}
+
+function formatRecipientStatus(status: string) {
+  if (status === 'not_required') return 'Not required'
+  return status.replaceAll('_', ' ')
+}
+
 function formatEventLabel(eventType: string) {
   return eventType
     .split('_')
@@ -294,8 +308,12 @@ export function EnvelopeDetailPage() {
                     </Text>
                   </DataTable.Td>
                   <DataTable.Td>
-                    <Badge variant="light" tt="capitalize">
-                      {r.status.replaceAll('_', ' ')}
+                    <Badge
+                      variant="light"
+                      tt="capitalize"
+                      color={RECIPIENT_STATUS_COLOR[r.status] || undefined}
+                    >
+                      {formatRecipientStatus(r.status)}
                     </Badge>
                   </DataTable.Td>
                 </DataTable.Tr>

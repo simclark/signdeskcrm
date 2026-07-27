@@ -180,7 +180,7 @@ export function DocumentsPage() {
 
   return (
     <Stack>
-      <Group justify="space-between">
+      <Group justify="space-between" align="flex-start" wrap="wrap">
         <div>
           <Title order={2}>Documents</Title>
           <Text c="dimmed">Shared PDF library for envelopes and templates.</Text>

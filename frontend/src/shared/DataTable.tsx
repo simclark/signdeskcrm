@@ -21,7 +21,11 @@ function DataTableRoot({ children, embedded = false, className, ...props }: Data
   )
 
   if (embedded) return table
-  return <div className="sd-table-panel">{table}</div>
+  return (
+    <div className="sd-table-panel">
+      <div className="sd-table-scroll">{table}</div>
+    </div>
+  )
 }
 
 export const DataTable = Object.assign(DataTableRoot, {

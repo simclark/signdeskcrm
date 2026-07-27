@@ -106,6 +106,7 @@ class Recipient(TenantOwnedModel):
         SENT = "sent", "Sent"
         VIEWED = "viewed", "Viewed"
         SIGNED = "signed", "Signed"
+        NOT_REQUIRED = "not_required", "Not required"
         DECLINED = "declined", "Declined"
 
     envelope = models.ForeignKey(Envelope, on_delete=models.CASCADE, related_name="recipients")

@@ -109,6 +109,7 @@ def start_stalled_plans_for_envelope(envelope: Envelope) -> int:
     for recipient in envelope.recipients.filter(role=Recipient.Role.SIGNER):
         if recipient.status in (
             Recipient.Status.SIGNED,
+            Recipient.Status.NOT_REQUIRED,
             Recipient.Status.DECLINED,
             Recipient.Status.PENDING,
         ):
@@ -284,6 +285,7 @@ def process_due_follow_up_plan_enrollments() -> int:
                 continue
             if recipient.status in (
                 Recipient.Status.SIGNED,
+                Recipient.Status.NOT_REQUIRED,
                 Recipient.Status.DECLINED,
             ):
                 cancel_enrollments_for_recipient(recipient)

@@ -423,9 +423,10 @@ class StampOnSendDocumentFieldsTests(TestCase):
         self.assertIn("425000", text)
         self.assertIn("First National", text)
 
-        # Agent has no signer tasks — auto-marked signed, not invited
+        # Agent has no signer tasks — not required, not invited
         self.agent.refresh_from_db()
-        self.assertEqual(self.agent.status, Recipient.Status.SIGNED)
+        self.assertEqual(self.agent.status, Recipient.Status.NOT_REQUIRED)
+        self.assertIsNone(self.agent.signed_at)
         self.buyer.refresh_from_db()
         self.assertEqual(self.buyer.status, Recipient.Status.SENT)
 

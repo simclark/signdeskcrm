@@ -385,10 +385,10 @@ def send_envelope(envelope: Envelope, request=None):
     else:
         to_notify = signer_qs.filter(id__in=active_ids)
 
-    # Document-only assignees: mark signed so they don't block completion
+    # Document-only assignees: no signing tasks — don't block completion
     for recipient in signer_qs.exclude(id__in=active_ids):
-        recipient.status = Recipient.Status.SIGNED
-        recipient.signed_at = timezone.now()
+        recipient.status = Recipient.Status.NOT_REQUIRED
+        recipient.signed_at = None
         recipient.save(update_fields=["status", "signed_at", "updated_at"])
 
     from apps.envelopes.tasks import send_recipient_invite
@@ -556,7 +556,8 @@ def complete_recipient_signing(recipient: Recipient, request=None):
 
     envelope = recipient.envelope
     signers = envelope.recipients.filter(role=Recipient.Role.SIGNER)
-    if signers.exclude(status=Recipient.Status.SIGNED).exists():
+    done_statuses = (Recipient.Status.SIGNED, Recipient.Status.NOT_REQUIRED)
+    if signers.exclude(status__in=done_statuses).exists():
         # Notify next sequential signer
         if envelope.routing == Envelope.Routing.SEQUENTIAL:
             next_signer = (
@@ -861,7 +862,10 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
 
         c.setFillColor(colors.black)
         c.setFont("Helvetica", 8)
-        signed_line = f"Signed: {_format_cert_datetime(recipient.signed_at, tenant)}"
+        if recipient.status == Recipient.Status.NOT_REQUIRED:
+            signed_line = "Action: Not required"
+        else:
+            signed_line = f"Signed: {_format_cert_datetime(recipient.signed_at, tenant)}"
         c.drawString(left + 12, y, signed_line)
 
         # Best-effort IP from signed audit event for this actor
