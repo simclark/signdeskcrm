@@ -282,6 +282,7 @@ class EmailTemplateTests(TestCase):
             keys,
             [
                 "workspace_invite",
+                "password_reset",
                 "signing_invite",
                 "signing_reminder",
                 "cc_notice",
@@ -363,7 +364,7 @@ class EmailTemplateTests(TestCase):
         tenant = Tenant.objects.get(slug="mail-co")
         self.assertEqual(
             self.EmailTemplate.objects.filter(tenant=tenant).count(),
-            7,
+            len(self.EmailTemplateKey.ALL),
         )
 
 
