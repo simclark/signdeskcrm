@@ -52,8 +52,11 @@ jobs:
           DJANGO_SECRET_KEY: ci-test-secret-key-at-least-32-chars
           DJANGO_DEBUG: "true"
           MYSQL_DATABASE: signdesk
-          MYSQL_USER: signdesk
-          MYSQL_PASSWORD: signdesk
+          # MySQL image only grants MYSQL_USER on MYSQL_DATABASE; Django needs
+          # CREATE DATABASE for test_signdesk. Use root in CI (local Compose
+          # applies deploy/mysql-init/01-grants.sql for the app user).
+          MYSQL_USER: root
+          MYSQL_PASSWORD: rootpass
           MYSQL_HOST: 127.0.0.1
           MYSQL_PORT: "3306"
           CELERY_BROKER_URL: redis://127.0.0.1:6379/0
