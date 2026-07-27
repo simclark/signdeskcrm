@@ -106,6 +106,10 @@ npm run dev
 
 Live demo walkthrough: [docs/demo/ESIGN_DEMO.md](docs/demo/ESIGN_DEMO.md)
 
+## End-user help
+
+Every workspace includes in-app **Help** at `/app/help` (left nav + avatar menu). Repo mirror: [docs/help/README.md](docs/help/README.md).
+
 ## Form library, listings & CRM outreach
 
 Horizontal capabilities (first design partner: real estate — see `docs/design-partner/`):

@@ -598,3 +598,12 @@ body {
 .sd-nav-collapsed .mantine-NavLink-body {
   display: none;
 }
+
+.sd-help-card:hover {
+  border-color: rgba(11, 110, 79, 0.35);
+  box-shadow: 0 4px 16px rgba(16, 42, 35, 0.06);
+}
+
+.sd-help-markdown .sd-help-list p {
+  margin: 0;
+}

@@ -31,6 +31,8 @@ import { EnvelopesPage } from './features/envelopes/EnvelopesPage'
 import { EnvelopePreparePage } from './features/envelopes/EnvelopePreparePage'
 import { EnvelopeDetailPage } from './features/envelopes/EnvelopeDetailPage'
 import { SettingsPage } from './features/administration/SettingsPage'
+import { HelpPage } from './features/help/HelpPage'
+import { HelpArticlePage } from './features/help/HelpArticlePage'
 import { PlatformLayout } from './features/platform/PlatformLayout'
 import { PlatformTenantsPage } from './features/platform/PlatformTenantsPage'
 import { PlatformTenantDetailPage } from './features/platform/PlatformTenantDetailPage'
@@ -99,6 +101,8 @@ const appRouter = createBrowserRouter([
       { path: 'envelopes/new', element: <Navigate to="/app/envelopes" replace /> },
       { path: 'envelopes/:id/prepare', element: <EnvelopePreparePage /> },
       { path: 'envelopes/:id', element: <EnvelopeDetailPage /> },
+      { path: 'help', element: <HelpPage /> },
+      { path: 'help/:slug', element: <HelpArticlePage /> },
       {
         path: 'administration',
         children: [

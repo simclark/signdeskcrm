@@ -17,6 +17,7 @@ import {
   IconBuilding,
   IconCalendarDue,
   IconFileText,
+  IconHelp,
   IconHome,
   IconLayoutDashboard,
   IconLayoutSidebarLeftCollapse,
@@ -58,6 +59,7 @@ const MEMBER_LINKS: NavItem[] = [
   { to: '/app/companies', label: 'Companies', icon: IconBuilding },
   { to: '/app/follow-ups', label: 'Follow-ups', icon: IconCalendarDue },
   { to: '/app/follow-up-plans', label: 'Follow-up plans', icon: IconMailForward },
+  { to: '/app/help', label: 'Help', icon: IconHelp },
 ]
 
 /** Extra navigation only for tenant owners and admins. */
@@ -250,6 +252,9 @@ function AppShellContent() {
                 </Menu.Label>
                 <Menu.Item leftSection={<IconUser size={14} />} onClick={openProfile}>
                   Profile
+                </Menu.Item>
+                <Menu.Item leftSection={<IconHelp size={14} />} component={Link} to="/app/help">
+                  Help
                 </Menu.Item>
                 <Menu.Divider />
                 <Menu.Item leftSection={<IconLogout size={14} />} onClick={logout}>
