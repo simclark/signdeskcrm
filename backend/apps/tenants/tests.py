@@ -596,16 +596,38 @@ class PlatformOpsTests(TestCase):
     def test_reset_demo_tenant(self):
         from apps.contacts.models import Contact
         from apps.documents.models import Template
-        from apps.tenants.services.demo import reset_demo_tenant
+        from apps.tenants.models import Membership
+        from apps.tenants.services.demo import (
+            DEMO_ADMIN_EMAIL,
+            DEMO_MEMBER_EMAIL,
+            DEMO_OWNER_EMAIL_DEFAULT,
+            reset_demo_tenant,
+        )
 
         result = reset_demo_tenant(owner_password="demo-pass-123")
         self.assertEqual(result.tenant.slug, "demo")
+        self.assertTrue(result.password_set)
         self.assertTrue(
             Template.objects.filter(
                 tenant=result.tenant, library_key="sample-purchase-agreement"
             ).exists()
         )
         self.assertEqual(Contact.objects.filter(tenant=result.tenant).count(), 2)
+
+        memberships = {
+            m.user.email.lower(): m.role
+            for m in Membership.objects.filter(tenant=result.tenant, is_active=True).select_related(
+                "user"
+            )
+        }
+        self.assertEqual(
+            memberships,
+            {
+                DEMO_OWNER_EMAIL_DEFAULT: Membership.Role.OWNER,
+                DEMO_ADMIN_EMAIL: Membership.Role.ADMIN,
+                DEMO_MEMBER_EMAIL: Membership.Role.MEMBER,
+            },
+        )
 
         self.client.force_authenticate(self.staff)
         res = self.client.post("/api/platform/demo/reset/", {}, format="json")

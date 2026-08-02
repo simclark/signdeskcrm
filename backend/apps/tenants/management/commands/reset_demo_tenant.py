@@ -1,6 +1,13 @@
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.tenants.services.demo import DEMO_OWNER_EMAIL_DEFAULT, DEMO_SLUG, reset_demo_tenant
+from apps.tenants.services.demo import (
+    DEMO_ADMIN_EMAIL,
+    DEMO_MEMBER_EMAIL,
+    DEMO_OWNER_EMAIL_DEFAULT,
+    DEMO_PASSWORD_DEFAULT,
+    DEMO_SLUG,
+    reset_demo_tenant,
+)
 
 
 class Command(BaseCommand):
@@ -15,7 +22,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "--password",
             default=None,
-            help="Set/reset the demo owner password",
+            help=(
+                f"Set/reset password for Owner, Admin, and Member "
+                f"(default: {DEMO_PASSWORD_DEFAULT})"
+            ),
         )
 
     def handle(self, *args, **options):
@@ -33,9 +43,11 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(f"Reset demo tenant '{tenant.slug}'"))
         self.stdout.write(f"  URL: {tenant.frontend_url('/login')}")
-        self.stdout.write(f"  Owner: {result.owner_email}")
-        if result.password_set:
-            self.stdout.write("  Password was set/reset for the demo owner.")
-        else:
-            self.stdout.write("  Existing owner password unchanged (pass --password to reset).")
+        self.stdout.write(f"  Owner:  {result.owner_email}")
+        self.stdout.write(f"  Admin:  {DEMO_ADMIN_EMAIL}")
+        self.stdout.write(f"  Member: {DEMO_MEMBER_EMAIL}")
+        self.stdout.write(
+            f"  Password set for all three "
+            f"({options.get('password') or DEMO_PASSWORD_DEFAULT})."
+        )
         self.stdout.write("  Seeded: Sample Purchase Agreement + Buyer Ada / Seller Sam contacts.")

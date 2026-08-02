@@ -52,8 +52,14 @@ export function PlatformDemoPage() {
       <Stack gap={4}>
         <Title order={2}>Demo workspace</Title>
         <Text c="dimmed" size="sm">
-          Resets the reserved <Code>demo</Code> tenant to a single Sample Purchase Agreement and
-          Buyer/Seller contacts. Safe to run between pitches (local or production).
+          Resets the reserved <Code>demo</Code> tenant to a single Sample Purchase Agreement,
+          Buyer/Seller contacts, and Owner / Admin / Member demo users. Safe to run between pitches
+          (local or production).
+        </Text>
+        <Text c="dimmed" size="sm">
+          Default logins (password <Code>demo-pass-123</Code> unless overridden):{' '}
+          <Code>owner@demo.signdeskcrm.test</Code>, <Code>admin@demo.signdeskcrm.test</Code>,{' '}
+          <Code>member@demo.signdeskcrm.test</Code>.
         </Text>
       </Stack>
 
@@ -67,7 +73,7 @@ export function PlatformDemoPage() {
           <TextInput
             label="Owner password (optional)"
             type="password"
-            description="Set or reset the demo owner password"
+            description="Set or reset password for Owner, Admin, and Member (default demo-pass-123)"
             {...form.getInputProps('owner_password')}
           />
           <Button color="red" variant="light" onClick={openConfirm}>

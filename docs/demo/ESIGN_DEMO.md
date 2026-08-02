@@ -26,9 +26,15 @@ Break-glass CLI:
 docker compose exec api python manage.py reset_demo_tenant
 ```
 
-Default owner: `owner@demo.signdeskcrm.test` (set password with `--password` on first reset).
+Reset seeds three accounts (shared password `demo-pass-123` unless you pass `--password`):
 
-Log in at http://demo.signdeskcrm.test:5173/login and confirm **Templates → Form library** has the sample purchase agreement.
+| Role | Email | Access |
+|---|---|---|
+| Owner | `owner@demo.signdeskcrm.test` | Full access including Settings and member management |
+| Admin | `admin@demo.signdeskcrm.test` | Day-to-day work + Settings (cannot change Owner) |
+| Member | `member@demo.signdeskcrm.test` | Envelopes, documents, templates, CRM — **no Settings** |
+
+Log in at http://demo.signdeskcrm.test:5173/login and confirm **Templates → Form library** has the sample purchase agreement. To show roles: Member has no Settings nav; Admin/Owner do.
 
 The `demo` slug is reserved for Platform reset — do not create it via signup.
 

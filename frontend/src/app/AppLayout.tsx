@@ -48,24 +48,52 @@ type NavItem = {
   children?: { to: string; label: string }[]
 }
 
-/** Shared workspace navigation for every member. */
-const MEMBER_LINKS: NavItem[] = [
-  { to: '/app', label: 'Dashboard', icon: IconLayoutDashboard },
-  { to: '/app/envelopes', label: 'Envelopes', icon: IconSend },
-  { to: '/app/documents', label: 'Documents', icon: IconFileText },
-  { to: '/app/templates', label: 'Templates', icon: IconTemplate },
-  { to: '/app/listings', label: 'Listings', icon: IconHome },
-  { to: '/app/contacts', label: 'Contacts', icon: IconUsers },
-  { to: '/app/companies', label: 'Companies', icon: IconBuilding },
-  { to: '/app/follow-ups', label: 'Follow-ups', icon: IconCalendarDue },
-  { to: '/app/follow-up-plans', label: 'Follow-up plans', icon: IconMailForward },
-  { to: '/app/help', label: 'Help', icon: IconHelp },
+type NavGroup = {
+  /** Empty label = no section header (e.g. Dashboard). */
+  label: string
+  items: NavItem[]
+}
+
+/** Shared workspace navigation for every member, grouped for scanning. */
+const MEMBER_NAV_GROUPS: NavGroup[] = [
+  {
+    label: '',
+    items: [{ to: '/app', label: 'Dashboard', icon: IconLayoutDashboard }],
+  },
+  {
+    label: 'Signing',
+    items: [
+      { to: '/app/envelopes', label: 'Envelopes', icon: IconSend },
+      { to: '/app/documents', label: 'Documents', icon: IconFileText },
+      { to: '/app/templates', label: 'Templates', icon: IconTemplate },
+    ],
+  },
+  {
+    label: 'CRM',
+    items: [
+      { to: '/app/contacts', label: 'Contacts', icon: IconUsers },
+      { to: '/app/companies', label: 'Companies', icon: IconBuilding },
+      { to: '/app/listings', label: 'Listings', icon: IconHome },
+    ],
+  },
+  {
+    label: 'Follow-up',
+    items: [
+      { to: '/app/follow-ups', label: 'Follow-ups', icon: IconCalendarDue },
+      { to: '/app/follow-up-plans', label: 'Follow-up plans', icon: IconMailForward },
+    ],
+  },
+  {
+    label: 'Support',
+    items: [{ to: '/app/help', label: 'Help', icon: IconHelp }],
+  },
 ]
 
 /** Extra navigation only for tenant owners and admins. */
-const ADMIN_LINKS: NavItem[] = [
-  { to: '/app/administration/settings', label: 'Settings', icon: IconSettings },
-]
+const ADMIN_NAV_GROUP: NavGroup = {
+  label: 'Administration',
+  items: [{ to: '/app/administration/settings', label: 'Settings', icon: IconSettings }],
+}
 
 function isPathActive(pathname: string, to: string) {
   return pathname === to || (to !== '/app' && pathname.startsWith(to))
@@ -89,9 +117,12 @@ function AppShellContent() {
   const iconUrl = toAppMediaUrl(tenant?.icon)
   const listingsEnabled = Boolean(tenant?.listings_enabled)
 
-  const memberLinks = MEMBER_LINKS.filter(
-    (link) => listingsEnabled || link.to !== '/app/listings',
-  )
+  const memberNavGroups = MEMBER_NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((link) => listingsEnabled || link.to !== '/app/listings'),
+  })).filter((group) => group.items.length > 0)
+
+  const navGroups = isAdmin ? [...memberNavGroups, ADMIN_NAV_GROUP] : memberNavGroups
 
   useEffect(() => {
     setDocumentFavicon(iconUrl)
@@ -166,6 +197,36 @@ function AppShellContent() {
       </Tooltip>
     )
   }
+
+  const renderGroup = (group: NavGroup, index: number) => (
+    <div key={group.label || `nav-group-${index}`}>
+      {group.label && !navCollapsed ? (
+        <Text
+          size="xs"
+          c="dimmed"
+          fw={600}
+          tt="uppercase"
+          mt={index === 0 ? 0 : 'md'}
+          mb={6}
+          px={12}
+          style={{ letterSpacing: '0.04em' }}
+        >
+          {group.label}
+        </Text>
+      ) : null}
+      {navCollapsed && index > 0 ? (
+        <div
+          aria-hidden
+          style={{
+            height: 1,
+            margin: '8px 6px',
+            background: 'rgba(16,42,35,0.1)',
+          }}
+        />
+      ) : null}
+      {group.items.map((link) => renderLink(link))}
+    </div>
+  )
 
   return (
     <AppShell
@@ -290,30 +351,7 @@ function AppShellContent() {
             <Image src={iconUrl} alt={tenant!.name} w={32} h={32} radius="sm" fit="contain" />
           </Group>
         ) : null}
-        {memberLinks.map((link) => renderLink(link))}
-        {isAdmin && (
-          <>
-            {!navCollapsed ? (
-              <>
-                <Text
-                  size="xs"
-                  c="dimmed"
-                  fw={600}
-                  tt="uppercase"
-                  mt="md"
-                  mb={6}
-                  px={12}
-                  style={{ letterSpacing: '0.04em' }}
-                >
-                  Administration
-                </Text>
-                {ADMIN_LINKS.map((link) => renderLink(link))}
-              </>
-            ) : (
-              ADMIN_LINKS.map((link) => renderLink(link))
-            )}
-          </>
-        )}
+        {navGroups.map((group, index) => renderGroup(group, index))}
       </AppShell.Navbar>
 
       <AppShell.Main>
