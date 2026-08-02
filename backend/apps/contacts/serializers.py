@@ -26,6 +26,14 @@ class CompanySerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "created_at", "updated_at")
 
+    def validate_website(self, value):
+        value = (value or "").strip()
+        if not value:
+            return ""
+        if not value.startswith(("http://", "https://")):
+            value = f"https://{value}"
+        return value
+
 
 class ContactSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)

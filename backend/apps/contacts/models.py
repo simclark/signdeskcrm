@@ -6,7 +6,7 @@ from apps.tenants.models_base import TenantOwnedModel
 
 class Company(TenantOwnedModel):
     name = models.CharField(max_length=255)
-    website = models.URLField(blank=True)
+    website = models.CharField(max_length=255, blank=True)
     notes = models.TextField(blank=True)
     is_archived = models.BooleanField(default=False)
 

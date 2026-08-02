@@ -11,11 +11,12 @@ import {
 } from '@mantine/core'
 import { useDebouncedValue, useDisclosure } from '@mantine/hooks'
 import { useForm } from '@mantine/form'
+import { notifications } from '@mantine/notifications'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconSearch, IconTrash } from '@tabler/icons-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../../shared/api'
+import { ApiError, api } from '../../shared/api'
 import { DataTable } from '../../shared/DataTable'
 
 type Company = { id: number; name: string; website: string; notes: string }
@@ -44,6 +45,13 @@ export function CompaniesPage() {
       qc.invalidateQueries({ queryKey: ['companies'] })
       close()
       form.reset()
+    },
+    onError: (err) => {
+      notifications.show({
+        color: 'red',
+        title: 'Could not create company',
+        message: err instanceof ApiError ? err.message : 'Could not create company',
+      })
     },
   })
   const remove = useMutation({

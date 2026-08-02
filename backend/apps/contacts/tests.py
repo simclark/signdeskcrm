@@ -87,6 +87,29 @@ class ContactCompanyPhase2Tests(TestCase):
         self.assertEqual(res.status_code, 201)
         self.assertEqual(res.data["kind"], Activity.Kind.NOTE)
 
+    def test_create_company_normalizes_bare_website(self):
+        res = self.client.post(
+            "/api/companies/",
+            {"name": "Initech", "website": "initech.example", "notes": ""},
+            format="json",
+            **self.host,
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["website"], "https://initech.example")
+        self.assertTrue(
+            Company.objects.filter(tenant=self.tenant, name="Initech").exists()
+        )
+
+    def test_create_company_allows_blank_website(self):
+        res = self.client.post(
+            "/api/companies/",
+            {"name": "No Site Co", "website": "", "notes": ""},
+            format="json",
+            **self.host,
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["website"], "")
+
     def test_related_envelopes(self):
         contact_res = self.client.get(
             f"/api/contacts/{self.contact.id}/envelopes/", **self.host
