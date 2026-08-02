@@ -110,6 +110,56 @@ class ContactCompanyPhase2Tests(TestCase):
         self.assertEqual(res.status_code, 201)
         self.assertEqual(res.data["website"], "")
 
+    def test_create_contact_rejects_duplicate_email(self):
+        res = self.client.post(
+            "/api/contacts/",
+            {
+                "first_name": "Ada",
+                "last_name": "Copy",
+                "email": "ADA@globex.test",
+            },
+            format="json",
+            **self.host,
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("email", res.data)
+        self.assertEqual(Contact.objects.filter(tenant=self.tenant).count(), 1)
+
+    def test_archived_contact_frees_email(self):
+        delete_res = self.client.delete(
+            f"/api/contacts/{self.contact.id}/", **self.host
+        )
+        self.assertEqual(delete_res.status_code, 204)
+        self.contact.refresh_from_db()
+        self.assertTrue(self.contact.is_archived)
+        self.assertIsNone(self.contact.active_email)
+
+        res = self.client.post(
+            "/api/contacts/",
+            {
+                "first_name": "Ada",
+                "last_name": "Again",
+                "email": "ada@globex.test",
+            },
+            format="json",
+            **self.host,
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["email"], "ada@globex.test")
+        self.assertEqual(
+            Contact.objects.filter(tenant=self.tenant, is_archived=False).count(), 1
+        )
+
+    def test_create_company_rejects_duplicate_name(self):
+        res = self.client.post(
+            "/api/companies/",
+            {"name": "globex", "website": "", "notes": ""},
+            format="json",
+            **self.host,
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("name", res.data)
+
     def test_related_envelopes(self):
         contact_res = self.client.get(
             f"/api/contacts/{self.contact.id}/envelopes/", **self.host

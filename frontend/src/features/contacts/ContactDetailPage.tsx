@@ -20,7 +20,7 @@ import { notifications } from '@mantine/notifications'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api } from '../../shared/api'
+import { ApiError, api } from '../../shared/api'
 import { PageBreadcrumbs } from '../../shared/PageBreadcrumbs'
 import { useCreateEnvelope } from '../envelopes/CreateEnvelopeContext'
 import { ActivityFeed, type Activity } from './ActivityFeed'
@@ -160,6 +160,21 @@ export function ContactDetailPage() {
       qc.invalidateQueries({ queryKey: ['contacts'] })
       qc.invalidateQueries({ queryKey: ['contact-activities', id] })
       closeEdit()
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.data && typeof err.data === 'object') {
+        const data = err.data as Record<string, unknown>
+        const fieldErrors: Record<string, string> = {}
+        for (const [key, value] of Object.entries(data)) {
+          if (Array.isArray(value) && value[0]) fieldErrors[key] = String(value[0])
+        }
+        if (Object.keys(fieldErrors).length) form.setErrors(fieldErrors)
+      }
+      notifications.show({
+        color: 'red',
+        title: 'Could not update contact',
+        message: err instanceof ApiError ? err.message : 'Could not update contact',
+      })
     },
   })
 

@@ -120,9 +120,21 @@ export async function api<T = unknown>(
   const text = await res.text()
   const data = text ? JSON.parse(text) : null
   if (!res.ok) {
-    throw new ApiError(data?.detail || 'Request failed', res.status, data)
+    throw new ApiError(apiErrorMessage(data), res.status, data)
   }
   return data as T
+}
+
+function apiErrorMessage(data: unknown): string {
+  if (!data || typeof data !== 'object') return 'Request failed'
+  const record = data as Record<string, unknown>
+  if (typeof record.detail === 'string' && record.detail) return record.detail
+  if (Array.isArray(record.detail) && record.detail[0]) return String(record.detail[0])
+  for (const value of Object.values(record)) {
+    if (Array.isArray(value) && value[0]) return String(value[0])
+    if (typeof value === 'string' && value) return value
+  }
+  return 'Request failed'
 }
 
 /** Fetch binary media (PDFs) with JWT + tenant headers; refresh once on 401. */

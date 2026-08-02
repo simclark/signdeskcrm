@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { ApiError, api } from '../../shared/api'
+import { useConfirm } from '../../shared/confirm'
 import { DataTable } from '../../shared/DataTable'
 
 type PlatformTenantDetail = {
@@ -69,6 +70,7 @@ type OpsEvent = {
 export function PlatformTenantDetailPage() {
   const { id } = useParams()
   const queryClient = useQueryClient()
+  const confirm = useConfirm()
   const [inviteEmail, setInviteEmail] = useState('')
   const [suspendOpened, { open: openSuspend, close: closeSuspend }] = useDisclosure(false)
   const [suspendConfirm, setSuspendConfirm] = useState('')
@@ -183,6 +185,16 @@ export function PlatformTenantDetailPage() {
       })
     },
   })
+
+  async function confirmRevokeInvite(email: string, inviteId: number) {
+    const ok = await confirm({
+      title: 'Revoke invitation',
+      message: `Revoke the invitation for ${email}?`,
+      confirmLabel: 'Revoke',
+      danger: true,
+    })
+    if (ok) revokeInvite.mutate(inviteId)
+  }
 
   const seedForms = useMutation({
     mutationFn: (replace: boolean) =>
@@ -388,7 +400,7 @@ export function PlatformTenantDetailPage() {
                         color="red"
                         variant="subtle"
                         loading={revokeInvite.isPending}
-                        onClick={() => revokeInvite.mutate(inv.id)}
+                        onClick={() => void confirmRevokeInvite(inv.email, inv.id)}
                       >
                         Revoke
                       </Button>

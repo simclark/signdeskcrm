@@ -42,6 +42,8 @@ class Contact(TenantOwnedModel):
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150, blank=True)
     email = models.EmailField()
+    # Unique among active contacts only; NULL when archived (MySQL allows many NULLs).
+    active_email = models.EmailField(null=True, blank=True)
     phone = models.CharField(max_length=50, blank=True)
     title = models.CharField(max_length=150, blank=True)
     notes = models.TextField(blank=True)
@@ -56,8 +58,8 @@ class Contact(TenantOwnedModel):
         ordering = ["last_name", "first_name"]
         constraints = [
             models.UniqueConstraint(
-                fields=["tenant", "email"],
-                name="uniq_contact_email_per_tenant",
+                fields=["tenant", "active_email"],
+                name="uniq_contact_active_email_per_tenant",
             )
         ]
 
@@ -67,6 +69,19 @@ class Contact(TenantOwnedModel):
     @property
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip()
+
+    def sync_active_email(self) -> None:
+        if self.is_archived:
+            self.active_email = None
+        else:
+            self.active_email = (self.email or "").strip().lower() or None
+
+    def save(self, *args, **kwargs):
+        self.sync_active_email()
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            kwargs["update_fields"] = set(update_fields) | {"active_email"}
+        super().save(*args, **kwargs)
 
 
 class Listing(TenantOwnedModel):

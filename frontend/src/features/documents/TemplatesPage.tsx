@@ -33,6 +33,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { api } from '../../shared/api'
+import { useConfirm } from '../../shared/confirm'
 import { DataTable } from '../../shared/DataTable'
 import { formatDate } from '../../shared/formatDate'
 import type { TemplateListItem } from './templateTypes'
@@ -46,6 +47,7 @@ type DocumentRow = {
 export function TemplatesPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const { membership } = useAuth()
   const isAdmin = membership?.role === 'owner' || membership?.role === 'admin'
   const [opened, { open, close }] = useDisclosure(false)
@@ -190,6 +192,16 @@ export function TemplatesPage() {
     onError: (err: Error) =>
       notifications.show({ color: 'red', title: 'Could not archive', message: err.message }),
   })
+
+  async function confirmArchive(template: TemplateListItem) {
+    const ok = await confirm({
+      title: 'Archive template',
+      message: `Archive template “${template.name}”?`,
+      confirmLabel: 'Archive',
+      danger: true,
+    })
+    if (ok) archive.mutate(template.id)
+  }
 
   const addToLibrary = useMutation({
     mutationFn: (templateId: number) =>
@@ -385,11 +397,7 @@ export function TemplatesPage() {
                           color="red"
                           leftSection={<IconArchive size={14} />}
                           disabled={archive.isPending}
-                          onClick={() => {
-                            if (window.confirm(`Archive template “${t.name}”?`)) {
-                              archive.mutate(t.id)
-                            }
-                          }}
+                          onClick={() => void confirmArchive(t)}
                         >
                           Archive
                         </Menu.Item>

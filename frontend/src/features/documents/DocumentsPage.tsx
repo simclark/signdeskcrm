@@ -25,6 +25,7 @@ import {
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../../shared/api'
+import { useConfirm } from '../../shared/confirm'
 import { DataTable } from '../../shared/DataTable'
 import { formatDate } from '../../shared/formatDate'
 import { useCreateEnvelope } from '../envelopes/CreateEnvelopeContext'
@@ -48,6 +49,7 @@ type DocumentRow = {
 export function DocumentsPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const confirm = useConfirm()
   const { openCreateEnvelope } = useCreateEnvelope()
 
   const [preview, setPreview] = useState<DocumentRow | null>(null)
@@ -163,19 +165,23 @@ export function DocumentsPage() {
     openTemplate()
   }
 
-  function confirmDelete(doc: DocumentRow) {
+  async function confirmDelete(doc: DocumentRow) {
     const used = (doc.template_count || 0) + (doc.envelope_count || 0)
-    const warning =
-      used > 0
-        ? `“${doc.title}” is used by ${doc.template_count || 0} template(s) and ${doc.envelope_count || 0} envelope(s). It cannot be deleted while in use.`
-        : `Delete “${doc.title}”? This cannot be undone.`
     if (used > 0) {
-      notifications.show({ color: 'yellow', title: 'Document in use', message: warning })
+      notifications.show({
+        color: 'yellow',
+        title: 'Document in use',
+        message: `“${doc.title}” is used by ${doc.template_count || 0} template(s) and ${doc.envelope_count || 0} envelope(s). It cannot be deleted while in use.`,
+      })
       return
     }
-    if (window.confirm(warning)) {
-      remove.mutate(doc)
-    }
+    const ok = await confirm({
+      title: 'Delete document',
+      message: `Delete “${doc.title}”? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (ok) remove.mutate(doc)
   }
 
   return (
@@ -268,7 +274,7 @@ export function DocumentsPage() {
                         color="red"
                         leftSection={<IconTrash size={14} />}
                         disabled={remove.isPending}
-                        onClick={() => confirmDelete(d)}
+                        onClick={() => void confirmDelete(d)}
                       >
                         Delete
                       </Menu.Item>

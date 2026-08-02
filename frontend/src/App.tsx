@@ -43,6 +43,7 @@ import { PlatformAuditPage } from './features/platform/PlatformAuditPage'
 import { RedirectToPlatformHost } from './features/platform/RedirectToPlatformHost'
 import { SigningPage } from './features/signing/SigningPage'
 import { isApexHost, isPlatformHost } from './shared/api'
+import { ConfirmProvider } from './shared/confirm'
 
 const queryClient = new QueryClient()
 
@@ -123,9 +124,11 @@ export default function App() {
     <MantineProvider theme={theme} defaultColorScheme="light">
       <Notifications position="top-right" />
       <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <RouterProvider router={router} />
-        </AuthProvider>
+        <ConfirmProvider>
+          <AuthProvider>
+            <RouterProvider router={router} />
+          </AuthProvider>
+        </ConfirmProvider>
       </QueryClientProvider>
     </MantineProvider>
   )

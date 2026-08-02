@@ -38,6 +38,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { api, ApiError } from '../../shared/api'
+import { useConfirm } from '../../shared/confirm'
 import { DataTable } from '../../shared/DataTable'
 import { toAppMediaUrl } from '../../shared/mediaUrl'
 import { timezoneSelectData } from '../../shared/timezones'
@@ -266,6 +267,7 @@ function EmailPreviewIframe({ srcDoc }: { srcDoc: string }) {
 export function SettingsPage() {
   const { tenant, membership, refreshMe } = useAuth()
   const queryClient = useQueryClient()
+  const confirm = useConfirm()
   const isAdmin = membership?.role === 'owner' || membership?.role === 'admin'
   const [iconFile, setIconFile] = useState<File | null>(null)
   const [logoFile, setLogoFile] = useState<File | null>(null)
@@ -686,6 +688,16 @@ export function SettingsPage() {
       })
     },
   })
+
+  async function confirmRevokeInvite(email: string, id: number) {
+    const ok = await confirm({
+      title: 'Revoke invitation',
+      message: `Revoke the invitation for ${email}?`,
+      confirmLabel: 'Revoke',
+      danger: true,
+    })
+    if (ok) revokeInvite.mutate(id)
+  }
 
   const updateMember = useMutation({
     mutationFn: ({ id, ...json }: { id: number; role?: string; is_active?: boolean }) =>
@@ -1554,7 +1566,7 @@ export function SettingsPage() {
                                 variant="subtle"
                                 color="red"
                                 loading={revokeInvite.isPending}
-                                onClick={() => revokeInvite.mutate(inv.id)}
+                                onClick={() => void confirmRevokeInvite(inv.email, inv.id)}
                               >
                                 Revoke
                               </Button>

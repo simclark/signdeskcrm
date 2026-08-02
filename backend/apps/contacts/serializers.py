@@ -26,6 +26,22 @@ class CompanySerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "created_at", "updated_at")
 
+    def validate_name(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("This field may not be blank.")
+        request = self.context.get("request")
+        tenant = getattr(request, "tenant", None) if request else None
+        if tenant:
+            qs = Company.objects.filter(tenant=tenant, name__iexact=value)
+            if self.instance is not None:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    "A company with this name already exists."
+                )
+        return value
+
     def validate_website(self, value):
         value = (value or "").strip()
         if not value:
@@ -60,6 +76,22 @@ class ContactSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = ("id", "full_name", "company_name", "created_at", "updated_at")
+
+    def validate_email(self, value):
+        value = (value or "").strip().lower()
+        request = self.context.get("request")
+        tenant = getattr(request, "tenant", None) if request else None
+        if tenant and value:
+            qs = Contact.objects.filter(
+                tenant=tenant, active_email=value, is_archived=False
+            )
+            if self.instance is not None:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    "A contact with this email already exists."
+                )
+        return value
 
     def validate_tags(self, value):
         if value is None:

@@ -17,12 +17,14 @@ import { IconSearch, IconTrash } from '@tabler/icons-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ApiError, api } from '../../shared/api'
+import { useConfirm } from '../../shared/confirm'
 import { DataTable } from '../../shared/DataTable'
 
 type Company = { id: number; name: string; website: string; notes: string }
 
 export function CompaniesPage() {
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const [opened, { open, close }] = useDisclosure(false)
   const [search, setSearch] = useState('')
   const [debouncedSearch] = useDebouncedValue(search, 300)
@@ -58,6 +60,16 @@ export function CompaniesPage() {
     mutationFn: (id: number) => api(`/api/companies/${id}/`, { method: 'DELETE' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
   })
+
+  async function confirmRemove(company: Company) {
+    const ok = await confirm({
+      title: 'Delete company',
+      message: `Delete “${company.name}”? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (ok) remove.mutate(company.id)
+  }
 
   const rows = data?.results || []
 
@@ -105,7 +117,7 @@ export function CompaniesPage() {
                 </DataTable.Td>
                 <DataTable.Td className="sd-table-muted">{c.website || '—'}</DataTable.Td>
                 <DataTable.Td className="sd-table-actions">
-                  <ActionIcon color="red" variant="subtle" onClick={() => remove.mutate(c.id)}>
+                  <ActionIcon color="red" variant="subtle" onClick={() => void confirmRemove(c)}>
                     <IconTrash size={16} />
                   </ActionIcon>
                 </DataTable.Td>

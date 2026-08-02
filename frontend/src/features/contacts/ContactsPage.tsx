@@ -12,11 +12,13 @@ import {
 } from '@mantine/core'
 import { useDebouncedValue, useDisclosure } from '@mantine/hooks'
 import { useForm } from '@mantine/form'
+import { notifications } from '@mantine/notifications'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconSearch, IconTrash } from '@tabler/icons-react'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { api } from '../../shared/api'
+import { ApiError, api } from '../../shared/api'
+import { useConfirm } from '../../shared/confirm'
 import { DataTable } from '../../shared/DataTable'
 import { useCreateEnvelope } from '../envelopes/CreateEnvelopeContext'
 import { useCompaniesOptions } from './useCompaniesOptions'
@@ -43,6 +45,7 @@ function contactsListUrl(search: string, company: string | null) {
 
 export function ContactsPage() {
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const [searchParams] = useSearchParams()
   const [opened, { open, close }] = useDisclosure(false)
   const { openCreateEnvelope } = useCreateEnvelope()
@@ -90,12 +93,37 @@ export function ContactsPage() {
       close()
       form.reset()
     },
+    onError: (err) => {
+      if (err instanceof ApiError && err.data && typeof err.data === 'object') {
+        const data = err.data as Record<string, unknown>
+        const fieldErrors: Record<string, string> = {}
+        for (const [key, value] of Object.entries(data)) {
+          if (Array.isArray(value) && value[0]) fieldErrors[key] = String(value[0])
+        }
+        if (Object.keys(fieldErrors).length) form.setErrors(fieldErrors)
+      }
+      notifications.show({
+        color: 'red',
+        title: 'Could not create contact',
+        message: err instanceof ApiError ? err.message : 'Could not create contact',
+      })
+    },
   })
 
   const remove = useMutation({
     mutationFn: (id: number) => api(`/api/contacts/${id}/`, { method: 'DELETE' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['contacts'] }),
   })
+
+  async function confirmRemove(contact: Contact) {
+    const ok = await confirm({
+      title: 'Delete contact',
+      message: `Delete “${contact.full_name}”? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (ok) remove.mutate(contact.id)
+  }
 
   const rows = data?.results || []
 
@@ -183,7 +211,7 @@ export function ContactsPage() {
                     >
                       Send for signature
                     </Button>
-                    <ActionIcon color="red" variant="subtle" onClick={() => remove.mutate(c.id)}>
+                    <ActionIcon color="red" variant="subtle" onClick={() => void confirmRemove(c)}>
                       <IconTrash size={16} />
                     </ActionIcon>
                   </Group>
