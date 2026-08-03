@@ -616,6 +616,49 @@ class FieldRecipientFillModeValidationTests(TestCase):
             h=0.06,
             fill_mode=Field.FillMode.SIGNER,
             label="Sig",
+            value="tenants/2/signatures/2026/08/abc.png",
+        )
+        Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.recipient,
+            field_type=Field.FieldType.TEXT,
+            page=1,
+            x=0.1,
+            y=0.4,
+            w=0.3,
+            h=0.04,
+            fill_mode=Field.FillMode.SIGNER,
+            label="Buyer name",
+            value="My house owner",
+        )
+        Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.recipient,
+            field_type=Field.FieldType.DATE,
+            page=1,
+            x=0.1,
+            y=0.5,
+            w=0.18,
+            h=0.04,
+            fill_mode=Field.FillMode.SIGNER,
+            label="Date",
+            value="2026-08-02",
+        )
+        Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=None,
+            field_type=Field.FieldType.DATE,
+            page=1,
+            x=0.5,
+            y=0.5,
+            w=0.18,
+            h=0.04,
+            fill_mode=Field.FillMode.DOCUMENT,
+            label="Closing date",
+            value="2026-09-15",
         )
         client = APIClient()
         client.force_authenticate(user=self.user)
@@ -626,10 +669,19 @@ class FieldRecipientFillModeValidationTests(TestCase):
         )
         self.assertEqual(res.status_code, 201, getattr(res, "data", res.content))
         clone = Envelope.objects.get(pk=res.data["id"])
-        doc_fields = clone.fields.filter(fill_mode=Field.FillMode.DOCUMENT)
-        self.assertEqual(doc_fields.count(), 1)
-        self.assertIsNone(doc_fields.first().recipient_id)
-        self.assertEqual(clone.fields.filter(fill_mode=Field.FillMode.SIGNER).count(), 1)
+        doc_text = clone.fields.filter(
+            fill_mode=Field.FillMode.DOCUMENT, field_type=Field.FieldType.TEXT
+        )
+        self.assertEqual(doc_text.count(), 1)
+        self.assertIsNone(doc_text.first().recipient_id)
+        self.assertEqual(doc_text.first().value, "99")
+        signer_fields = clone.fields.filter(fill_mode=Field.FillMode.SIGNER)
+        self.assertEqual(signer_fields.count(), 3)
+        self.assertTrue(all(f.value == "" for f in signer_fields))
+        date_fields = clone.fields.filter(field_type=Field.FieldType.DATE)
+        self.assertEqual(date_fields.count(), 2)
+        self.assertTrue(all(f.value == "" for f in date_fields))
+        self.assertEqual(clone.status, Envelope.Status.DRAFT)
 
 
 @override_settings(

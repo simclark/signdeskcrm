@@ -123,6 +123,17 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
             )
             recipient_map[r.id] = nr
         for f in source.fields.all():
+            # Keep document text/checkbox prefill; clear signer answers and
+            # signature/initials/date values (dates must not carry over).
+            keep_value = (
+                f.fill_mode == Field.FillMode.DOCUMENT
+                and f.field_type
+                not in (
+                    Field.FieldType.SIGNATURE,
+                    Field.FieldType.INITIALS,
+                    Field.FieldType.DATE,
+                )
+            )
             Field.objects.create(
                 tenant=request.tenant,
                 envelope=clone,
@@ -137,7 +148,7 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
                 label=f.label,
                 merge_token=f.merge_token,
                 fill_mode=f.fill_mode,
-                value=f.value,
+                value=f.value if keep_value else "",
             )
         return Response(
             EnvelopeSerializer(clone, context={"request": request}).data,
