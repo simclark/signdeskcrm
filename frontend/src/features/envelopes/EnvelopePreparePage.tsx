@@ -34,10 +34,17 @@ import { PageBreadcrumbs } from '../../shared/PageBreadcrumbs'
 import { useAuth } from '../auth/AuthContext'
 import { newFieldId, type EnvelopeDetail, type FieldDraft, type FieldType } from './types'
 
+function isPlaceholderEmail(email: string): boolean {
+  return email.trim().toLowerCase().endsWith('@draft.local')
+}
+
 function validatePrepareDrafts(signers: RoleDraft[], fields: FieldDraft[]): string | null {
   for (const s of signers) {
     if (!s.name.trim() || !s.email.trim()) {
       return 'Each recipient needs a name and email'
+    }
+    if (isPlaceholderEmail(s.email)) {
+      return 'Replace placeholder emails with real addresses'
     }
   }
   const signerIndexes = signers
@@ -87,7 +94,8 @@ function recipientsToDrafts(envelope: EnvelopeDetail, params: URLSearchParams): 
   if (envelope.recipients?.length) {
     return envelope.recipients.map((r, idx) => ({
       name: r.name,
-      email: r.email,
+      // Strip legacy template placeholders so prepare shows an empty email field.
+      email: isPlaceholderEmail(r.email || '') ? '' : r.email || '',
       role: (r.role as 'signer' | 'cc') || 'signer',
       routing_order: r.routing_order || idx + 1,
       contact: r.contact ?? null,
@@ -272,12 +280,15 @@ export function EnvelopePreparePage() {
   const save = useMutation({
     mutationFn: async ({ continueAfter }: { continueAfter: boolean }) => {
       if (!id) throw new Error('Missing envelope')
-      const error = validatePrepareDrafts(signers, fields)
-      if (error) {
-        if (continueAfter) throw new Error(error)
+      // Full validation (incl. emails) only when leaving prepare / sending onward.
+      // Draft progress may keep blank emails for unfilled secondary signers.
+      if (continueAfter) {
+        const error = validatePrepareDrafts(signers, fields)
+        if (error) throw new Error(error)
+      } else {
         for (const s of signers) {
-          if (!s.name.trim() || !s.email.trim()) {
-            throw new Error('Each recipient needs a name and email')
+          if (isPlaceholderEmail(s.email)) {
+            throw new Error('Replace placeholder emails with real addresses')
           }
         }
       }

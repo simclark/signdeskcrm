@@ -242,7 +242,7 @@ export function ContactDetailPage() {
               })
             }
           >
-            Send for signature
+            New envelope
           </Button>
         </Group>
       </Group>

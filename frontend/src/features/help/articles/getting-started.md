@@ -69,8 +69,8 @@ Details: [Listings / Prefill records](listings.md).
 1. Open **Help** in the left nav anytime you need a walkthrough of a screen.
 2. Add a [Company](companies.md) and a few [Contacts](contacts.md).
 3. Upload a PDF under [Documents](documents.md), or open [Templates → Form library](templates-and-form-library.md) and **Clone** a starter.
-4. Click **Send for signature** in the header (or **New envelope** under Envelopes).
-5. Prepare recipients and fields, then **Send**.
+4. Click **New envelope** in the header (or under Envelopes).
+5. Prepare recipients and fields, then **Send for signature**.
 6. Open the envelope to download the signed PDF and Certificate of Completion when finished.
 
 Full walkthrough: [Envelopes](envelopes.md).

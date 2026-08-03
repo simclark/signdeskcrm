@@ -118,7 +118,9 @@ class Recipient(TenantOwnedModel):
         related_name="envelope_recipients",
     )
     name = models.CharField(max_length=255)
-    email = models.EmailField()
+    # Null/blank on drafts until prepare fills real addresses (no @draft.local placeholders).
+    # NULL (not "") so MySQL unique(envelope, email) allows multiple unset recipients.
+    email = models.EmailField(blank=True, null=True)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.SIGNER)
     # Named slot from template roles (buyer / seller / agent / custom)
     role_key = models.CharField(max_length=64, blank=True)
@@ -154,7 +156,7 @@ class Recipient(TenantOwnedModel):
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
-        return f"{self.name} <{self.email}>"
+        return f"{self.name} <{self.email or 'no email'}>"
 
 
 class Field(TenantOwnedModel):

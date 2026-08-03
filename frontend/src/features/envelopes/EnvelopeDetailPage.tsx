@@ -125,12 +125,12 @@ export function EnvelopeDetailPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['envelope', id] })
       qc.invalidateQueries({ queryKey: ['envelope-audit', id] })
-      notifications.show({ color: 'forest', message: 'Envelope sent — check Mailpit' })
+      notifications.show({ color: 'forest', message: 'Invites sent to signers' })
     },
     onError: (err: any) =>
       notifications.show({
         color: 'red',
-        title: 'Send failed',
+        title: 'Could not send for signature',
         message: err?.data?.errors?.join?.(', ') || err.message,
       }),
   })
@@ -199,7 +199,7 @@ export function EnvelopeDetailPage() {
                 Prepare / edit fields
               </Button>
               <Button onClick={() => send.mutate()} loading={send.isPending}>
-                Send
+                Send for signature
               </Button>
             </>
           )}
@@ -301,7 +301,7 @@ export function EnvelopeDetailPage() {
               {(envelope.recipients || []).map((r: any) => (
                 <DataTable.Tr key={r.id}>
                   <DataTable.Td className="sd-table-primary">{r.name}</DataTable.Td>
-                  <DataTable.Td className="sd-table-muted">{r.email}</DataTable.Td>
+                  <DataTable.Td className="sd-table-muted">{r.email || '—'}</DataTable.Td>
                   <DataTable.Td>
                     <Text tt="capitalize" size="sm">
                       {r.role}

@@ -209,7 +209,7 @@ export function ContactsPage() {
                         })
                       }
                     >
-                      Send for signature
+                      New envelope
                     </Button>
                     <ActionIcon color="red" variant="subtle" onClick={() => void confirmRemove(c)}>
                       <IconTrash size={16} />

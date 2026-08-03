@@ -27,9 +27,8 @@ export async function applyTemplateLayout(
       const isFirst = idx === 0 && options?.email
       return {
         name: isFirst ? options!.name || r.label : r.label,
-        email: isFirst
-          ? options!.email!
-          : `signer-${idx + 1}-${envelopeId}@draft.local`,
+        // Leave secondary signers blank — never invent @draft.local placeholders.
+        email: isFirst ? options!.email! : '',
         role: 'signer' as const,
         routing_order: idx + 1,
         contact: isFirst ? options?.contact || null : null,
@@ -55,9 +54,7 @@ export async function applyTemplateLayout(
         )?.role_key || ''
       return {
         name: isFirst ? options!.name || `Signer ${idx + 1}` : `Signer ${idx + 1}`,
-        email: isFirst
-          ? options!.email!
-          : `signer-${idx + 1}-${envelopeId}@draft.local`,
+        email: isFirst ? options!.email! : '',
         role: 'signer' as const,
         routing_order: idx + 1,
         contact: isFirst ? options?.contact || null : null,

@@ -8,6 +8,8 @@ export type CreateEnvelopePrefill = {
   email?: string
   /** Prefill “Existing document” source when opening from Documents. */
   documentId?: number
+  /** Prefill “From template” source when opening from Templates. */
+  templateId?: number
   title?: string
 }
 

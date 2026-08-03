@@ -62,7 +62,7 @@ docker compose exec api python manage.py seed_form_library --tenant-slug demo
   - Title: `Demo Purchase Agreement`
   - Recipients: Buyer Ada (order 1), Seller Sam (order 2), routing **Sequential**
   - Optional: add a CC to show copy-only notice (not “Review and sign”)
-- Place at least one **signature** (and ideally a **date**) per signer → **Save** → **Send**
+- Place at least one **signature** (and ideally a **date**) per signer → **Save** → **Send for signature**
 
 ### 3. Buyer signs via Mailpit (90s)
 

@@ -32,7 +32,7 @@ On a contact you can:
 |---|---|
 | **Edit** | Update profile fields, company link, tags, notes |
 | **Schedule follow-up** | Create a task on [Follow-ups](follow-ups.md) |
-| **Send for signature** | Start an [envelope](envelopes.md) with this person in mind |
+| **New envelope** | Start an [envelope](envelopes.md) with this person in mind |
 | Review **activity** | Notes and timeline of outreach |
 | Review **related envelopes** | Packets tied to this contact |
 

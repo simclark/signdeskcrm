@@ -235,7 +235,7 @@ export function CompanyDetailPage() {
                           })
                         }
                       >
-                        Send
+                        New envelope
                       </Button>
                     </DataTable.Td>
                   </DataTable.Tr>

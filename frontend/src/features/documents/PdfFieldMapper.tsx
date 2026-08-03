@@ -458,7 +458,9 @@ export function PdfFieldMapper({
   const [labelEditOpen, setLabelEditOpen] = useState(false)
   const [labelDraft, setLabelDraft] = useState('')
   const [canvasFieldsFlyout, setCanvasFieldsFlyout] = useState(false)
+  const [canvasFieldsFlyoutSide, setCanvasFieldsFlyoutSide] = useState<'left' | 'right'>('right')
   const [fieldTypeFlyout, setFieldTypeFlyout] = useState(false)
+  const [fieldTypeFlyoutSide, setFieldTypeFlyoutSide] = useState<'left' | 'right'>('right')
   const [dragOverPage, setDragOverPage] = useState<number | null>(null)
   const [marqueeBox, setMarqueeBox] = useState<{
     page: number
@@ -1223,6 +1225,17 @@ export function PdfFieldMapper({
     cursor: disabled ? 'default' : 'pointer',
   })
 
+  const flyoutSideFor = (el: HTMLElement): 'left' | 'right' =>
+    window.innerWidth - el.getBoundingClientRect().right < 180 ? 'left' : 'right'
+
+  const menuFlyoutStyle = (side: 'left' | 'right'): CSSProperties => ({
+    position: 'absolute',
+    top: 0,
+    minWidth: 160,
+    zIndex: 1001,
+    ...(side === 'left' ? { right: '100%', marginRight: 4 } : { left: '100%', marginLeft: 4 }),
+  })
+
   const undoRedoMenuItems = (
     <>
       <UnstyledButton
@@ -1810,7 +1823,8 @@ export function PdfFieldMapper({
             zIndex: 1000,
             minWidth: 200,
             maxHeight: '80vh',
-            overflow: 'auto',
+            // Avoid clipping the Change type flyout into a horizontal scrollbar.
+            overflow: fieldTypeFlyout ? 'visible' : 'auto',
           }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
@@ -1819,9 +1833,18 @@ export function PdfFieldMapper({
             {undoRedoMenuItems}
             <div style={{ position: 'relative' }}>
               <UnstyledButton
-                onMouseEnter={() => setFieldTypeFlyout(true)}
-                onFocus={() => setFieldTypeFlyout(true)}
-                onClick={() => setFieldTypeFlyout((o) => !o)}
+                onMouseEnter={(e) => {
+                  setFieldTypeFlyoutSide(flyoutSideFor(e.currentTarget))
+                  setFieldTypeFlyout(true)
+                }}
+                onFocus={(e) => {
+                  setFieldTypeFlyoutSide(flyoutSideFor(e.currentTarget))
+                  setFieldTypeFlyout(true)
+                }}
+                onClick={(e) => {
+                  setFieldTypeFlyoutSide(flyoutSideFor(e.currentTarget))
+                  setFieldTypeFlyout((o) => !o)
+                }}
                 style={{
                   ...menuButtonStyle(),
                   justifyContent: 'space-between',
@@ -1840,14 +1863,7 @@ export function PdfFieldMapper({
                   shadow="md"
                   radius="md"
                   p={4}
-                  style={{
-                    position: 'absolute',
-                    left: '100%',
-                    top: 0,
-                    marginLeft: 4,
-                    minWidth: 160,
-                    zIndex: 1001,
-                  }}
+                  style={menuFlyoutStyle(fieldTypeFlyoutSide)}
                   onMouseEnter={() => setFieldTypeFlyout(true)}
                 >
                   <Stack gap={2}>
@@ -2024,9 +2040,18 @@ export function PdfFieldMapper({
             {undoRedoMenuItems}
             <div style={{ position: 'relative' }}>
               <UnstyledButton
-                onMouseEnter={() => setCanvasFieldsFlyout(true)}
-                onFocus={() => setCanvasFieldsFlyout(true)}
-                onClick={() => setCanvasFieldsFlyout((o) => !o)}
+                onMouseEnter={(e) => {
+                  setCanvasFieldsFlyoutSide(flyoutSideFor(e.currentTarget))
+                  setCanvasFieldsFlyout(true)
+                }}
+                onFocus={(e) => {
+                  setCanvasFieldsFlyoutSide(flyoutSideFor(e.currentTarget))
+                  setCanvasFieldsFlyout(true)
+                }}
+                onClick={(e) => {
+                  setCanvasFieldsFlyoutSide(flyoutSideFor(e.currentTarget))
+                  setCanvasFieldsFlyout((o) => !o)
+                }}
                 style={{
                   ...menuButtonStyle(),
                   justifyContent: 'space-between',
@@ -2045,14 +2070,7 @@ export function PdfFieldMapper({
                   shadow="md"
                   radius="md"
                   p={4}
-                  style={{
-                    position: 'absolute',
-                    left: '100%',
-                    top: 0,
-                    marginLeft: 4,
-                    minWidth: 160,
-                    zIndex: 1001,
-                  }}
+                  style={menuFlyoutStyle(canvasFieldsFlyoutSide)}
                   onMouseEnter={() => setCanvasFieldsFlyout(true)}
                 >
                   <Stack gap={2}>

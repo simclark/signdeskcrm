@@ -291,10 +291,10 @@ function AppShellContent() {
           </Group>
           <Group wrap="nowrap" gap="sm">
             <Button variant="filled" onClick={() => openCreateEnvelope()} visibleFrom="sm">
-              Send for signature
+              New envelope
             </Button>
             <Button variant="filled" onClick={() => openCreateEnvelope()} hiddenFrom="sm" px="sm">
-              Send
+              New
             </Button>
             <Menu>
               <Menu.Target>

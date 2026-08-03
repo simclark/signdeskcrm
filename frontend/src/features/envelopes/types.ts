@@ -65,7 +65,7 @@ export type EnvelopeDetail = {
   recipients: Array<{
     id: number
     name: string
-    email: string
+    email: string | null
     role: string
     role_key?: string
     routing_order: number

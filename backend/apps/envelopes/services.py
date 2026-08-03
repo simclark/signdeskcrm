@@ -177,6 +177,13 @@ def validate_envelope_for_send(envelope: Envelope) -> list[str]:
     signers = list(envelope.recipients.filter(role=Recipient.Role.SIGNER))
     if not signers:
         errors.append("Add at least one signer.")
+    for recipient in envelope.recipients.all():
+        email = (recipient.email or "").strip()
+        label = recipient.name.strip() or email or f"Recipient {recipient.routing_order}"
+        if not email:
+            errors.append(f"{label} needs an email address.")
+        elif email.lower().endswith("@draft.local"):
+            errors.append(f"{label} still has a placeholder email — enter a real address.")
     for signer in signers:
         has_signer_fields = envelope.fields.filter(
             recipient=signer, fill_mode=Field.FillMode.SIGNER
@@ -188,7 +195,8 @@ def validate_envelope_for_send(envelope: Envelope) -> list[str]:
             recipient=signer, field_type=Field.FieldType.SIGNATURE
         )
         if not sig_fields.exists():
-            errors.append(f"Signer {signer.email} needs at least one signature field.")
+            label = signer.name.strip() or signer.email or f"Signer {signer.routing_order}"
+            errors.append(f"{label} needs at least one signature field.")
 
     active_signers = [
         s

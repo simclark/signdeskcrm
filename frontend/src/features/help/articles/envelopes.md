@@ -2,7 +2,7 @@
 
 An **envelope** is a document packet you send for signature: a PDF, one or more recipients, signature fields, and optional message. This is the core of SignDesk.
 
-Open **Envelopes** in the left nav, or use **Send for signature** in the header.
+Open **Envelopes** in the left nav, or use **New envelope** in the header.
 
 ## Envelope statuses
 
@@ -22,7 +22,7 @@ Recipient statuses include **Pending**, **Sent**, **Viewed**, **Signed**, **Decl
 
 ### 1. Create
 
-1. Click **Send for signature** or **New envelope**.
+1. Click **New envelope** in the header or under Envelopes.
 2. Choose a source:
    - Upload a PDF, or
    - Pick an existing [Document](documents.md), or
@@ -47,9 +47,9 @@ On the prepare screen you:
 6. Optionally apply a template layout or **Save as template** for reuse.
 7. **Save**.
 
-### 3. Send
+### 3. Send for signature
 
-From the envelope detail page, click **Send**. Each signer receives a **Signing invitation** email with a secure link. CCs receive a copy notice when appropriate.
+From the envelope detail page, click **Send for signature**. Each signer receives a **Signing invitation** email with a secure link. CCs receive a copy notice when appropriate.
 
 What signers see: [Signing experience](signing.md).
 
@@ -62,7 +62,7 @@ After create (and after send), the detail page is your control center.
 | Action | When to use |
 |---|---|
 | **Prepare** / edit | Change recipients or fields while still a draft (and where editing is still allowed) |
-| **Send** | Start the signing process |
+| **Send for signature** | Email signing invites — this is when the packet leaves Draft |
 | **Resend invites** | Someone lost the email or link |
 | **Void** | Stop the envelope; notify as configured |
 | **Duplicate** | Start a similar packet from this one |

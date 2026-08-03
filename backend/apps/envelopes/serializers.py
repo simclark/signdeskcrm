@@ -79,6 +79,8 @@ class FieldSerializer(serializers.ModelSerializer):
 
 
 class RecipientSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+
     class Meta:
         model = Recipient
         fields = (
@@ -95,6 +97,12 @@ class RecipientSerializer(serializers.ModelSerializer):
             "signed_at",
         )
         read_only_fields = ("id", "status", "sent_at", "viewed_at", "signed_at")
+
+    def validate_email(self, value):
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
 
 
 class EnvelopeSerializer(serializers.ModelSerializer):

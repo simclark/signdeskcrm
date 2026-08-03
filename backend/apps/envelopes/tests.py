@@ -450,6 +450,19 @@ class StampOnSendDocumentFieldsTests(TestCase):
         with self.assertRaises(ValueError):
             send_envelope(self.envelope)
 
+    def test_blank_or_placeholder_email_blocks_send(self):
+        from apps.envelopes.services import validate_envelope_for_send
+
+        self.buyer.email = ""
+        self.buyer.save(update_fields=["email"])
+        errors = validate_envelope_for_send(self.envelope)
+        self.assertTrue(any("needs an email" in e for e in errors))
+
+        self.buyer.email = "signer-2-99@draft.local"
+        self.buyer.save(update_fields=["email"])
+        errors = validate_envelope_for_send(self.envelope)
+        self.assertTrue(any("placeholder email" in e for e in errors))
+
     def test_final_flatten_skips_document_fields(self):
         from apps.envelopes.services import flatten_envelope_pdf, send_envelope
 

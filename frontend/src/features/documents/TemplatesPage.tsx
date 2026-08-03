@@ -26,12 +26,14 @@ import {
   IconDotsVertical,
   IconFileTypePdf,
   IconLayout,
+  IconSend,
   IconUpload,
   IconX,
 } from '@tabler/icons-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { useCreateEnvelope } from '../envelopes/CreateEnvelopeContext'
 import { api } from '../../shared/api'
 import { useConfirm } from '../../shared/confirm'
 import { DataTable } from '../../shared/DataTable'
@@ -48,6 +50,7 @@ export function TemplatesPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const confirm = useConfirm()
+  const { openCreateEnvelope } = useCreateEnvelope()
   const { membership } = useAuth()
   const isAdmin = membership?.role === 'owner' || membership?.role === 'admin'
   const [opened, { open, close }] = useDisclosure(false)
@@ -353,6 +356,20 @@ export function TemplatesPage() {
                       </ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown>
+                      {t.is_active ? (
+                        <Menu.Item
+                          leftSection={<IconSend size={14} />}
+                          onClick={() =>
+                            openCreateEnvelope({
+                              templateId: t.id,
+                              documentId: t.document,
+                              title: t.name,
+                            })
+                          }
+                        >
+                          Create envelope
+                        </Menu.Item>
+                      ) : null}
                       {isPlatform ? (
                         <Menu.Item
                           component={Link}
