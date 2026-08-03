@@ -17,7 +17,7 @@ Below the cards you usually see **Recent envelopes** for quick open.
 
 ## Common actions
 
-- **New envelope** — start a packet (prepare recipients and fields)
+- **New envelope** in the header — start a packet (prepare recipients and fields)
 - **Send for signature** — on a draft envelope, email signing invites
 - Click a card or recent row to open [Envelopes](envelopes.md)
 

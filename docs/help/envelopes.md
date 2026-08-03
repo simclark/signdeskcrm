@@ -22,7 +22,7 @@ Recipient statuses include **Pending**, **Sent**, **Viewed**, **Signed**, **Decl
 
 ### 1. Create
 
-1. Click **New envelope** in the header or under Envelopes.
+1. Click **New envelope** in the header.
 2. Choose a source:
    - Upload a PDF, or
    - Pick an existing [Document](documents.md), or

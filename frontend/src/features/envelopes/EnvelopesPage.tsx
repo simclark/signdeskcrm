@@ -1,10 +1,9 @@
-import { Badge, Button, Group, Stack, Text, Title } from '@mantine/core'
+import { Badge, Stack, Text, Title } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../../shared/api'
 import { DataTable } from '../../shared/DataTable'
 import { formatDate } from '../../shared/formatDate'
-import { useCreateEnvelope } from './CreateEnvelopeContext'
 
 type Envelope = {
   id: number
@@ -15,7 +14,6 @@ type Envelope = {
 }
 
 export function EnvelopesPage() {
-  const { openCreateEnvelope } = useCreateEnvelope()
   const { data } = useQuery({
     queryKey: ['envelopes'],
     queryFn: () => api<{ results: Envelope[] }>('/api/envelopes/'),
@@ -23,13 +21,10 @@ export function EnvelopesPage() {
 
   return (
     <Stack>
-      <Group justify="space-between">
-        <div>
-          <Title order={2}>Envelopes</Title>
-          <Text c="dimmed">Draft, send, and track signature requests.</Text>
-        </div>
-        <Button onClick={() => openCreateEnvelope()}>New envelope</Button>
-      </Group>
+      <div>
+        <Title order={2}>Envelopes</Title>
+        <Text c="dimmed">Draft, send, and track signature requests.</Text>
+      </div>
       <DataTable>
         <DataTable.Thead>
           <DataTable.Tr>

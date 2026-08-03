@@ -1,8 +1,7 @@
-import { Card, Grid, Group, Stack, Text, Title, Badge, Button, Skeleton } from '@mantine/core'
+import { Card, Grid, Group, Stack, Text, Title, Badge, Skeleton } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../../shared/api'
-import { useCreateEnvelope } from '../envelopes/CreateEnvelopeContext'
 
 type Dashboard = {
   awaiting_others: number
@@ -18,7 +17,6 @@ type Dashboard = {
 }
 
 export function DashboardPage() {
-  const { openCreateEnvelope } = useCreateEnvelope()
   const { data, isLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api<Dashboard>('/api/dashboard/'),
@@ -37,13 +35,10 @@ export function DashboardPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between">
-        <div>
-          <Title order={2}>Dashboard</Title>
-          <Text c="dimmed">Track envelopes and keep deals moving.</Text>
-        </div>
-        <Button onClick={() => openCreateEnvelope()}>New envelope</Button>
-      </Group>
+      <div>
+        <Title order={2}>Dashboard</Title>
+        <Text c="dimmed">Track envelopes and keep deals moving.</Text>
+      </div>
       <Grid>
         {tiles.map((tile) => (
           <Grid.Col key={tile.label} span={{ base: 12, sm: 6, md: 3 }}>

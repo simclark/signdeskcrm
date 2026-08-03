@@ -58,7 +58,7 @@ docker compose exec api python manage.py seed_form_library --tenant-slug demo
 ### 2. Create envelope from Form library (60s)
 
 - **Templates** → **Form library** → open / clone the sample purchase agreement (or **Documents** → upload a familiar PDF)
-- **Envelopes** → **New envelope**
+- **Envelopes** (or header **New envelope**)
   - Title: `Demo Purchase Agreement`
   - Recipients: Buyer Ada (order 1), Seller Sam (order 2), routing **Sequential**
   - Optional: add a CC to show copy-only notice (not “Review and sign”)
