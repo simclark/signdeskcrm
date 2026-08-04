@@ -68,6 +68,15 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
             actor_name=self.request.user.full_name,
         )
 
+    def destroy(self, request, *args, **kwargs):
+        envelope = self.get_object()
+        if envelope.status != Envelope.Status.DRAFT:
+            return Response(
+                {"detail": "Only draft envelopes can be deleted."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().destroy(request, *args, **kwargs)
+
     @action(detail=True, methods=["post"])
     def send(self, request, pk=None):
         envelope = self.get_object()
@@ -264,8 +273,8 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
                         {
                             "detail": (
                                 "Listings are disabled for this workspace, so prefill from a "
-                                "listing record isn’t available. Add custom values or enter "
-                                "document data field values manually."
+                                "listing record isn’t available. Enter document field values "
+                                "manually."
                             ),
                         },
                         status=403,
@@ -294,10 +303,12 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
 
         from apps.envelopes.services import resolve_merge_values_for_envelope
 
+        # Never wipe manual values with empty resolutions (e.g. listing tokens
+        # when no listing is selected, or Listings is disabled).
         updated = resolve_merge_values_for_envelope(
             envelope,
             contact=contact,
-            overwrite_with_empty=True,
+            overwrite_with_empty=False,
         )
 
         envelope.refresh_from_db()

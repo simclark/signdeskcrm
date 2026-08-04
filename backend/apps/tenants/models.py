@@ -142,6 +142,14 @@ class Tenant(TimeStampedModel):
         default=False,
         help_text="Show Prefill records (Listings) for merge fields on envelopes.",
     )
+    signer_decline_enabled = models.BooleanField(
+        default=False,
+        help_text="When on, signers see a Decline button in the signing experience.",
+    )
+    signer_change_signature_enabled = models.BooleanField(
+        default=False,
+        help_text="When on, signers can reopen Adopt signature to change their signature.",
+    )
     esign_acknowledgement = models.TextField(default=DEFAULT_ESIGN_ACKNOWLEDGEMENT)
     esign_acknowledgement_version = models.CharField(
         max_length=32, default=DEFAULT_ESIGN_ACKNOWLEDGEMENT_VERSION

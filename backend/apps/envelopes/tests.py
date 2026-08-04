@@ -512,6 +512,54 @@ class StampOnSendDocumentFieldsTests(TestCase):
         self.assertNotIn("425000", clean_text)
         self.assertNotIn("First National", clean_text)
 
+    def test_rename_title_allowed_after_send(self):
+        from rest_framework.test import APIClient
+
+        from apps.envelopes.services import send_envelope
+
+        send_envelope(self.envelope)
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        res = client.patch(
+            f"/api/envelopes/{self.envelope.id}/",
+            {"title": "Renamed after send"},
+            format="json",
+            HTTP_HOST=f"{self.tenant.slug}.signdeskcrm.test",
+            HTTP_X_TENANT_SLUG=self.tenant.slug,
+        )
+        self.assertEqual(res.status_code, 200, getattr(res, "data", res.content))
+        self.envelope.refresh_from_db()
+        self.assertEqual(self.envelope.title, "Renamed after send")
+
+    def test_delete_only_allowed_for_drafts(self):
+        from rest_framework.test import APIClient
+
+        from apps.envelopes.services import send_envelope
+
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        host = {
+            "HTTP_HOST": f"{self.tenant.slug}.signdeskcrm.test",
+            "HTTP_X_TENANT_SLUG": self.tenant.slug,
+        }
+
+        draft = Envelope.objects.create(
+            tenant=self.tenant,
+            title="Draft to delete",
+            document=self.document,
+            document_version=self.version,
+            created_by=self.user,
+            status=Envelope.Status.DRAFT,
+        )
+        ok = client.delete(f"/api/envelopes/{draft.id}/", **host)
+        self.assertEqual(ok.status_code, 204, getattr(ok, "data", ok.content))
+        self.assertFalse(Envelope.objects.filter(pk=draft.id).exists())
+
+        send_envelope(self.envelope)
+        blocked = client.delete(f"/api/envelopes/{self.envelope.id}/", **host)
+        self.assertEqual(blocked.status_code, 400, getattr(blocked, "data", blocked.content))
+        self.assertTrue(Envelope.objects.filter(pk=self.envelope.id).exists())
+
     def test_retrieve_heals_draft_pointing_at_stamped_pdf(self):
         from rest_framework.test import APIClient
 
@@ -553,6 +601,30 @@ class StampOnSendDocumentFieldsTests(TestCase):
         self.name_field.refresh_from_db()
         self.assertEqual(self.name_field.value, "Buyer One")
         self.assertIsNone(self.name_field.recipient_id)
+
+    def test_prefill_does_not_wipe_manual_values_with_empty_resolution(self):
+        from apps.envelopes.services import resolve_merge_values_for_envelope
+
+        listing_field = Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=None,
+            field_type=Field.FieldType.TEXT,
+            page=1,
+            x=0.1,
+            y=0.62,
+            w=0.5,
+            h=0.04,
+            required=False,
+            label="Property address",
+            merge_token="listing.full_address",
+            fill_mode=Field.FillMode.DOCUMENT,
+            value="123 main street",
+        )
+        # No listing on envelope → token resolves empty; keep typed value.
+        resolve_merge_values_for_envelope(self.envelope, overwrite_with_empty=False)
+        listing_field.refresh_from_db()
+        self.assertEqual(listing_field.value, "123 main street")
 
     def test_required_empty_document_field_blocks_send(self):
         from apps.envelopes.services import send_envelope, validate_envelope_for_send
@@ -938,6 +1010,8 @@ class EnvelopeNotificationTests(TestCase):
     def test_decline_emails_sender(self):
         from rest_framework.test import APIClient
 
+        self.tenant.signer_decline_enabled = True
+        self.tenant.save(update_fields=["signer_decline_enabled"])
         self.send_envelope(self.envelope)
         self.signer1.refresh_from_db()
         self.mail.outbox.clear()
@@ -953,6 +1027,21 @@ class EnvelopeNotificationTests(TestCase):
         self.assertEqual(declined[0].to, [self.user.email])
         self.assertIn("Not ready", declined[0].body)
         self.assertIn("Buyer", declined[0].body)
+
+    def test_decline_forbidden_when_disabled(self):
+        from rest_framework.test import APIClient
+
+        self.tenant.signer_decline_enabled = False
+        self.tenant.save(update_fields=["signer_decline_enabled"])
+        self.send_envelope(self.envelope)
+        self.signer1.refresh_from_db()
+        guest = APIClient()
+        res = guest.post(
+            f"/api/sign/{self.signer1.access_token}/decline/",
+            {"reason": "Nope"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 403)
 
     def test_resend_skips_pending_sequential_signers(self):
         self.send_envelope(self.envelope)

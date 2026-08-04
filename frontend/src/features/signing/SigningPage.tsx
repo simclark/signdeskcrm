@@ -194,6 +194,8 @@ export function SigningPage() {
   const progress = required.length ? (satisfiedCount / required.length) * 100 : 100
   const readyToFinish = required.length > 0 && required.every(isFieldSatisfied)
   const accent = data?.envelope?.accent_color || '#0B6E4F'
+  const declineEnabled = Boolean(data?.envelope?.signer_decline_enabled)
+  const changeSignatureEnabled = Boolean(data?.envelope?.signer_change_signature_enabled)
   const currentField = fields[activeIdx] ?? null
   const activeFieldId = currentField?.id ?? null
   const isLastField = activeIdx >= fields.length - 1
@@ -512,7 +514,7 @@ export function SigningPage() {
               )}
             </div>
             <Group gap="xs" wrap="nowrap">
-              {adopted && (
+              {adopted && changeSignatureEnabled ? (
                 <Button
                   variant="default"
                   size="sm"
@@ -523,10 +525,18 @@ export function SigningPage() {
                 >
                   Change signature
                 </Button>
-              )}
-              <Button variant="subtle" color="red" size="sm" onClick={() => decline.mutate()}>
-                Decline
-              </Button>
+              ) : null}
+              {declineEnabled ? (
+                <Button
+                  variant="outline"
+                  color="red"
+                  size="sm"
+                  loading={decline.isPending}
+                  onClick={() => decline.mutate()}
+                >
+                  Decline
+                </Button>
+              ) : null}
               {!isLastField && (
                 <Button size="sm" variant="default" onClick={handleNext}>
                   Next

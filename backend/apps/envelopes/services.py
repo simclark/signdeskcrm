@@ -1015,6 +1015,77 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
 
         y = min(y, card_bottom - 12)
 
+    # ── Field activity (click timestamps) ─────────────────────────
+    completed_fields = list(
+        envelope.fields.filter(
+            fill_mode=Field.FillMode.SIGNER,
+            completed_at__isnull=False,
+        )
+        .select_related("recipient")
+        .order_by("completed_at", "id")
+    )
+    if completed_fields:
+        y = ensure_space(y, 40)
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(left, y, "Field activity")
+        y -= 8
+        c.setStrokeColor(RULE_GRAY)
+        c.line(left, y, right, y)
+        y -= 16
+
+        c.setFont("Helvetica-Bold", 8)
+        c.setFillColor(MUTED_GRAY)
+        c.drawString(left, y, "Time")
+        c.drawString(left + 130, y, "Field")
+        c.drawString(left + 280, y, "Type")
+        c.drawString(left + 340, y, "Signer")
+        y -= 6
+        c.setStrokeColor(RULE_GRAY)
+        c.line(left, y, right, y)
+        y -= 12
+
+        type_labels = {
+            Field.FieldType.SIGNATURE: "Signature",
+            Field.FieldType.INITIALS: "Initials",
+            Field.FieldType.DATE: "Date",
+            Field.FieldType.TEXT: "Text",
+            Field.FieldType.CHECKBOX: "Checkbox",
+        }
+        for field in completed_fields:
+            y = ensure_space(y, 16)
+            c.setFont("Helvetica", 7.5)
+            c.setFillColor(colors.black)
+            when = _format_cert_datetime(field.completed_at, tenant)
+            if field.completed_at:
+                local = (
+                    field.completed_at.astimezone(_tenant_zoneinfo(tenant))
+                    if timezone.is_aware(field.completed_at)
+                    else field.completed_at
+                )
+                when = local.strftime("%b %d, %Y %I:%M:%S %p")
+            label = (field.label or "").strip() or type_labels.get(
+                field.field_type, field.field_type
+            )
+            signer_name = ""
+            if field.recipient_id:
+                signer_name = field.recipient.name or field.recipient.email or ""
+            c.drawString(left, y, when[:28])
+            c.drawString(left + 130, y, label[:26])
+            c.drawString(
+                left + 280, y, type_labels.get(field.field_type, field.field_type)[:12]
+            )
+            c.drawString(left + 340, y, signer_name[:28])
+            y -= 12
+            # Date/text values on a secondary line so the click time stays primary.
+            if field.field_type == Field.FieldType.DATE and field.value:
+                y = ensure_space(y, 12)
+                c.setFont("Helvetica", 7)
+                c.setFillColor(MUTED_GRAY)
+                c.drawString(left + 130, y, f"Applied date: {field.value}"[:60])
+                y -= 11
+        y -= 6
+
     # ── Audit trail ──────────────────────────────────────────────
     y = ensure_space(y, 40)
     c.setFillColor(colors.black)
@@ -1067,7 +1138,16 @@ def generate_certificate_pdf(envelope: Envelope) -> bytes:
             )
             when = local.strftime("%b %d, %Y %I:%M:%S %p")
         c.drawString(left, y, when[:28])
-        c.drawString(left + 130, y, event_labels.get(event.event_type, event.event_type)[:22])
+        event_label = event_labels.get(event.event_type, event.event_type)
+        if event.event_type == "field_completed":
+            payload = event.payload or {}
+            field_label = (payload.get("label") or "").strip()
+            field_type = (payload.get("field_type") or "").strip()
+            if field_label:
+                event_label = field_label
+            elif field_type:
+                event_label = f"{field_type} completed"
+        c.drawString(left + 130, y, event_label[:22])
         actor = event.actor_name or event.actor_email or "System"
         c.drawString(left + 250, y, actor[:28])
         c.drawString(left + 400, y, str(event.ip_address or "—"))

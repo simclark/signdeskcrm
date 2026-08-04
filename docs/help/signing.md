@@ -9,9 +9,9 @@ Signing happens on a secure link — usually `…/sign/…` — and does **not**
 1. Open the link from the **Signing invitation** (or reminder) email.
 2. Read the **Electronic records and signatures disclosure**.
 3. Check consent and continue.
-4. **Adopt a signature** — draw or type (first time / when required).
+4. **Adopt a signature** — draw or type (first time / when required). If the workspace allows it, you can reopen Adopt signature later to change your mark.
 5. Complete assigned fields on the document (signature, initials, dates, text, checkboxes).
-6. **Submit**, or **Decline** if you will not sign.
+6. **Submit**, or **Decline** if you will not sign (Decline appears only when the workspace allows it).
 
 When the envelope finishes (all required signers done), downloads for the **signed PDF** and **Certificate of Completion** may be available from the completion screen (and always from the sender’s envelope detail).
 

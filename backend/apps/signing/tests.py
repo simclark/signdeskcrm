@@ -288,6 +288,73 @@ class EsignConsentComplianceTests(TestCase):
         self.assertIn(self.signer.consent_text_sha256[:16], text)
         self.assertIn("Disclosure SHA-256", text)
 
+    def test_field_complete_records_audit_and_certificate_field_activity(self):
+        import io
+
+        from django.utils import timezone as dj_tz
+        from pypdf import PdfReader
+
+        from apps.audit.models import AuditEvent
+        from apps.envelopes.models import Field
+        from apps.envelopes.services import (
+            accept_consent,
+            complete_recipient_signing,
+            generate_certificate_pdf,
+        )
+
+        class FakeRequest:
+            META = {"REMOTE_ADDR": "203.0.113.55", "HTTP_USER_AGENT": "TestAgent/1.0"}
+
+        date_field = Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.signer,
+            field_type=Field.FieldType.DATE,
+            page=1,
+            x=0.1,
+            y=0.2,
+            w=0.2,
+            h=0.04,
+            required=True,
+            label="Date A",
+        )
+
+        accept_consent(self.signer, FakeRequest())
+        res = self.client.post(
+            f"/api/sign/{self.token}/fields/{date_field.id}/",
+            {"value": "2026-08-04"},
+            format="json",
+            REMOTE_ADDR="203.0.113.55",
+        )
+        self.assertEqual(res.status_code, 200)
+        date_field.refresh_from_db()
+        self.assertTrue(date_field.completed_at)
+        self.assertEqual(date_field.value, "2026-08-04")
+
+        event = self.envelope.audit_events.filter(
+            event_type=AuditEvent.EventType.FIELD_COMPLETED,
+            payload__field_id=date_field.id,
+        ).first()
+        self.assertIsNotNone(event)
+        self.assertEqual(event.payload.get("label"), "Date A")
+        self.assertEqual(event.payload.get("field_type"), "date")
+        self.assertEqual(event.payload.get("value"), "2026-08-04")
+        self.assertEqual(str(event.ip_address), "203.0.113.55")
+
+        self.field.value = "Signer"
+        self.field.completed_at = dj_tz.now()
+        self.field.save()
+        complete_recipient_signing(self.signer, FakeRequest())
+        self.envelope.refresh_from_db()
+
+        cert = generate_certificate_pdf(self.envelope)
+        text = "\n".join(
+            page.extract_text() or "" for page in PdfReader(io.BytesIO(cert)).pages
+        )
+        self.assertIn("Field activity", text)
+        self.assertIn("Date A", text)
+        self.assertIn("Applied date: 2026-08-04", text)
+
     def test_restore_default_acknowledgement(self):
         from apps.tenants.esign_disclosure import DEFAULT_ESIGN_ACKNOWLEDGEMENT
         from rest_framework_simplejwt.tokens import RefreshToken

@@ -80,6 +80,8 @@ Defaults for sending, certificates, reminders, support contact, and legal disclo
 | **Timezone** | Certificate timestamps and signing activity times |
 | **Default expiration** | Days until unsigned envelopes expire after send |
 | **Retention period** | Days completed PDFs stay downloadable (blank = keep forever) |
+| **Allow signers to decline** | When on, signers see a Decline button (off by default) |
+| **Allow signers to change signature** | When on, signers can reopen Adopt signature after adopting (off by default) |
 
 ### Reminders
 

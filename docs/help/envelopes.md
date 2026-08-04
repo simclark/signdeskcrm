@@ -18,6 +18,22 @@ Open **Envelopes** in the left nav, or use **New envelope** in the header.
 
 Recipient statuses include **Pending**, **Sent**, **Viewed**, **Signed**, **Declined**, and **Not required** (for example CC).
 
+## Envelopes list
+
+The **Envelopes** table lists every packet. Open a row for the full detail page, or use the **⋯** menu on a row for common actions without leaving the list.
+
+| Action | When it appears |
+|---|---|
+| **Open** | Always |
+| **Rename** | Always — changes the display title (including after send) |
+| **Prepare / edit** | Draft |
+| **Send for signature** | Draft |
+| **Resend invites** | Sent or in progress |
+| **Duplicate** | Always — opens the new draft on Prepare |
+| **Download signed PDF** / **Download certificate** | Completed (when files exist) |
+| **Void…** | Sent or in progress |
+| **Delete…** | Draft only |
+
 ## Send your first envelope
 
 ### 1. Create
@@ -43,13 +59,19 @@ On the prepare screen you:
 3. **Place fields** on the PDF (drag or click to add):
    - Signature, Initials, Date, Text, Checkbox
 4. Assign each field to a recipient, or set fill mode to **Complete before send** for values you fill before sending (stamped into the PDF on send).
-5. On Prepare, type those values under **Complete before send**. Optionally **Pull from data** (Prefill record when enabled, contact/role/custom bindings) and **Apply from data**.
-6. Optionally apply a template layout or **Save as template** for reuse.
-7. **Save**.
+5. On Prepare, type those values under **Complete before send**. When Prefill records is on, you can optionally **Fill from a listing**.
+6. Optionally expand **Templates** to apply a saved layout or **Save as template** for reuse (collapsed by default).
+7. **Save** to keep progress, **Save & continue** to open the envelope detail page, or **Send for signature** at the bottom when everything is ready.
 
 ### 3. Send for signature
 
-From the envelope detail page, click **Send for signature**. Each signer receives a **Signing invitation** email with a secure link. CCs receive a copy notice when appropriate.
+You can send from:
+
+- **Prepare** — **Send for signature** at the bottom of the sidebar (validates recipients, signature fields, and required complete-before-send values, then emails invites), or
+- **Envelope detail** — **Send for signature** on a draft, or
+- **Envelopes list** — **⋯ → Send for signature** on a draft
+
+Each signer receives a **Signing invitation** email with a secure link. CCs receive a copy notice when appropriate.
 
 What signers see: [Signing experience](signing.md).
 
@@ -69,6 +91,8 @@ After create (and after send), the detail page is your control center.
 | **Regenerate certificate** | Rebuild the Certificate of Completion if needed |
 | Attach a **Follow-up plan** | Automate stalled / declined / completed outreach — see [Follow-up plans](follow-up-plans.md) |
 
+Many of these are also available from the **⋯** menu on the Envelopes list.
+
 ### Downloads and proof
 
 When available:
@@ -85,7 +109,7 @@ When available:
 | **Signer completes** | Recipient fills the field during signing |
 | **Complete before send** | You enter the value on Prepare; it is stamped into the PDF when you send |
 
-Optionally bind a complete-before-send field to a **data source** (merge token) so **Apply from data** can fill it from a Prefill record, contact, role, deal terms, or custom values. Prefill records are optional — see [Listings](listings.md). Typing values by hand always works.
+Optionally bind a complete-before-send field to a **data source** (merge token) so **Fill fields** can pull from a listing, contact, role, or deal terms. Prefill records are optional — see [Listings](listings.md). Typing values by hand always works.
 
 ## Tips
 

@@ -55,6 +55,8 @@ class TenantSerializer(serializers.ModelSerializer):
             "sender_support_phone",
             "paper_copy_fee_policy",
             "listings_enabled",
+            "signer_decline_enabled",
+            "signer_change_signature_enabled",
             "esign_acknowledgement",
             "esign_acknowledgement_version",
             "subscription_status",

@@ -216,11 +216,16 @@ class EnvelopeSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         if instance.status != Envelope.Status.DRAFT:
-            # After send, only follow_up_plan may be changed (attach / clear plan).
-            allowed = {"follow_up_plan"}
+            # After send, allow lightweight metadata + follow-up plan changes only.
+            allowed = {"follow_up_plan", "title"}
             extra = set(validated_data.keys()) - allowed
             if extra:
                 raise serializers.ValidationError("Only draft envelopes can be edited.")
+            if "title" in validated_data:
+                title = (validated_data.get("title") or "").strip()
+                if not title:
+                    raise serializers.ValidationError({"title": "Enter a title."})
+                validated_data["title"] = title
             prev_plan_id = instance.follow_up_plan_id
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
@@ -257,6 +262,8 @@ class EnvelopeSerializer(serializers.ModelSerializer):
 
 class EnvelopeListSerializer(serializers.ModelSerializer):
     recipient_count = serializers.IntegerField(source="recipients.count", read_only=True)
+    signed_file_url = serializers.SerializerMethodField()
+    certificate_file_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Envelope
@@ -269,8 +276,16 @@ class EnvelopeListSerializer(serializers.ModelSerializer):
             "completed_at",
             "expires_at",
             "recipient_count",
+            "signed_file_url",
+            "certificate_file_url",
             "created_at",
         )
+
+    def get_signed_file_url(self, obj):
+        return protected_media_url(self.context.get("request"), obj.signed_file)
+
+    def get_certificate_file_url(self, obj):
+        return protected_media_url(self.context.get("request"), obj.certificate_file)
 
 
 class SendValidationSerializer(serializers.Serializer):

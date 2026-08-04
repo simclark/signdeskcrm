@@ -349,6 +349,8 @@ export function SettingsPage() {
       reminder_interval_hours: tenant?.reminder_interval_hours ?? 48,
       reminder_max_count: tenant?.reminder_max_count ?? 0,
       document_retention_days: tenant?.document_retention_days ?? (null as number | null),
+      signer_decline_enabled: tenant?.signer_decline_enabled ?? false,
+      signer_change_signature_enabled: tenant?.signer_change_signature_enabled ?? false,
       sender_support_email: tenant?.sender_support_email || '',
       sender_support_phone: tenant?.sender_support_phone || '',
       paper_copy_fee_policy: tenant?.paper_copy_fee_policy || '',
@@ -404,6 +406,8 @@ export function SettingsPage() {
       reminder_interval_hours: tenant.reminder_interval_hours ?? 48,
       reminder_max_count: tenant.reminder_max_count ?? 0,
       document_retention_days: tenant.document_retention_days ?? null,
+      signer_decline_enabled: tenant.signer_decline_enabled ?? false,
+      signer_change_signature_enabled: tenant.signer_change_signature_enabled ?? false,
       sender_support_email: tenant.sender_support_email || '',
       sender_support_phone: tenant.sender_support_phone || '',
       paper_copy_fee_policy: tenant.paper_copy_fee_policy || '',
@@ -437,6 +441,8 @@ export function SettingsPage() {
     tenant?.reminder_interval_hours,
     tenant?.reminder_max_count,
     tenant?.document_retention_days,
+    tenant?.signer_decline_enabled,
+    tenant?.signer_change_signature_enabled,
     tenant?.sender_support_email,
     tenant?.sender_support_phone,
     tenant?.paper_copy_fee_policy,
@@ -547,6 +553,8 @@ export function SettingsPage() {
           reminder_interval_hours: values.reminder_interval_hours,
           reminder_max_count: values.reminder_max_count,
           document_retention_days: values.document_retention_days || null,
+          signer_decline_enabled: values.signer_decline_enabled,
+          signer_change_signature_enabled: values.signer_change_signature_enabled,
           sender_support_email: values.sender_support_email.trim(),
           sender_support_phone: values.sender_support_phone.trim(),
           paper_copy_fee_policy: values.paper_copy_fee_policy.trim(),
@@ -1230,6 +1238,20 @@ export function SettingsPage() {
                             value === '' || value === null ? null : Number(value),
                           )
                         }
+                      />
+                      <Switch
+                        label="Allow signers to decline"
+                        description="When on, signers see a Decline button. Off by default."
+                        {...esignPolicyForm.getInputProps('signer_decline_enabled', {
+                          type: 'checkbox',
+                        })}
+                      />
+                      <Switch
+                        label="Allow signers to change signature"
+                        description="When on, signers can reopen Adopt signature after adopting. Off by default."
+                        {...esignPolicyForm.getInputProps('signer_change_signature_enabled', {
+                          type: 'checkbox',
+                        })}
                       />
                     </Stack>
                   </SettingsSection>

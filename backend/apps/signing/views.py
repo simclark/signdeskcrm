@@ -16,6 +16,7 @@ from apps.envelopes.models import Envelope, Field, Recipient, SignatureAsset
 from apps.envelopes.serializers import FieldSerializer
 from apps.envelopes.services import (
     accept_consent,
+    client_meta,
     complete_recipient_signing,
     mark_viewed,
     record_audit,
@@ -140,6 +141,12 @@ class SigningSessionView(views.APIView):
                 "paper_copy_fee_policy": tenant.paper_copy_fee_policy or "",
                 "document_retention_days": tenant.document_retention_days,
                 "retention_purged": bool(envelope.retention_purged_at),
+                "signer_decline_enabled": bool(
+                    getattr(tenant, "signer_decline_enabled", False)
+                ),
+                "signer_change_signature_enabled": bool(
+                    getattr(tenant, "signer_change_signature_enabled", False)
+                ),
             },
             "document": (
                 {
@@ -345,6 +352,31 @@ class SigningFieldCompleteView(views.APIView):
         field.value = str(value)
         field.completed_at = timezone.now()
         field.save(update_fields=["value", "completed_at", "updated_at"])
+
+        # Capture click time for Certificate of Completion / audit trail.
+        payload = {
+            "field_id": field.id,
+            "field_type": field.field_type,
+            "label": (field.label or "").strip() or field.get_field_type_display(),
+            "page": field.page,
+            "completed_at": field.completed_at.isoformat(),
+        }
+        if field.field_type in (
+            Field.FieldType.DATE,
+            Field.FieldType.TEXT,
+            Field.FieldType.CHECKBOX,
+        ):
+            payload["value"] = field.value
+        record_audit(
+            tenant=recipient.tenant,
+            envelope=recipient.envelope,
+            event_type=AuditEvent.EventType.FIELD_COMPLETED,
+            recipient=recipient,
+            actor_email=recipient.email,
+            actor_name=recipient.name,
+            payload=payload,
+            **client_meta(request),
+        )
         return Response(FieldSerializer(field).data)
 
 
@@ -393,6 +425,11 @@ class SigningDeclineView(views.APIView):
             require_signer_turn(recipient)
         except PermissionError as exc:
             return _turn_denied_response(exc)
+        if not getattr(recipient.tenant, "signer_decline_enabled", False):
+            return Response(
+                {"detail": "Declining is not enabled for this workspace."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         reason = request.data.get("reason", "")
         recipient.status = Recipient.Status.DECLINED
         recipient.decline_reason = reason

@@ -26,6 +26,7 @@ const EVENT_BADGE_COLOR: Record<string, string> = {
   expired: 'orange',
   downloaded: 'blue',
   consent_accepted: 'teal',
+  field_completed: 'teal',
   sent: 'blue',
 }
 
@@ -43,7 +44,13 @@ function formatRecipientStatus(status: string) {
   return status.replaceAll('_', ' ')
 }
 
-function formatEventLabel(eventType: string) {
+function formatEventLabel(eventType: string, payload?: Record<string, unknown> | null) {
+  if (eventType === 'field_completed') {
+    const label = typeof payload?.label === 'string' ? payload.label.trim() : ''
+    const fieldType = typeof payload?.field_type === 'string' ? payload.field_type : ''
+    if (label) return `Field · ${label}`
+    if (fieldType) return `Field · ${fieldType}`
+  }
   return eventType
     .split('_')
     .map((part, index) =>
@@ -413,7 +420,7 @@ export function EnvelopeDetailPage() {
                       color={EVENT_BADGE_COLOR[e.event_type] || 'gray'}
                       tt="none"
                     >
-                      {formatEventLabel(e.event_type)}
+                      {formatEventLabel(e.event_type, e.payload)}
                     </Badge>
                   </DataTable.Td>
                   <DataTable.Td className="sd-table-primary">

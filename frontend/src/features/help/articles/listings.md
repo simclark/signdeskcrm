@@ -28,8 +28,8 @@ Sources:
 ## Use on an envelope
 
 1. Create or open an envelope and go to **Prepare**.
-2. Under **Complete before send**, open **Pull from data** and select a Prefill record when the picker is shown (module must be on).
-3. Click **Apply from data** to fill fields bound to listing tokens (and other resolvable sources).
+2. Under **Complete before send**, open **Fill from a listing** and choose a listing (module must be on).
+3. Click **Fill fields** to copy listing (and other bound) values into the form.
 
 You can always type values into Complete before send fields manually — Prefill records are a shortcut, not a requirement.
 

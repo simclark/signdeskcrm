@@ -57,6 +57,8 @@ type Tenant = {
   esign_acknowledgement: string
   esign_acknowledgement_version: string
   listings_enabled: boolean
+  signer_decline_enabled: boolean
+  signer_change_signature_enabled: boolean
   subscription_status?: string
   trial_ends_at?: string | null
   entitlement?: Entitlement

@@ -1,6 +1,6 @@
 import {
   Accordion,
-  ActionIcon,
+  Badge,
   Button,
   Divider,
   Group,
@@ -8,6 +8,7 @@ import {
   ScrollArea,
   SegmentedControl,
   Select,
+  SimpleGrid,
   Stack,
   Text,
   TextInput,
@@ -15,7 +16,6 @@ import {
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
-import { IconPlus, IconTrash } from '@tabler/icons-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -33,6 +33,10 @@ import { api } from '../../shared/api'
 import { PageBreadcrumbs } from '../../shared/PageBreadcrumbs'
 import { useAuth } from '../auth/AuthContext'
 import { newFieldId, type EnvelopeDetail, type FieldDraft, type FieldType } from './types'
+
+function documentFieldLabel(f: FieldDraft): string {
+  return (f.label || '').trim() || humanizeTokenLabel(f.merge_token || '') || 'Field'
+}
 
 function isPlaceholderEmail(email: string): boolean {
   return email.trim().toLowerCase().endsWith('@draft.local')
@@ -86,6 +90,17 @@ function validatePrepareDrafts(signers: RoleDraft[], fields: FieldDraft[]): stri
   const hasAnySignerTasks = fields.some((f) => (f.fill_mode || 'signer') === 'signer')
   if (!hasAnySignerTasks) {
     return 'Add at least one signer field to complete'
+  }
+  return null
+}
+
+function validatePrepareForSend(signers: RoleDraft[], fields: FieldDraft[]): string | null {
+  const prepError = validatePrepareDrafts(signers, fields)
+  if (prepError) return prepError
+  for (const f of fields) {
+    if ((f.fill_mode || 'signer') !== 'document' || !f.required) continue
+    if ((f.value || '').trim()) continue
+    return `'${documentFieldLabel(f)}' needs a value before send`
   }
   return null
 }
@@ -193,6 +208,7 @@ export function EnvelopePreparePage() {
 
   const [applyOpened, { open: openApply, close: closeApply }] = useDisclosure(false)
   const [saveTplOpened, { open: openSaveTpl, close: closeSaveTpl }] = useDisclosure(false)
+  const [completeOpened, { open: openComplete, close: closeComplete }] = useDisclosure(false)
   const [applyTemplateId, setApplyTemplateId] = useState<string | null>(null)
   const [templateName, setTemplateName] = useState('')
   const [listingId, setListingId] = useState<string | null>(null)
@@ -278,11 +294,23 @@ export function EnvelopePreparePage() {
   }, [blocker])
 
   const save = useMutation({
-    mutationFn: async ({ continueAfter }: { continueAfter: boolean }) => {
+    mutationFn: async ({ intent }: { intent: 'save' | 'continue' | 'send' }) => {
       if (!id) throw new Error('Missing envelope')
       // Full validation (incl. emails) only when leaving prepare / sending onward.
       // Draft progress may keep blank emails for unfilled secondary signers.
-      if (continueAfter) {
+      if (intent === 'send') {
+        const error = validatePrepareForSend(signers, fields)
+        if (error) {
+          const missingRequiredDoc = fields.some(
+            (f) =>
+              (f.fill_mode || 'signer') === 'document' &&
+              f.required &&
+              !(f.value || '').trim(),
+          )
+          if (missingRequiredDoc) openComplete()
+          throw new Error(error)
+        }
+      } else if (intent === 'continue') {
         const error = validatePrepareDrafts(signers, fields)
         if (error) throw new Error(error)
       } else {
@@ -346,19 +374,29 @@ export function EnvelopePreparePage() {
       })
 
       await api(`/api/envelopes/${id}/fields/`, { method: 'PUT', json: payload })
+
+      if (intent === 'send') {
+        await api(`/api/envelopes/${id}/send/`, { method: 'POST', json: {} })
+      }
+
       return {
         envelopeId: id,
-        continueAfter,
+        intent,
         snapshot: draftsSnapshot(signers, fields),
         routing,
       }
     },
-    onSuccess: ({ envelopeId, continueAfter, snapshot, routing: nextRouting }) => {
+    onSuccess: ({ envelopeId, intent, snapshot, routing: nextRouting }) => {
       setSavedSnapshot(snapshot)
       setSavedRouting(nextRouting)
       qc.invalidateQueries({ queryKey: ['envelope', envelopeId] })
       qc.invalidateQueries({ queryKey: ['envelopes'] })
-      if (continueAfter) {
+      if (intent === 'send') {
+        qc.invalidateQueries({ queryKey: ['envelope-audit', envelopeId] })
+        notifications.show({ color: 'forest', message: 'Invites sent to signers' })
+        allowLeaveRef.current = true
+        navigate(`/app/envelopes/${envelopeId}`)
+      } else if (intent === 'continue') {
         notifications.show({ color: 'forest', message: 'Envelope prepared' })
         allowLeaveRef.current = true
         navigate(`/app/envelopes/${envelopeId}`)
@@ -366,8 +404,16 @@ export function EnvelopePreparePage() {
         notifications.show({ color: 'forest', message: 'Progress saved' })
       }
     },
-    onError: (err: Error) =>
-      notifications.show({ color: 'red', title: 'Could not save', message: err.message }),
+    onError: (err: any, variables) => {
+      const message = Array.isArray(err?.data?.errors)
+        ? err.data.errors.join(', ')
+        : err.message
+      notifications.show({
+        color: 'red',
+        title: variables.intent === 'send' ? 'Could not send for signature' : 'Could not save',
+        message,
+      })
+    },
   })
 
   const applyTemplate = useMutation({
@@ -467,7 +513,7 @@ export function EnvelopePreparePage() {
     mutationFn: async () => {
       if (!id) throw new Error('Missing envelope')
       // Persist recipients/fields first so role keys are available for merge
-      await save.mutateAsync({ continueAfter: false })
+      await save.mutateAsync({ intent: 'save' })
       const contactId = signers.find((s) => s.contact)?.contact || null
       const body: {
         contact: number | null
@@ -477,8 +523,9 @@ export function EnvelopePreparePage() {
         contact: contactId,
         deal: buildMergeDataFromState(fields, customEntries),
       }
-      if (listingsEnabled) {
-        body.listing = listingId ? Number(listingId) : null
+      // Only attach a listing when one is chosen — never clear via Fill.
+      if (listingsEnabled && listingId) {
+        body.listing = Number(listingId)
       }
       return api<{
         updated_fields: number
@@ -504,45 +551,28 @@ export function EnvelopePreparePage() {
       qc.invalidateQueries({ queryKey: ['envelope', id] })
       notifications.show({
         color: 'forest',
-        message: `Applied data to ${updated_fields} field(s)`,
+        message: `Filled ${updated_fields} field(s)`,
       })
     },
     onError: (err: Error) =>
-      notifications.show({ color: 'red', title: 'Apply from data failed', message: err.message }),
+      notifications.show({ color: 'red', title: 'Fill fields failed', message: err.message }),
   })
 
-  const hasUsableCustomEntries = customEntries.some((e) => e.key.trim())
   const hasContactPrefill = signers.some((s) => s.contact)
   const documentDataFields = fields.filter((f) => (f.fill_mode || 'signer') === 'document')
   const hasListingBoundFields = documentDataFields.some((f) =>
     (f.merge_token || '').trim().startsWith('listing.'),
   )
-  const hasResolvableNonListingTokens = documentDataFields.some((f) => {
-    const token = (f.merge_token || '').trim()
-    return (
-      token.startsWith('custom.') ||
-      token.startsWith('deal.') ||
-      token.startsWith('role.') ||
-      token.startsWith('contact.') ||
-      token.startsWith('company.')
-    )
-  })
   const hasRoleBoundFields = documentDataFields.some((f) =>
     (f.merge_token || '').trim().startsWith('role.'),
   )
-  // Show optional data sources only when something can actually contribute.
-  const showPullFromData =
-    listingsEnabled ||
-    hasContactPrefill ||
-    hasResolvableNonListingTokens ||
-    customEntries.length > 0
-  // Hide Apply when listings is off and only listing.* tokens exist (type values instead).
-  const showApplyFromData =
-    listingsEnabled ||
-    hasUsableCustomEntries ||
-    hasContactPrefill ||
-    hasResolvableNonListingTokens
+  // Listing shortcut only — when Listings is off, users type values in the form.
+  const showPullFromData = listingsEnabled
   const showListingTokenNote = !listingsEnabled && hasListingBoundFields
+  const completedDocFields = documentDataFields.filter((f) => (f.value || '').trim()).length
+  const requiredDocMissing = documentDataFields.filter(
+    (f) => f.required && !(f.value || '').trim(),
+  ).length
 
   if (isLoading || !envelope || !hydrated) return null
 
@@ -594,8 +624,8 @@ export function EnvelopePreparePage() {
           <Stack gap="xs">
             <Button
               fullWidth
-              onClick={() => save.mutate({ continueAfter: true })}
-              loading={save.isPending && save.variables?.continueAfter === true}
+              onClick={() => save.mutate({ intent: 'continue' })}
+              loading={save.isPending && save.variables?.intent === 'continue'}
             >
               Save & continue
             </Button>
@@ -605,8 +635,8 @@ export function EnvelopePreparePage() {
               </Button>
               <Button
                 variant="light"
-                onClick={() => save.mutate({ continueAfter: false })}
-                loading={save.isPending && save.variables?.continueAfter === false}
+                onClick={() => save.mutate({ intent: 'save' })}
+                loading={save.isPending && save.variables?.intent === 'save'}
               >
                 Save
               </Button>
@@ -643,282 +673,194 @@ export function EnvelopePreparePage() {
                   Complete before send
                 </Text>
                 <Text size="xs" c="dimmed">
-                  These values are stamped into the PDF when you send. Signers do not fill them.
+                  Values stamped into the PDF when you send — not filled by signers.
                 </Text>
               </div>
-              {showListingTokenNote ? (
-                <Text size="xs" c="dimmed">
-                  This form was built with Prefill record tokens. Enter values manually, or ask an
-                  admin to enable Prefill records.
-                </Text>
-              ) : null}
               {documentDataFields.length === 0 ? (
                 <Text size="xs" c="dimmed">
                   No fields to fill before send. Place a Text or Date field and set Fill mode to
                   “Complete before send”.
                 </Text>
               ) : (
-                <ScrollArea.Autosize mah={260} offsetScrollbars type="auto">
-                  <Stack gap="sm" pr={4}>
-                    {documentDataFields.map((f) => {
-                      const token = (f.merge_token || '').trim()
-                      const label =
-                        (f.label || '').trim() ||
-                        humanizeTokenLabel(token) ||
-                        'Field'
-                      return (
-                        <Stack key={f.id} gap={4}>
-                          <Group justify="space-between" gap={6} wrap="nowrap">
-                            <Text size="xs" fw={500} truncate style={{ flex: 1, minWidth: 0 }}>
-                              {label}
-                              {f.required ? (
-                                <Text span c="red" inherit>
-                                  {' '}
-                                  *
-                                </Text>
-                              ) : null}
-                            </Text>
-                          </Group>
-                          {token &&
-                          !(token.startsWith('listing.') && !listingsEnabled) ? (
-                            <Text size="xs" c="dimmed" truncate title={token}>
-                              Bound to {token}
-                            </Text>
-                          ) : null}
-                          <TextInput
-                            size="xs"
-                            placeholder="Enter value"
-                            value={f.value || ''}
-                            onChange={(e) => {
-                              const v = e.currentTarget.value
-                              setFields((prev) =>
-                                prev.map((row) =>
-                                  row.id === f.id ? { ...row, value: v } : row,
-                                ),
-                              )
-                            }}
-                          />
-                        </Stack>
-                      )
-                    })}
-                  </Stack>
-                </ScrollArea.Autosize>
-              )}
-              {showPullFromData ? (
-                <Accordion
-                  multiple
-                  variant="contained"
-                  defaultValue={[]}
-                  styles={{
-                    item: { background: 'var(--mantine-color-body)' },
-                    control: { paddingBlock: 8, paddingInline: 10 },
-                    content: { padding: '0 10px 10px' },
-                    label: { fontSize: 'var(--mantine-font-size-xs)', fontWeight: 600 },
-                  }}
-                >
-                  <Accordion.Item value="pull">
-                    <Accordion.Control>
-                      <Text size="xs" fw={600}>
-                        Pull from data
+                <Stack gap="xs">
+                  <Group gap="xs" wrap="nowrap">
+                    <Badge
+                      size="sm"
+                      variant="light"
+                      color={requiredDocMissing ? 'orange' : 'forest'}
+                    >
+                      {completedDocFields} of {documentDataFields.length} filled
+                    </Badge>
+                    {requiredDocMissing ? (
+                      <Text size="xs" c="dimmed">
+                        {requiredDocMissing} required left
                       </Text>
-                    </Accordion.Control>
-                    <Accordion.Panel>
-                      <Stack gap="xs">
-                        {listingsEnabled ? (
-                          <Select
-                            size="xs"
-                            label="Prefill record"
-                            placeholder="Optional record to pull values from"
-                            clearable
-                            searchable
-                            data={(listingsData?.results || []).map((l) => ({
-                              value: String(l.id),
-                              label: l.mls_number
-                                ? `${l.full_address} (${l.mls_number})`
-                                : l.full_address,
-                            }))}
-                            value={listingId}
-                            onChange={setListingId}
-                          />
-                        ) : null}
-                        {hasContactPrefill || hasRoleBoundFields ? (
-                          <Text size="xs" c="dimmed">
-                            {hasContactPrefill && hasRoleBoundFields
-                              ? 'Linked contacts and recipient role names can fill bound fields.'
-                              : hasContactPrefill
-                                ? 'A linked contact can fill contact and company fields.'
-                                : 'Recipient role names can fill bound role fields.'}
-                          </Text>
-                        ) : null}
-                        <Text size="xs" c="dimmed">
-                          Optional custom keys for fields bound to{' '}
-                          <Text span fw={600} inherit>
-                            custom.key
-                          </Text>
-                          .
-                        </Text>
-                        {customEntries.length === 0 ? (
-                          <Text size="xs" c="dimmed" fs="italic">
-                            No custom values set.
-                          </Text>
-                        ) : (
-                          <Stack gap="xs">
-                            {customEntries.map((entry, idx) => (
-                              <Stack
-                                key={idx}
-                                gap={6}
-                                p="xs"
-                                style={{
-                                  border: '1px solid var(--mantine-color-gray-3)',
-                                  borderRadius: 'var(--mantine-radius-sm)',
-                                  background: 'var(--mantine-color-gray-0)',
-                                }}
-                              >
-                                <Group gap={6} wrap="nowrap" align="flex-end">
-                                  <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-                                    <Text size="xs" c="dimmed">
-                                      Key
-                                    </Text>
-                                    <Group
-                                      gap={0}
-                                      wrap="nowrap"
-                                      px={8}
-                                      style={{
-                                        border: '1px solid var(--mantine-color-gray-4)',
-                                        borderRadius: 'var(--mantine-radius-sm)',
-                                        background: 'var(--mantine-color-body)',
-                                        minHeight: 30,
-                                      }}
-                                    >
-                                      <Text
-                                        size="xs"
-                                        c="dimmed"
-                                        style={{ flexShrink: 0, lineHeight: 1 }}
-                                      >
-                                        custom.
-                                      </Text>
-                                      <TextInput
-                                        size="xs"
-                                        variant="unstyled"
-                                        placeholder="lender_name"
-                                        value={entry.key}
-                                        style={{ flex: 1 }}
-                                        styles={{
-                                          input: {
-                                            minHeight: 28,
-                                            paddingInline: 0,
-                                            height: 28,
-                                          },
-                                        }}
-                                        onChange={(e) => {
-                                          const key = e.currentTarget.value
-                                          setCustomEntries((prev) =>
-                                            prev.map((row, i) =>
-                                              i === idx ? { ...row, key } : row,
-                                            ),
-                                          )
-                                        }}
-                                      />
-                                    </Group>
-                                  </Stack>
-                                  <ActionIcon
-                                    size="sm"
-                                    variant="subtle"
-                                    color="red"
-                                    mb={2}
-                                    aria-label={`Remove custom value ${idx + 1}`}
-                                    onClick={() =>
-                                      setCustomEntries((prev) =>
-                                        prev.filter((_, i) => i !== idx),
-                                      )
-                                    }
-                                  >
-                                    <IconTrash size={14} />
-                                  </ActionIcon>
-                                </Group>
-                                <TextInput
-                                  size="xs"
-                                  label="Value"
-                                  placeholder="First National Bank"
-                                  value={entry.value}
-                                  onChange={(e) => {
-                                    const value = e.currentTarget.value
-                                    setCustomEntries((prev) =>
-                                      prev.map((row, i) =>
-                                        i === idx ? { ...row, value } : row,
-                                      ),
-                                    )
-                                    const key = entry.key
-                                      .trim()
-                                      .replace(/\s+/g, '_')
-                                      .toLowerCase()
-                                    if (!key) return
-                                    const token = `custom.${key}`
-                                    setFields((prev) =>
-                                      prev.map((f) =>
-                                        f.merge_token === token &&
-                                        (f.fill_mode || 'signer') === 'document'
-                                          ? { ...f, value }
-                                          : f,
-                                      ),
-                                    )
-                                  }}
-                                />
-                              </Stack>
-                            ))}
-                          </Stack>
-                        )}
-                        <Button
-                          size="xs"
-                          variant="default"
-                          leftSection={<IconPlus size={14} />}
-                          onClick={() =>
-                            setCustomEntries((prev) => [...prev, { key: '', value: '' }])
-                          }
-                        >
-                          Add custom value
-                        </Button>
-                        {showApplyFromData ? (
-                          <Button
-                            size="xs"
-                            variant="light"
-                            onClick={() => prefill.mutate()}
-                            loading={prefill.isPending}
-                            disabled={save.isPending}
-                          >
-                            Apply from data
-                          </Button>
-                        ) : null}
-                      </Stack>
-                    </Accordion.Panel>
-                  </Accordion.Item>
-                </Accordion>
-              ) : null}
+                    ) : null}
+                  </Group>
+                  {showListingTokenNote ? (
+                    <Text size="xs" c="dimmed">
+                      Prefill record tokens are present. Enter values in the form, or ask an admin
+                      to enable Prefill records.
+                    </Text>
+                  ) : null}
+                  <Button size="xs" variant="light" fullWidth onClick={openComplete}>
+                    Complete document details…
+                  </Button>
+                </Stack>
+              )}
             </Stack>
             <Divider />
-            <Stack gap="xs">
-              <Text size="sm" fw={600}>
-                Templates
-              </Text>
-              <Text size="xs" c="dimmed">
-                Overlay a saved layout onto this PDF, or save the current layout as a reusable
-                template.
-              </Text>
-              <Button
-                size="xs"
-                variant="light"
-                onClick={openApply}
-                disabled={!(templatesData?.results || []).length}
-              >
-                Apply template…
-              </Button>
-              <Button size="xs" variant="light" onClick={openSaveTpl}>
-                Save as template…
-              </Button>
-            </Stack>
+            <Accordion
+              variant="contained"
+              defaultValue={null}
+              styles={{
+                item: { background: 'var(--mantine-color-body)' },
+                control: { paddingBlock: 8, paddingInline: 10 },
+                content: { padding: '0 10px 10px' },
+                label: { fontSize: 'var(--mantine-font-size-sm)', fontWeight: 600 },
+              }}
+            >
+              <Accordion.Item value="templates">
+                <Accordion.Control>Templates</Accordion.Control>
+                <Accordion.Panel>
+                  <Stack gap="xs">
+                    <Text size="xs" c="dimmed">
+                      Overlay a saved layout onto this PDF, or save the current layout as a
+                      reusable template.
+                    </Text>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      onClick={openApply}
+                      disabled={!(templatesData?.results || []).length}
+                    >
+                      Apply template…
+                    </Button>
+                    <Button size="xs" variant="light" onClick={openSaveTpl}>
+                      Save as template…
+                    </Button>
+                  </Stack>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+            <Divider />
+            <Button
+              fullWidth
+              onClick={() => save.mutate({ intent: 'send' })}
+              loading={save.isPending && save.variables?.intent === 'send'}
+            >
+              Send for signature
+            </Button>
           </>
         }
       />
+
+      <Modal
+        opened={completeOpened}
+        onClose={closeComplete}
+        title="Complete document details"
+        size="lg"
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Fill these values before sending. They are stamped into the PDF; signers do not
+            complete them.
+          </Text>
+          {showListingTokenNote ? (
+            <Text size="sm" c="dimmed">
+              This form was built with Prefill record tokens. Enter values manually, or ask an
+              admin to enable Prefill records.
+            </Text>
+          ) : null}
+          <ScrollArea.Autosize mah="min(60vh, 480px)" offsetScrollbars type="auto">
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md" verticalSpacing="md" pr={4}>
+              {documentDataFields.map((f) => {
+                const label = documentFieldLabel(f)
+                return (
+                  <TextInput
+                    key={f.id}
+                    label={
+                      <>
+                        {label}
+                        {f.required ? (
+                          <Text span c="red" inherit>
+                            {' '}
+                            *
+                          </Text>
+                        ) : null}
+                      </>
+                    }
+                    placeholder="Enter value"
+                    value={f.value || ''}
+                    onChange={(e) => {
+                      const v = e.currentTarget.value
+                      setFields((prev) =>
+                        prev.map((row) => (row.id === f.id ? { ...row, value: v } : row)),
+                      )
+                    }}
+                  />
+                )
+              })}
+            </SimpleGrid>
+          </ScrollArea.Autosize>
+          {showPullFromData ? (
+            <Accordion
+              variant="contained"
+              defaultValue={null}
+              styles={{
+                item: { background: 'var(--mantine-color-body)' },
+                control: { paddingBlock: 8, paddingInline: 10 },
+                content: { padding: '0 10px 10px' },
+                label: { fontSize: 'var(--mantine-font-size-sm)', fontWeight: 600 },
+              }}
+            >
+              <Accordion.Item value="pull">
+                <Accordion.Control>Fill from a listing</Accordion.Control>
+                <Accordion.Panel>
+                  <Stack gap="xs">
+                    <Select
+                      label="Listing"
+                      placeholder="Choose a listing (optional)"
+                      clearable
+                      searchable
+                      data={(listingsData?.results || []).map((l) => ({
+                        value: String(l.id),
+                        label: l.mls_number
+                          ? `${l.full_address} (${l.mls_number})`
+                          : l.full_address,
+                      }))}
+                      value={listingId}
+                      onChange={setListingId}
+                    />
+                    <Text size="xs" c="dimmed">
+                      {hasContactPrefill || hasRoleBoundFields
+                        ? 'Copies listing details into empty or matching fields. Recipient names and linked contacts can fill too. Values you already typed are kept when a source has nothing.'
+                        : 'Copies listing details into matching fields. Values you already typed are kept when the listing has nothing for that field.'}
+                    </Text>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      onClick={() => prefill.mutate()}
+                      loading={prefill.isPending}
+                      disabled={save.isPending || !listingId}
+                    >
+                      Fill fields
+                    </Button>
+                  </Stack>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+          ) : null}
+          <Group justify="space-between" align="center">
+            <Text size="xs" c="dimmed">
+              {completedDocFields} of {documentDataFields.length} filled
+              {requiredDocMissing ? ` · ${requiredDocMissing} required left` : ''}
+            </Text>
+            <Button onClick={closeComplete}>Done</Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       <Modal opened={applyOpened} onClose={closeApply} title="Apply template">
         <Stack>
