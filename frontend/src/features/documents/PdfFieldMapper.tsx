@@ -51,9 +51,12 @@ import {
 } from '../envelopes/types'
 import { loadPdfDocument } from '../../shared/loadPdf'
 import { pdfjs } from '../../shared/pdfjs'
+import { useAuth } from '../auth/AuthContext'
 import {
   autoLabelForToken,
   buildMergeTokenSelectData,
+  filterMergeTokenGroupsForListings,
+  filterMergeTokensForListings,
   flattenMergeTokenOptions,
   humanizeTokenLabel,
   isDocumentDataToken,
@@ -98,6 +101,8 @@ export type PdfFieldMapperProps = {
   editableContacts?: boolean
   rolesTitle?: string
   addRoleLabel?: string
+  /** Short hint under the roles accordion title (template prepare). */
+  rolesHint?: string
   /** Rendered in the right sidebar immediately below the selected-field controls. */
   sidebarActions?: ReactNode
   sidebarExtra?: ReactNode
@@ -439,7 +444,8 @@ export function PdfFieldMapper({
   onFieldsChange,
   editableContacts = true,
   rolesTitle = 'Signers',
-  addRoleLabel = 'Add signer',
+  addRoleLabel = 'Add signer role',
+  rolesHint,
   sidebarActions,
   sidebarExtra,
 }: PdfFieldMapperProps) {
@@ -447,8 +453,22 @@ export function PdfFieldMapper({
   const pageBlockRefs = useRef(new Map<number, HTMLDivElement>())
   const stackRef = useRef<HTMLDivElement>(null)
 
+  const { tenant } = useAuth()
+  const listingsEnabled = Boolean(tenant?.listings_enabled)
+
   const { data: mergeTokenCatalog } = useMergeTokenCatalog()
-  const catalogTokens = mergeTokenCatalog?.tokens || Object.keys(MERGE_TOKEN_HINTS)
+  const catalogTokens = useMemo(
+    () =>
+      filterMergeTokensForListings(
+        mergeTokenCatalog?.tokens || Object.keys(MERGE_TOKEN_HINTS),
+        listingsEnabled,
+      ),
+    [mergeTokenCatalog?.tokens, listingsEnabled],
+  )
+  const catalogGroups = useMemo(
+    () => filterMergeTokenGroupsForListings(mergeTokenCatalog?.groups, listingsEnabled),
+    [mergeTokenCatalog?.groups, listingsEnabled],
+  )
 
   const [activeSigner, setActiveSigner] = useState(0)
   const [activeTool, setActiveTool] = useState<FieldType>('signature')
@@ -486,11 +506,11 @@ export function PdfFieldMapper({
     const groups = buildMergeTokenSelectData(
       catalogTokens,
       roles,
-      mergeTokenCatalog?.groups,
+      catalogGroups,
       extra,
     )
     return flattenMergeTokenOptions(groups)
-  }, [catalogTokens, mergeTokenCatalog?.groups, roles, selectedMergeToken])
+  }, [catalogTokens, catalogGroups, roles, selectedMergeToken])
 
   const dragRef = useRef<DragState | null>(null)
   const pastRef = useRef<MapperHistorySnapshot[]>([])
@@ -1405,6 +1425,11 @@ export function PdfFieldMapper({
               </Accordion.Control>
               <Accordion.Panel>
                 <Stack gap="sm">
+                  {rolesHint ? (
+                    <Text size="xs" c="dimmed">
+                      {rolesHint}
+                    </Text>
+                  ) : null}
                   <Group gap={6}>
                     <Button
                       size="xs"
@@ -1466,10 +1491,12 @@ export function PdfFieldMapper({
                               >
                                 {roleInitials(s, idx)}
                               </div>
-                              <Text size="sm" fw={600} lineClamp={1}>
-                                {roleLabel(s, idx)}
-                                {isCc ? ' (CC)' : ''}
-                              </Text>
+                              {editableContacts ? (
+                                <Text size="sm" fw={600} lineClamp={1}>
+                                  {roleLabel(s, idx)}
+                                  {isCc ? ' (CC)' : ''}
+                                </Text>
+                              ) : null}
                             </Group>
                             {roles.length > 1 && (
                               <ActionIcon
@@ -1534,9 +1561,20 @@ export function PdfFieldMapper({
                           ) : (
                             <TextInput
                               size="xs"
-                              placeholder="Role label"
+                              label="Role name"
+                              description={
+                                idx === 0
+                                  ? 'Rename this slot — people are assigned when you send'
+                                  : undefined
+                              }
+                              placeholder="e.g. Client, Counterparty"
                               value={s.name}
                               onClick={(e) => e.stopPropagation()}
+                              onFocus={(e) => {
+                                if (/^Signer \d+$/i.test(e.currentTarget.value.trim())) {
+                                  e.currentTarget.select()
+                                }
+                              }}
                               onChange={(e) => {
                                 const next = [...roles]
                                 next[idx] = { ...next[idx], name: e.currentTarget.value }
@@ -1670,7 +1708,7 @@ export function PdfFieldMapper({
                         : 'Completed by the assigned signer during signing.'
                     }
                     data={[
-                      { value: 'document', label: 'Document data (stamped on send)' },
+                      { value: 'document', label: 'Complete before send' },
                       { value: 'signer', label: 'Signer completes' },
                     ]}
                     value={selectedField.fill_mode || 'signer'}
@@ -1691,76 +1729,11 @@ export function PdfFieldMapper({
                     }}
                   />
                 )}
-                <Autocomplete
-                  size="xs"
-                  label="Merge token (prefill)"
-                  description={
-                    MERGE_TOKEN_HINTS[selectedField.merge_token || ''] ||
-                    (selectedField.merge_token
-                      ? humanizeTokenLabel(selectedField.merge_token)
-                      : 'Pick a catalog token or type custom.field_name')
-                  }
-                  placeholder="Search or type a token…"
-                  data={mergeTokenOptions}
-                  value={selectedField.merge_token || ''}
-                  onChange={(raw) => {
-                    const previous = selectedField.merge_token || ''
-                    const normalized = normalizeMergeTokenInput(raw)
-                    // While typing intermediate text, keep raw; normalize on blur via blur handler
-                    const token = raw.includes('.') || !raw.trim() ? raw.trim() : raw.trim()
-                    const nextLabel = autoLabelForToken(
-                      token.includes('.') ? token : normalizeMergeTokenInput(token),
-                      previous,
-                      selectedField.label,
-                    )
-                    const makeDocument =
-                      (selectedField.field_type === 'text' ||
-                        selectedField.field_type === 'date') &&
-                      (isDocumentDataToken(token) || isDocumentDataToken(normalized))
-                    patchSelectedFields({
-                      merge_token: token,
-                      ...(nextLabel ? { label: nextLabel } : {}),
-                      ...(makeDocument
-                        ? {
-                            fill_mode: 'document' as const,
-                            recipientIndex: null,
-                            role_key: '',
-                          }
-                        : {}),
-                    })
-                  }}
-                  onBlur={() => {
-                    const previous = selectedField.merge_token || ''
-                    if (!previous.trim()) return
-                    const normalized = normalizeMergeTokenInput(previous)
-                    if (normalized === previous) return
-                    const nextLabel = autoLabelForToken(
-                      normalized,
-                      previous,
-                      selectedField.label,
-                    )
-                    const makeDocument =
-                      (selectedField.field_type === 'text' ||
-                        selectedField.field_type === 'date') &&
-                      isDocumentDataToken(normalized)
-                    patchSelectedFields({
-                      merge_token: normalized,
-                      ...(nextLabel ? { label: nextLabel } : {}),
-                      ...(makeDocument
-                        ? {
-                            fill_mode: 'document' as const,
-                            recipientIndex: null,
-                            role_key: '',
-                          }
-                        : {}),
-                    })
-                  }}
-                />
                 {(selectedField.fill_mode || 'signer') === 'document' ? (
                   <TextInput
                     size="xs"
-                    label="Document value"
-                    description="Set here or via Document data / Apply prefill. Stamped on send."
+                    label="Value"
+                    description="Enter here or pull from data on the Prepare sidebar. Stamped on send."
                     value={selectedField.value || ''}
                     onChange={(e) =>
                       patchSelectedFields({ value: e.currentTarget.value })
@@ -1770,11 +1743,98 @@ export function PdfFieldMapper({
                   <TextInput
                     size="xs"
                     label="Current value"
-                    description="Seeded by Apply prefill; signer can still edit"
+                    description="Seeded from data; signer can still edit"
                     value={selectedField.value}
                     readOnly
                   />
                 ) : null}
+                {(selectedField.field_type === 'text' || selectedField.field_type === 'date') && (
+                  <Accordion
+                    variant="contained"
+                    defaultValue={selectedField.merge_token ? 'bind' : null}
+                    styles={{
+                      item: { background: 'var(--mantine-color-body)' },
+                      control: { paddingBlock: 6, paddingInline: 8 },
+                      content: { padding: '0 8px 8px' },
+                      label: { fontSize: 'var(--mantine-font-size-xs)', fontWeight: 600 },
+                    }}
+                  >
+                    <Accordion.Item value="bind">
+                      <Accordion.Control>
+                        <Text size="xs" fw={600}>
+                          Advanced: bind to data source
+                        </Text>
+                      </Accordion.Control>
+                      <Accordion.Panel>
+                        <Autocomplete
+                          size="xs"
+                          label="Data source"
+                          description={
+                            MERGE_TOKEN_HINTS[selectedField.merge_token || ''] ||
+                            (selectedField.merge_token
+                              ? humanizeTokenLabel(selectedField.merge_token)
+                              : 'Pick a catalog token or type custom.field_name')
+                          }
+                          placeholder="Search or type a token…"
+                          data={mergeTokenOptions}
+                          value={selectedField.merge_token || ''}
+                          onChange={(raw) => {
+                            const previous = selectedField.merge_token || ''
+                            const normalized = normalizeMergeTokenInput(raw)
+                            const token =
+                              raw.includes('.') || !raw.trim() ? raw.trim() : raw.trim()
+                            const nextLabel = autoLabelForToken(
+                              token.includes('.') ? token : normalizeMergeTokenInput(token),
+                              previous,
+                              selectedField.label,
+                            )
+                            const makeDocument =
+                              (selectedField.field_type === 'text' ||
+                                selectedField.field_type === 'date') &&
+                              (isDocumentDataToken(token) || isDocumentDataToken(normalized))
+                            patchSelectedFields({
+                              merge_token: token,
+                              ...(nextLabel ? { label: nextLabel } : {}),
+                              ...(makeDocument
+                                ? {
+                                    fill_mode: 'document' as const,
+                                    recipientIndex: null,
+                                    role_key: '',
+                                  }
+                                : {}),
+                            })
+                          }}
+                          onBlur={() => {
+                            const previous = selectedField.merge_token || ''
+                            if (!previous.trim()) return
+                            const normalized = normalizeMergeTokenInput(previous)
+                            if (normalized === previous) return
+                            const nextLabel = autoLabelForToken(
+                              normalized,
+                              previous,
+                              selectedField.label,
+                            )
+                            const makeDocument =
+                              (selectedField.field_type === 'text' ||
+                                selectedField.field_type === 'date') &&
+                              isDocumentDataToken(normalized)
+                            patchSelectedFields({
+                              merge_token: normalized,
+                              ...(nextLabel ? { label: nextLabel } : {}),
+                              ...(makeDocument
+                                ? {
+                                    fill_mode: 'document' as const,
+                                    recipientIndex: null,
+                                    role_key: '',
+                                  }
+                                : {}),
+                            })
+                          }}
+                        />
+                      </Accordion.Panel>
+                    </Accordion.Item>
+                  </Accordion>
+                )}
                 <Switch
                   size="sm"
                   label="Required"

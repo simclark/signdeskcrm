@@ -214,7 +214,7 @@ export function TemplatesPage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['templates'] })
-      notifications.show({ color: 'forest', message: 'Added to Form library' })
+      notifications.show({ color: 'forest', message: 'Added to Shared library' })
     },
     onError: (err: Error) =>
       notifications.show({ color: 'red', title: 'Could not add to library', message: err.message }),
@@ -228,7 +228,7 @@ export function TemplatesPage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['templates'] })
-      notifications.show({ color: 'forest', message: 'Removed from Form library' })
+      notifications.show({ color: 'forest', message: 'Removed from Shared library' })
     },
     onError: (err: Error) =>
       notifications.show({
@@ -244,9 +244,9 @@ export function TemplatesPage() {
         <div>
           <Title order={2}>Templates</Title>
           <Text c="dimmed">
-            Reusable field layouts. Form library holds SignDesk sample starters plus forms your
-            workspace publishes for agents to clone. Import a PDF when you need to bring a layout
-            from another tool.
+            Reusable field layouts for your workspace. Publish templates to the Shared library so
+            teammates can use and clone them without editing the original. Import a PDF when you need
+            to bring a layout from another tool.
           </Text>
         </div>
         <Group>
@@ -271,7 +271,7 @@ export function TemplatesPage() {
         onChange={(v) => setView(v as 'all' | 'library')}
         data={[
           { label: 'All templates', value: 'all' },
-          { label: 'Form library', value: 'library' },
+          { label: 'Shared library', value: 'library' },
         ]}
         w={320}
       />
@@ -280,8 +280,8 @@ export function TemplatesPage() {
         <Text c="dimmed">
           {view === 'library'
             ? isAdmin
-              ? 'No library forms yet. Create a template, then use Add to library.'
-              : 'No library forms yet. Ask a workspace admin to publish templates to the Form library.'
+              ? 'No shared library forms yet. Create a template, then use Add to library.'
+              : 'No shared library forms yet. Ask a workspace admin to publish templates to the Shared library.'
             : 'No templates yet. Upload a PDF, place signature fields, then reuse that layout.'}
         </Text>
       ) : (
@@ -299,17 +299,14 @@ export function TemplatesPage() {
           </DataTable.Thead>
           <DataTable.Tbody>
             {(data?.results || []).map((t) => {
-              const isPlatform = Boolean(t.library_key)
+              const isShared = Boolean(t.is_library)
+              const memberReadOnly = isShared && !isAdmin
               return (
               <DataTable.Tr key={t.id}>
                 <DataTable.Td className="sd-table-primary">
                   <Group gap="xs">
                     <span>{t.name}</span>
-                    {isPlatform ? (
-                      <Badge size="sm" variant="light" color="blue">
-                        SignDesk
-                      </Badge>
-                    ) : t.is_library ? (
+                    {isShared ? (
                       <Badge size="sm" variant="light" color="teal">
                         Library
                       </Badge>
@@ -321,7 +318,7 @@ export function TemplatesPage() {
                     <Badge variant="light" color={t.is_active ? 'forest' : 'gray'}>
                       {t.is_active ? 'Active' : 'Inactive'}
                     </Badge>
-                    {!isPlatform ? (
+                    {!memberReadOnly ? (
                       <Switch
                         size="sm"
                         checked={t.is_active}
@@ -370,30 +367,20 @@ export function TemplatesPage() {
                           Create envelope
                         </Menu.Item>
                       ) : null}
-                      {isPlatform ? (
-                        <Menu.Item
-                          component={Link}
-                          to={`/app/templates/${t.id}/prepare`}
-                          leftSection={<IconLayout size={14} />}
-                        >
-                          View layout
-                        </Menu.Item>
-                      ) : (
-                        <Menu.Item
-                          component={Link}
-                          to={`/app/templates/${t.id}/prepare`}
-                          leftSection={<IconLayout size={14} />}
-                        >
-                          Edit layout
-                        </Menu.Item>
-                      )}
+                      <Menu.Item
+                        component={Link}
+                        to={`/app/templates/${t.id}/prepare`}
+                        leftSection={<IconLayout size={14} />}
+                      >
+                        {memberReadOnly ? 'View layout' : 'Edit layout'}
+                      </Menu.Item>
                       <Menu.Item
                         leftSection={<IconCopy size={14} />}
                         onClick={() => clone.mutate(t.id)}
                       >
                         Clone
                       </Menu.Item>
-                      {isAdmin && !isPlatform && !t.is_library ? (
+                      {isAdmin && !t.is_library ? (
                         <Menu.Item
                           leftSection={<IconBooks size={14} />}
                           onClick={() => addToLibrary.mutate(t.id)}
@@ -401,7 +388,7 @@ export function TemplatesPage() {
                           Add to library
                         </Menu.Item>
                       ) : null}
-                      {isAdmin && !isPlatform && t.is_library ? (
+                      {isAdmin && t.is_library ? (
                         <Menu.Item
                           leftSection={<IconBooks size={14} />}
                           onClick={() => removeFromLibrary.mutate(t.id)}
@@ -409,7 +396,7 @@ export function TemplatesPage() {
                           Remove from library
                         </Menu.Item>
                       ) : null}
-                      {!isPlatform ? (
+                      {!memberReadOnly ? (
                         <Menu.Item
                           color="red"
                           leftSection={<IconArchive size={14} />}

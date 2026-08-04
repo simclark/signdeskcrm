@@ -622,7 +622,7 @@ class PlatformOpsTests(TestCase):
             format="json",
         )
         self.assertEqual(res.status_code, 200, res.data)
-        self.assertGreaterEqual(res.data.get("created", 0), 1)
+        self.assertEqual(res.data.get("created", 0), 0)
 
     def test_support_snapshot(self):
         self.client.force_authenticate(self.staff)
@@ -670,7 +670,7 @@ class PlatformOpsTests(TestCase):
         result = reset_demo_tenant(owner_password="demo-pass-123")
         self.assertEqual(result.tenant.slug, "demo")
         self.assertTrue(result.password_set)
-        self.assertTrue(
+        self.assertFalse(
             Template.objects.filter(
                 tenant=result.tenant, library_key="sample-purchase-agreement"
             ).exists()

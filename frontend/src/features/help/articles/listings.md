@@ -28,10 +28,12 @@ Sources:
 ## Use on an envelope
 
 1. Create or open an envelope and go to **Prepare**.
-2. Select a listing / prefill record when the option is shown.
-3. Merge fields and document-data fields that map to that record fill from the listing.
+2. Under **Complete before send**, open **Pull from data** and select a Prefill record when the picker is shown (module must be on).
+3. Click **Apply from data** to fill fields bound to listing tokens (and other resolvable sources).
 
-This works especially well with [Templates](templates-and-form-library.md) that already include merge tokens (for example listing address).
+You can always type values into Complete before send fields manually — Prefill records are a shortcut, not a requirement.
+
+This works especially well with [Templates](templates-and-form-library.md) that already include listing data-source bindings (for example listing address).
 
 ## Naming note
 

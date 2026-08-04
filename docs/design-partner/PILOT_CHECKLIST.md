@@ -10,7 +10,7 @@ Complete one row per real or practice packet. Focus on what forced a return to D
 
 ## Recurring themes to watch
 
-- [ ] Form library / TREC template start (vs blank PDF)
+- [ ] Shared library / TREC template start (vs blank PDF)
 - [ ] Property / MLS prefill accuracy
 - [ ] Agent-editable terms (price, dates) before send
 - [ ] Buyer/seller personal fields at sign time
@@ -23,4 +23,4 @@ Complete one row per real or practice packet. Focus on what forced a return to D
 
 ## Decision gate for Phase 1+
 
-After 2–3 packets: prioritize **form library + merge fields** only if the core signing loop already feels trustworthy. Otherwise fix core gaps first.
+After 2–3 packets: prioritize **shared library + merge fields** only if the core signing loop already feels trustworthy. Otherwise fix core gaps first.

@@ -218,7 +218,7 @@ export function PlatformTenantsPage() {
         <form onSubmit={provisionForm.onSubmit((v) => provision.mutate(v))}>
           <Stack gap="md">
             <Text size="sm" c="dimmed">
-              Creates the tenant and seeds email templates plus the form library. Leave password
+              Creates the tenant and seeds email templates. Leave password
               blank to email an <strong>admin</strong> invite (not owner) so they set their own
               password.
             </Text>

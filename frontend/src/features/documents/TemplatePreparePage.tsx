@@ -3,6 +3,7 @@ import { notifications } from '@mantine/notifications'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 import { api } from '../../shared/api'
 import { PageBreadcrumbs } from '../../shared/PageBreadcrumbs'
 import { newFieldId, type FieldDraft } from '../envelopes/types'
@@ -21,6 +22,8 @@ export function TemplatePreparePage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { membership } = useAuth()
+  const isAdmin = membership?.role === 'owner' || membership?.role === 'admin'
   const [roles, setRoles] = useState<RoleDraft[]>([])
   const [fields, setFields] = useState<FieldDraft[]>([])
   const [hydrated, setHydrated] = useState(false)
@@ -33,9 +36,10 @@ export function TemplatePreparePage() {
     enabled: !!id,
   })
 
-  const isPlatform = Boolean(template?.library_key)
+  const isReadOnly =
+    Boolean(template?.library_key) || (Boolean(template?.is_library) && !isAdmin)
   const isDirty =
-    !isPlatform && hydrated && draftsSnapshot(roles, fields) !== savedSnapshot
+    !isReadOnly && hydrated && draftsSnapshot(roles, fields) !== savedSnapshot
 
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     if (leaveRef.current) return false
@@ -90,8 +94,8 @@ export function TemplatePreparePage() {
   const save = useMutation({
     mutationFn: async ({ continueAfter }: { continueAfter: boolean }) => {
       if (!id) throw new Error('Missing template')
-      if (isPlatform) {
-        throw new Error('Platform library forms cannot be edited. Clone the template first.')
+      if (isReadOnly) {
+        throw new Error('Shared library templates cannot be edited. Clone the template first.')
       }
       if (!fields.length) throw new Error('Place at least one field on the document')
       for (let i = 0; i < roles.length; i++) {
@@ -177,11 +181,7 @@ export function TemplatePreparePage() {
         <div>
           <Group gap="sm" mb={4}>
             <Title order={2}>Template: {template.name}</Title>
-            {isPlatform ? (
-              <Badge variant="light" color="blue">
-                SignDesk
-              </Badge>
-            ) : template.is_library ? (
+            {template.is_library ? (
               <Badge variant="light" color="teal">
                 Library
               </Badge>
@@ -191,12 +191,12 @@ export function TemplatePreparePage() {
             </Badge>
           </Group>
           <Text c="dimmed">
-            {isPlatform
-              ? 'This is a SignDesk platform starter. Clone it to place fields and customize the layout for your workspace.'
+            {isReadOnly
+              ? 'This Shared library template is read-only. Clone it to place fields and customize the layout for your workspace.'
               : `Place fields on ${template.document_title || 'the PDF'}. This layout can be applied to any uploaded document when creating an envelope. Inactive templates stay editable but are hidden from envelope dropdowns.`}
           </Text>
         </div>
-        {!isPlatform ? (
+        {!isReadOnly ? (
           <Switch
             label={template.is_active ? 'Active' : 'Inactive'}
             checked={template.is_active}
@@ -205,11 +205,11 @@ export function TemplatePreparePage() {
         ) : null}
       </Group>
 
-      {isPlatform ? (
-        <Alert color="blue" title="Read-only platform form">
+      {isReadOnly ? (
+        <Alert color="blue" title="Read-only shared library form">
           <Group justify="space-between" align="center" wrap="wrap">
             <Text size="sm">
-              Edits are blocked on SignDesk library forms. Clone to create an editable workspace copy.
+              Edits are blocked on Shared library forms. Clone to create an editable workspace copy.
             </Text>
             <Button onClick={() => clone.mutate()} loading={clone.isPending}>
               Clone to edit
@@ -223,13 +223,14 @@ export function TemplatePreparePage() {
         initialPageCount={template.page_count || 1}
         roles={roles}
         fields={fields}
-        onRolesChange={isPlatform ? () => undefined : setRoles}
-        onFieldsChange={isPlatform ? () => undefined : setFields}
+        onRolesChange={isReadOnly ? () => undefined : setRoles}
+        onFieldsChange={isReadOnly ? () => undefined : setFields}
         editableContacts={false}
         rolesTitle="Signer roles"
-        addRoleLabel="Add role"
+        addRoleLabel="Add signer role"
+        rolesHint="Name each signing slot (not a person yet). Map contacts when you create an envelope."
         sidebarActions={
-          isPlatform ? (
+          isReadOnly ? (
             <Stack gap="xs">
               <Button fullWidth onClick={() => clone.mutate()} loading={clone.isPending}>
                 Clone to edit

@@ -110,16 +110,16 @@ Live demo walkthrough: [docs/demo/ESIGN_DEMO.md](docs/demo/ESIGN_DEMO.md)
 
 Every workspace includes in-app **Help** at `/app/help` (left nav + avatar menu). Repo mirror: [docs/help/README.md](docs/help/README.md).
 
-## Form library, listings & CRM outreach
+## Shared library, listings & CRM outreach
 
 Horizontal capabilities (first design partner: real estate — see `docs/design-partner/`):
 
-- **Form library** — dual shelf: SignDesk platform starters (auto-copied on workspace signup / Form library list) plus tenant-published templates (`Add to library`). Platform rows have a `library_key` and are clone-only; customize via Clone.
+- **Shared library** — workspace-published templates (`Add to library`, Admin/Owner). Members can use and clone published forms but cannot edit the original in place.
 - **Import** — `POST /api/templates/import/` (PDF AcroForm + optional JSON field map), then optionally promote into the library
 - **Listings** — manual or CSV import → envelope prepare prefill
 - **Follow-ups & follow-up plans** — agent tasks plus envelope-triggered email sequences (stalled / declined / completed)
 
-Ops backfill / refresh of platform starters (internal only — not a customer tool):
+The `seed_form_library` management command remains as a no-op for compatibility (SignDesk curated starters are retired).
 
 ```bash
 cd backend

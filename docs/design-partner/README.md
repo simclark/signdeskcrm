@@ -1,6 +1,6 @@
 # Design partner pilot (Mitchell / Shapiro Group)
 
-SignDesk stays a **horizontal** e-sign + light CRM product. Shapiro Group is the first design partner to validate workflows that other industries can reuse (form library, merge/prefill, listing import, follow-ups).
+SignDesk stays a **horizontal** e-sign + light CRM product. Shapiro Group is the first design partner to validate workflows that other industries can reuse (shared library, merge/prefill, listing import, follow-ups).
 
 ## Goals
 
@@ -11,17 +11,10 @@ SignDesk stays a **horizontal** e-sign + light CRM product. Shapiro Group is the
 
 ## How to start the pilot
 
-1. Create a workspace for Shapiro (or invite Mitchell into an existing tenant). New workspaces automatically receive SignDesk Form library starters (sample purchase agreement with roles + merge tokens). Existing workspaces pick up missing starters the first time Form library is opened.
+1. Create a workspace for Shapiro (or invite Mitchell into an existing tenant).
 2. Agree commercial terms using [BETA_TERMS.md](./BETA_TERMS.md).
 3. Follow [PILOT_OPS.md](./PILOT_OPS.md) for hosted URL, real SMTP, and counsel review of disclosure / Certificate of Completion.
-4. (Optional, ops only) Backfill or refresh platform starters for an existing tenant:
-
-```bash
-cd backend
-python manage.py seed_form_library --tenant-slug <their-slug>
-```
-
-4. Have them upload official TREC PDFs they already use → Templates → place fields. Clone SignDesk library patterns when helpful, then **Add to library** so agents reuse the workspace’s published forms.
+4. Have them upload official TREC PDFs they already use → Templates → place fields, then **Add to library** so agents reuse the workspace’s published Shared library forms.
 5. Send 2–3 practice envelopes (Buyer + Seller sequential).
 6. Fill [PILOT_CHECKLIST.md](./PILOT_CHECKLIST.md) after each packet.
 

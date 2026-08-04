@@ -88,13 +88,13 @@ class Template(TenantOwnedModel):
     description = models.TextField(blank=True)
     is_library = models.BooleanField(
         default=False,
-        help_text="Curated form-library entry (cloneable starting point).",
+        help_text="Published to the workspace Shared library (cloneable starting point).",
     )
     library_key = models.CharField(
         max_length=128,
         blank=True,
         null=True,
-        help_text="Stable key for seeded library forms (null for user templates).",
+        help_text="Legacy key for retired SignDesk starters (null for user templates).",
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

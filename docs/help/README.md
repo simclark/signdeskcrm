@@ -13,7 +13,7 @@ The same articles live in the product at `frontend/src/features/help/articles/` 
 | Dashboard | [dashboard.md](dashboard.md) |
 | Envelopes | [envelopes.md](envelopes.md) |
 | Documents | [documents.md](documents.md) |
-| Templates & Form library | [templates-and-form-library.md](templates-and-form-library.md) |
+| Templates & Shared library | [templates-and-form-library.md](templates-and-form-library.md) |
 | Contacts | [contacts.md](contacts.md) |
 | Companies | [companies.md](companies.md) |
 | Listings / Prefill records | [listings.md](listings.md) |

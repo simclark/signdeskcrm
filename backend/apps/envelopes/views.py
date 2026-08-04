@@ -15,9 +15,11 @@ from apps.envelopes.serializers import (
     RecipientSerializer,
 )
 from apps.envelopes.services import (
+    heal_draft_stamped_pdf,
     next_copy_title,
     record_audit,
     regenerate_certificate as rebuild_certificate_pdf,
+    resolve_library_document_refs,
     send_envelope,
 )
 from apps.tenants.permissions import IsTenantMember
@@ -33,8 +35,23 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
         return (
             Envelope.objects.for_tenant(self.request.tenant)
             .prefetch_related("recipients", "fields")
-            .select_related("document", "document_version")
+            .select_related(
+                "document",
+                "document_version",
+                "library_document",
+                "library_document_version",
+                "template",
+                "template__document",
+            )
         )
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        # Repair drafts that still point at a send-stamped PDF (ghost prefill).
+        if heal_draft_stamped_pdf(instance):
+            instance.refresh_from_db()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -96,13 +113,16 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def duplicate(self, request, pk=None):
         source = self.get_object()
+        # Always clone from the clean library PDF — never the send-stamped copy,
+        # or moved fields leave burned-in "ghost" values on prepare.
+        document, document_version = resolve_library_document_refs(source)
         clone = Envelope.objects.create(
             tenant=request.tenant,
             title=next_copy_title(source.title),
             message=source.message,
             routing=source.routing,
-            document=source.document,
-            document_version=source.document_version,
+            document=document,
+            document_version=document_version,
             template=source.template,
             listing=source.listing,
             merge_data=dict(source.merge_data or {}),

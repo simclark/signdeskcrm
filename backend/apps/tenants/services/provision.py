@@ -59,9 +59,6 @@ def provision_tenant(
     )
     apply_new_tenant_trial(tenant)
     ensure_email_templates(tenant)
-    from apps.documents.form_library.ensure import ensure_form_library
-
-    ensure_form_library(tenant)
 
     if owner_password:
         user = User.objects.filter(email__iexact=owner_email).first()

@@ -7,15 +7,15 @@ SignDesk workspaces use membership roles. Your role is shown in Settings (for ad
 | Role | How you get it | Access |
 |---|---|---|
 | **Owner** | Created the workspace at signup | Full access, including Settings and member management. One owner per workspace. |
-| **Admin** | Invited as Admin | Same day-to-day work as Member, plus Settings (workspace, branding, email, e-signature, members, Form library publish). |
-| **Member** | Invited as Member | Dashboard, envelopes, documents, templates, CRM, follow-ups. No Settings. Cannot add/remove Form library items. |
+| **Admin** | Invited as Admin | Same day-to-day work as Member, plus Settings (workspace, branding, email, e-signature, members, Shared library publish). |
+| **Member** | Invited as Member | Dashboard, envelopes, documents, templates, CRM, follow-ups. No Settings. Cannot add/remove Shared library items. |
 
 You cannot invite someone as Owner. Ownership stays with the account that created the workspace.
 
 ## What Members can do
 
 - Create and send envelopes; prepare fields and recipients
-- Upload documents; create and edit templates (except Form library publish)
+- Upload documents; create and edit templates (except Shared library publish)
 - Manage contacts, companies, follow-ups, and follow-up plans
 - Use Listings when Prefill records is enabled
 - Edit their own profile

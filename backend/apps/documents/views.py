@@ -7,7 +7,6 @@ from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
-from apps.documents.form_library.ensure import ensure_form_library
 from apps.documents.merge import KNOWN_MERGE_TOKENS
 from apps.documents.models import Document, DocumentVersion, Template
 from apps.documents.pdf_import import extract_acroform_layout, layout_from_import_payload
@@ -19,7 +18,49 @@ from apps.documents.serializers import (
     validate_roles,
 )
 from apps.common.storage_utils import field_file_stream
+from apps.tenants.models import Membership
 from apps.tenants.permissions import IsTenantAdmin, IsTenantMember
+
+
+def _is_request_tenant_admin(request) -> bool:
+    tenant = getattr(request, "tenant", None)
+    user = getattr(request, "user", None)
+    if not tenant or not user or not user.is_authenticated:
+        return False
+    return Membership.objects.filter(
+        tenant=tenant,
+        user=user,
+        is_active=True,
+        role__in=[Membership.Role.OWNER, Membership.Role.ADMIN],
+    ).exists()
+
+
+def _shared_library_edit_block(instance: Template, request):
+    """Members cannot edit/archive Shared library templates; clone instead.
+
+    Leftover platform starters (``library_key`` set) stay clone-only for everyone.
+    """
+    if instance.library_key:
+        return Response(
+            {
+                "detail": (
+                    "Platform library forms cannot be edited. "
+                    "Clone the template to customize it."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if instance.is_library and not _is_request_tenant_admin(request):
+        return Response(
+            {
+                "detail": (
+                    "Shared library templates cannot be edited. "
+                    "Clone the template to customize it."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return None
 
 
 class DocumentViewSet(viewsets.ModelViewSet):
@@ -93,12 +134,6 @@ class TemplateViewSet(viewsets.ModelViewSet):
             qs = qs.filter(category=category)
         return qs
 
-    def list(self, request, *args, **kwargs):
-        library = request.query_params.get("library")
-        if library is not None and library.lower() in ("1", "true", "yes"):
-            ensure_form_library(request.tenant)
-        return super().list(request, *args, **kwargs)
-
     def perform_create(self, serializer):
         serializer.save(
             tenant=self.request.tenant,
@@ -109,16 +144,9 @@ class TemplateViewSet(viewsets.ModelViewSet):
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
-        if instance.library_key:
-            return Response(
-                {
-                    "detail": (
-                        "Platform library forms cannot be edited. "
-                        "Clone the template to customize it."
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        blocked = _shared_library_edit_block(instance, request)
+        if blocked is not None:
+            return blocked
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
@@ -137,6 +165,17 @@ class TemplateViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if instance.is_library and not _is_request_tenant_admin(request):
+            return Response(
+                {
+                    "detail": (
+                        "Shared library templates cannot be archived. "
+                        "Clone the template if you need a workspace copy, "
+                        "or ask an admin to remove it from the library first."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
@@ -146,19 +185,19 @@ class TemplateViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="merge-tokens")
     def merge_tokens(self, request):
         """Catalog of merge tokens for template/envelope field autocomplete."""
-        return Response(
-            {
-                "tokens": KNOWN_MERGE_TOKENS,
-                "groups": {
-                    "contact": "Contact",
-                    "company": "Company",
-                    "listing": "Listing",
-                    "deal": "Deal terms",
-                    "custom": "Custom",
-                    "role": "Recipient role",
-                },
-            }
-        )
+        tokens = list(KNOWN_MERGE_TOKENS)
+        groups = {
+            "contact": "Contact",
+            "company": "Company",
+            "listing": "Listing",
+            "deal": "Deal terms",
+            "custom": "Custom",
+            "role": "Recipient role",
+        }
+        if not getattr(request.tenant, "listings_enabled", False):
+            tokens = [t for t in tokens if not t.startswith("listing.")]
+            groups.pop("listing", None)
+        return Response({"tokens": tokens, "groups": groups})
 
     @action(detail=True, methods=["post"])
     def clone(self, request, pk=None):
@@ -191,7 +230,7 @@ class TemplateViewSet(viewsets.ModelViewSet):
         permission_classes=[IsTenantAdmin],
     )
     def add_to_library(self, request, pk=None):
-        """Promote a workspace template into the Form library (tenant-owned)."""
+        """Promote a workspace template into the Shared library (tenant-owned)."""
         template = self.get_object()
         if template.library_key:
             return Response(
@@ -215,7 +254,7 @@ class TemplateViewSet(viewsets.ModelViewSet):
         permission_classes=[IsTenantAdmin],
     )
     def remove_from_library(self, request, pk=None):
-        """Remove a tenant-promoted form from the library shelf."""
+        """Remove a tenant-promoted form from the Shared library shelf."""
         template = self.get_object()
         if template.library_key:
             return Response(
@@ -243,7 +282,7 @@ class TemplateViewSet(viewsets.ModelViewSet):
 
         Tries AcroForm extraction first; falls back to provided `field_map` JSON
         (DocuSign-style or SignDesk layout). Empty layout is allowed for manual placement.
-        Promote into Form library afterward via add-to-library.
+        Promote into Shared library afterward via add-to-library.
         """
         uploaded = request.FILES.get("file")
         if not uploaded:

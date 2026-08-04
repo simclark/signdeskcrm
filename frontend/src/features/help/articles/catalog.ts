@@ -69,8 +69,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
   {
     slug: 'templates-and-form-library',
-    title: 'Templates & Form library',
-    description: 'Reusable layouts, SignDesk starters, and workspace-published forms.',
+    title: 'Templates & Shared library',
+    description: 'Reusable layouts and workspace-published Shared library forms.',
     category: 'esign',
     body: templates,
   },

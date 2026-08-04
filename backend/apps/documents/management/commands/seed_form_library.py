@@ -6,9 +6,8 @@ from apps.tenants.models import Tenant
 
 class Command(BaseCommand):
     help = (
-        "Ops/internal: sync SignDesk platform form-library catalog into tenant(s). "
-        "Workspaces also receive missing catalog forms on signup and when listing "
-        "the Form library. Design partners upload official board PDFs separately."
+        "Ops/internal no-op: SignDesk curated starters are retired. "
+        "Shared library forms are workspace-published via Add to library."
     )
 
     def add_arguments(self, parser):

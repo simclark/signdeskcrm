@@ -1,7 +1,6 @@
 import {
   Accordion,
   ActionIcon,
-  Badge,
   Button,
   Divider,
   Group,
@@ -21,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PdfFieldMapper } from '../documents/PdfFieldMapper'
+import { humanizeTokenLabel } from '../documents/mergeTokens'
 import {
   draftsSnapshot,
   fieldsFromLayout,
@@ -59,7 +59,7 @@ function validatePrepareDrafts(signers: RoleDraft[], fields: FieldDraft[]): stri
   for (const f of fields) {
     if ((f.fill_mode || 'signer') === 'document') {
       if (f.recipientIndex != null) {
-        return 'Document data fields must not be assigned to a signer'
+        return 'Complete-before-send fields must not be assigned to a signer'
       }
       continue
     }
@@ -504,16 +504,19 @@ export function EnvelopePreparePage() {
       qc.invalidateQueries({ queryKey: ['envelope', id] })
       notifications.show({
         color: 'forest',
-        message: `Prefill applied to ${updated_fields} field(s)`,
+        message: `Applied data to ${updated_fields} field(s)`,
       })
     },
     onError: (err: Error) =>
-      notifications.show({ color: 'red', title: 'Prefill failed', message: err.message }),
+      notifications.show({ color: 'red', title: 'Apply from data failed', message: err.message }),
   })
 
   const hasUsableCustomEntries = customEntries.some((e) => e.key.trim())
   const hasContactPrefill = signers.some((s) => s.contact)
   const documentDataFields = fields.filter((f) => (f.fill_mode || 'signer') === 'document')
+  const hasListingBoundFields = documentDataFields.some((f) =>
+    (f.merge_token || '').trim().startsWith('listing.'),
+  )
   const hasResolvableNonListingTokens = documentDataFields.some((f) => {
     const token = (f.merge_token || '').trim()
     return (
@@ -524,14 +527,22 @@ export function EnvelopePreparePage() {
       token.startsWith('company.')
     )
   })
-  const canApplyPrefill =
+  const hasRoleBoundFields = documentDataFields.some((f) =>
+    (f.merge_token || '').trim().startsWith('role.'),
+  )
+  // Show optional data sources only when something can actually contribute.
+  const showPullFromData =
+    listingsEnabled ||
+    hasContactPrefill ||
+    hasResolvableNonListingTokens ||
+    customEntries.length > 0
+  // Hide Apply when listings is off and only listing.* tokens exist (type values instead).
+  const showApplyFromData =
     listingsEnabled ||
     hasUsableCustomEntries ||
     hasContactPrefill ||
     hasResolvableNonListingTokens
-  const prefillDisabledHint = canApplyPrefill
-    ? null
-    : 'No custom values set. Add a custom key above to Apply prefill, or type values into the document data fields. Listing tokens (e.g. listing.full_address) need the Listings module.'
+  const showListingTokenNote = !listingsEnabled && hasListingBoundFields
 
   if (isLoading || !envelope || !hydrated) return null
 
@@ -629,253 +640,259 @@ export function EnvelopePreparePage() {
             <Stack gap="xs">
               <div>
                 <Text size="sm" fw={600}>
-                  Document data
+                  Complete before send
                 </Text>
                 <Text size="xs" c="dimmed">
-                  Shared values stamped into the PDF on send.
+                  These values are stamped into the PDF when you send. Signers do not fill them.
                 </Text>
               </div>
-              {listingsEnabled ? (
-                <Select
-                  size="xs"
-                  label="Prefill record"
-                  placeholder="Optional record to pull values from"
-                  clearable
-                  searchable
-                  data={(listingsData?.results || []).map((l) => ({
-                    value: String(l.id),
-                    label: l.mls_number
-                      ? `${l.full_address} (${l.mls_number})`
-                      : l.full_address,
-                  }))}
-                  value={listingId}
-                  onChange={setListingId}
-                />
-              ) : null}
-              <Accordion
-                multiple
-                variant="contained"
-                defaultValue={['fields', 'custom']}
-                styles={{
-                  item: { background: 'var(--mantine-color-body)' },
-                  control: { paddingBlock: 8, paddingInline: 10 },
-                  content: { padding: '0 10px 10px' },
-                  label: { fontSize: 'var(--mantine-font-size-xs)', fontWeight: 600 },
-                }}
-              >
-                <Accordion.Item value="fields">
-                  <Accordion.Control>
-                    <Group justify="space-between" wrap="nowrap" gap="xs" pr="xs">
-                      <Text size="xs" fw={600}>
-                        Fields
-                      </Text>
-                      <Badge size="xs" variant="light" color="gray">
-                        {documentDataFields.length}
-                      </Badge>
-                    </Group>
-                  </Accordion.Control>
-                  <Accordion.Panel>
-                    {documentDataFields.length === 0 ? (
-                      <Text size="xs" c="dimmed">
-                        No document-data fields yet. Set a text/date field to “Document data” in
-                        the mapper.
-                      </Text>
-                    ) : (
-                      <ScrollArea.Autosize mah={220} offsetScrollbars type="auto">
-                        <Stack gap="sm" pr={4}>
-                          {documentDataFields.map((f) => (
-                            <Stack key={f.id} gap={4}>
-                              <Group justify="space-between" gap={6} wrap="nowrap">
-                                <Text size="xs" fw={500} truncate style={{ flex: 1, minWidth: 0 }}>
-                                  {f.label || f.merge_token || 'Document field'}
-                                </Text>
-                                {f.merge_token ? (
-                                  <Text
-                                    size="xs"
-                                    c="dimmed"
-                                    truncate
-                                    title={f.merge_token}
-                                    style={{ maxWidth: '42%', flexShrink: 0 }}
-                                  >
-                                    {f.merge_token}
-                                  </Text>
-                                ) : null}
-                              </Group>
-                              <TextInput
-                                size="xs"
-                                placeholder="Value stamped on send"
-                                value={f.value || ''}
-                                onChange={(e) => {
-                                  const v = e.currentTarget.value
-                                  setFields((prev) =>
-                                    prev.map((row) =>
-                                      row.id === f.id ? { ...row, value: v } : row,
-                                    ),
-                                  )
-                                }}
-                              />
-                            </Stack>
-                          ))}
-                        </Stack>
-                      </ScrollArea.Autosize>
-                    )}
-                  </Accordion.Panel>
-                </Accordion.Item>
-                <Accordion.Item value="custom">
-                  <Accordion.Control>
-                    <Group justify="space-between" wrap="nowrap" gap="xs" pr="xs">
-                      <Text size="xs" fw={600}>
-                        Custom values
-                      </Text>
-                      <Badge size="xs" variant="light" color="gray">
-                        {customEntries.length}
-                      </Badge>
-                    </Group>
-                  </Accordion.Control>
-                  <Accordion.Panel>
-                    <Stack gap="xs">
-                      <Text size="xs" c="dimmed">
-                        Bind a field to <Text span fw={600} inherit>custom.key</Text>, set the
-                        value here, then Apply prefill.
-                      </Text>
-                      {customEntries.length === 0 ? (
-                        <Text size="xs" c="dimmed" fs="italic">
-                          No custom values set.
-                        </Text>
-                      ) : (
-                        <Stack gap="xs">
-                          {customEntries.map((entry, idx) => (
-                            <Stack
-                              key={idx}
-                              gap={6}
-                              p="xs"
-                              style={{
-                                border: '1px solid var(--mantine-color-gray-3)',
-                                borderRadius: 'var(--mantine-radius-sm)',
-                                background: 'var(--mantine-color-gray-0)',
-                              }}
-                            >
-                              <Group gap={6} wrap="nowrap" align="flex-end">
-                                <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-                                  <Text size="xs" c="dimmed">
-                                    Key
-                                  </Text>
-                                  <Group
-                                    gap={0}
-                                    wrap="nowrap"
-                                    px={8}
-                                    style={{
-                                      border: '1px solid var(--mantine-color-gray-4)',
-                                      borderRadius: 'var(--mantine-radius-sm)',
-                                      background: 'var(--mantine-color-body)',
-                                      minHeight: 30,
-                                    }}
-                                  >
-                                    <Text
-                                      size="xs"
-                                      c="dimmed"
-                                      style={{ flexShrink: 0, lineHeight: 1 }}
-                                    >
-                                      custom.
-                                    </Text>
-                                    <TextInput
-                                      size="xs"
-                                      variant="unstyled"
-                                      placeholder="lender_name"
-                                      value={entry.key}
-                                      style={{ flex: 1 }}
-                                      styles={{
-                                        input: {
-                                          minHeight: 28,
-                                          paddingInline: 0,
-                                          height: 28,
-                                        },
-                                      }}
-                                      onChange={(e) => {
-                                        const key = e.currentTarget.value
-                                        setCustomEntries((prev) =>
-                                          prev.map((row, i) =>
-                                            i === idx ? { ...row, key } : row,
-                                          ),
-                                        )
-                                      }}
-                                    />
-                                  </Group>
-                                </Stack>
-                                <ActionIcon
-                                  size="sm"
-                                  variant="subtle"
-                                  color="red"
-                                  mb={2}
-                                  aria-label={`Remove custom value ${idx + 1}`}
-                                  onClick={() =>
-                                    setCustomEntries((prev) =>
-                                      prev.filter((_, i) => i !== idx),
-                                    )
-                                  }
-                                >
-                                  <IconTrash size={14} />
-                                </ActionIcon>
-                              </Group>
-                              <TextInput
-                                size="xs"
-                                label="Value"
-                                placeholder="First National Bank"
-                                value={entry.value}
-                                onChange={(e) => {
-                                  const value = e.currentTarget.value
-                                  setCustomEntries((prev) =>
-                                    prev.map((row, i) =>
-                                      i === idx ? { ...row, value } : row,
-                                    ),
-                                  )
-                                  const key = entry.key
-                                    .trim()
-                                    .replace(/\s+/g, '_')
-                                    .toLowerCase()
-                                  if (!key) return
-                                  const token = `custom.${key}`
-                                  setFields((prev) =>
-                                    prev.map((f) =>
-                                      f.merge_token === token &&
-                                      (f.fill_mode || 'signer') === 'document'
-                                        ? { ...f, value }
-                                        : f,
-                                    ),
-                                  )
-                                }}
-                              />
-                            </Stack>
-                          ))}
-                        </Stack>
-                      )}
-                      <Button
-                        size="xs"
-                        variant="default"
-                        leftSection={<IconPlus size={14} />}
-                        onClick={() =>
-                          setCustomEntries((prev) => [...prev, { key: '', value: '' }])
-                        }
-                      >
-                        Add custom value
-                      </Button>
-                    </Stack>
-                  </Accordion.Panel>
-                </Accordion.Item>
-              </Accordion>
-              <Button
-                size="xs"
-                variant="light"
-                onClick={() => prefill.mutate()}
-                loading={prefill.isPending}
-                disabled={!canApplyPrefill || save.isPending}
-              >
-                Apply prefill
-              </Button>
-              {prefillDisabledHint ? (
+              {showListingTokenNote ? (
                 <Text size="xs" c="dimmed">
-                  {prefillDisabledHint}
+                  This form was built with Prefill record tokens. Enter values manually, or ask an
+                  admin to enable Prefill records.
                 </Text>
+              ) : null}
+              {documentDataFields.length === 0 ? (
+                <Text size="xs" c="dimmed">
+                  No fields to fill before send. Place a Text or Date field and set Fill mode to
+                  “Complete before send”.
+                </Text>
+              ) : (
+                <ScrollArea.Autosize mah={260} offsetScrollbars type="auto">
+                  <Stack gap="sm" pr={4}>
+                    {documentDataFields.map((f) => {
+                      const token = (f.merge_token || '').trim()
+                      const label =
+                        (f.label || '').trim() ||
+                        humanizeTokenLabel(token) ||
+                        'Field'
+                      return (
+                        <Stack key={f.id} gap={4}>
+                          <Group justify="space-between" gap={6} wrap="nowrap">
+                            <Text size="xs" fw={500} truncate style={{ flex: 1, minWidth: 0 }}>
+                              {label}
+                              {f.required ? (
+                                <Text span c="red" inherit>
+                                  {' '}
+                                  *
+                                </Text>
+                              ) : null}
+                            </Text>
+                          </Group>
+                          {token &&
+                          !(token.startsWith('listing.') && !listingsEnabled) ? (
+                            <Text size="xs" c="dimmed" truncate title={token}>
+                              Bound to {token}
+                            </Text>
+                          ) : null}
+                          <TextInput
+                            size="xs"
+                            placeholder="Enter value"
+                            value={f.value || ''}
+                            onChange={(e) => {
+                              const v = e.currentTarget.value
+                              setFields((prev) =>
+                                prev.map((row) =>
+                                  row.id === f.id ? { ...row, value: v } : row,
+                                ),
+                              )
+                            }}
+                          />
+                        </Stack>
+                      )
+                    })}
+                  </Stack>
+                </ScrollArea.Autosize>
+              )}
+              {showPullFromData ? (
+                <Accordion
+                  multiple
+                  variant="contained"
+                  defaultValue={[]}
+                  styles={{
+                    item: { background: 'var(--mantine-color-body)' },
+                    control: { paddingBlock: 8, paddingInline: 10 },
+                    content: { padding: '0 10px 10px' },
+                    label: { fontSize: 'var(--mantine-font-size-xs)', fontWeight: 600 },
+                  }}
+                >
+                  <Accordion.Item value="pull">
+                    <Accordion.Control>
+                      <Text size="xs" fw={600}>
+                        Pull from data
+                      </Text>
+                    </Accordion.Control>
+                    <Accordion.Panel>
+                      <Stack gap="xs">
+                        {listingsEnabled ? (
+                          <Select
+                            size="xs"
+                            label="Prefill record"
+                            placeholder="Optional record to pull values from"
+                            clearable
+                            searchable
+                            data={(listingsData?.results || []).map((l) => ({
+                              value: String(l.id),
+                              label: l.mls_number
+                                ? `${l.full_address} (${l.mls_number})`
+                                : l.full_address,
+                            }))}
+                            value={listingId}
+                            onChange={setListingId}
+                          />
+                        ) : null}
+                        {hasContactPrefill || hasRoleBoundFields ? (
+                          <Text size="xs" c="dimmed">
+                            {hasContactPrefill && hasRoleBoundFields
+                              ? 'Linked contacts and recipient role names can fill bound fields.'
+                              : hasContactPrefill
+                                ? 'A linked contact can fill contact and company fields.'
+                                : 'Recipient role names can fill bound role fields.'}
+                          </Text>
+                        ) : null}
+                        <Text size="xs" c="dimmed">
+                          Optional custom keys for fields bound to{' '}
+                          <Text span fw={600} inherit>
+                            custom.key
+                          </Text>
+                          .
+                        </Text>
+                        {customEntries.length === 0 ? (
+                          <Text size="xs" c="dimmed" fs="italic">
+                            No custom values set.
+                          </Text>
+                        ) : (
+                          <Stack gap="xs">
+                            {customEntries.map((entry, idx) => (
+                              <Stack
+                                key={idx}
+                                gap={6}
+                                p="xs"
+                                style={{
+                                  border: '1px solid var(--mantine-color-gray-3)',
+                                  borderRadius: 'var(--mantine-radius-sm)',
+                                  background: 'var(--mantine-color-gray-0)',
+                                }}
+                              >
+                                <Group gap={6} wrap="nowrap" align="flex-end">
+                                  <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+                                    <Text size="xs" c="dimmed">
+                                      Key
+                                    </Text>
+                                    <Group
+                                      gap={0}
+                                      wrap="nowrap"
+                                      px={8}
+                                      style={{
+                                        border: '1px solid var(--mantine-color-gray-4)',
+                                        borderRadius: 'var(--mantine-radius-sm)',
+                                        background: 'var(--mantine-color-body)',
+                                        minHeight: 30,
+                                      }}
+                                    >
+                                      <Text
+                                        size="xs"
+                                        c="dimmed"
+                                        style={{ flexShrink: 0, lineHeight: 1 }}
+                                      >
+                                        custom.
+                                      </Text>
+                                      <TextInput
+                                        size="xs"
+                                        variant="unstyled"
+                                        placeholder="lender_name"
+                                        value={entry.key}
+                                        style={{ flex: 1 }}
+                                        styles={{
+                                          input: {
+                                            minHeight: 28,
+                                            paddingInline: 0,
+                                            height: 28,
+                                          },
+                                        }}
+                                        onChange={(e) => {
+                                          const key = e.currentTarget.value
+                                          setCustomEntries((prev) =>
+                                            prev.map((row, i) =>
+                                              i === idx ? { ...row, key } : row,
+                                            ),
+                                          )
+                                        }}
+                                      />
+                                    </Group>
+                                  </Stack>
+                                  <ActionIcon
+                                    size="sm"
+                                    variant="subtle"
+                                    color="red"
+                                    mb={2}
+                                    aria-label={`Remove custom value ${idx + 1}`}
+                                    onClick={() =>
+                                      setCustomEntries((prev) =>
+                                        prev.filter((_, i) => i !== idx),
+                                      )
+                                    }
+                                  >
+                                    <IconTrash size={14} />
+                                  </ActionIcon>
+                                </Group>
+                                <TextInput
+                                  size="xs"
+                                  label="Value"
+                                  placeholder="First National Bank"
+                                  value={entry.value}
+                                  onChange={(e) => {
+                                    const value = e.currentTarget.value
+                                    setCustomEntries((prev) =>
+                                      prev.map((row, i) =>
+                                        i === idx ? { ...row, value } : row,
+                                      ),
+                                    )
+                                    const key = entry.key
+                                      .trim()
+                                      .replace(/\s+/g, '_')
+                                      .toLowerCase()
+                                    if (!key) return
+                                    const token = `custom.${key}`
+                                    setFields((prev) =>
+                                      prev.map((f) =>
+                                        f.merge_token === token &&
+                                        (f.fill_mode || 'signer') === 'document'
+                                          ? { ...f, value }
+                                          : f,
+                                      ),
+                                    )
+                                  }}
+                                />
+                              </Stack>
+                            ))}
+                          </Stack>
+                        )}
+                        <Button
+                          size="xs"
+                          variant="default"
+                          leftSection={<IconPlus size={14} />}
+                          onClick={() =>
+                            setCustomEntries((prev) => [...prev, { key: '', value: '' }])
+                          }
+                        >
+                          Add custom value
+                        </Button>
+                        {showApplyFromData ? (
+                          <Button
+                            size="xs"
+                            variant="light"
+                            onClick={() => prefill.mutate()}
+                            loading={prefill.isPending}
+                            disabled={save.isPending}
+                          >
+                            Apply from data
+                          </Button>
+                        ) : null}
+                      </Stack>
+                    </Accordion.Panel>
+                  </Accordion.Item>
+                </Accordion>
               ) : null}
             </Stack>
             <Divider />

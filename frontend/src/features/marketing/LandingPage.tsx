@@ -147,7 +147,7 @@ export function LandingPage() {
                 </p>
               </article>
               <article className="sd-marketing-feature">
-                <h3>Templates & form library</h3>
+                <h3>Templates & shared library</h3>
                 <p>
                   Save reusable layouts for agreements you send often. Start faster with fields
                   already placed.

@@ -210,3 +210,21 @@ export function isDocumentDataToken(token: string | undefined): boolean {
     key.startsWith('role.')
   )
 }
+
+/** Drop listing.* tokens when Prefill records (Listings) is disabled. */
+export function filterMergeTokensForListings(
+  tokens: string[],
+  listingsEnabled: boolean,
+): string[] {
+  if (listingsEnabled) return tokens
+  return tokens.filter((t) => !t.startsWith('listing.'))
+}
+
+export function filterMergeTokenGroupsForListings(
+  groups: Record<string, string> | undefined,
+  listingsEnabled: boolean,
+): Record<string, string> | undefined {
+  if (!groups || listingsEnabled) return groups
+  const { listing: _listing, ...rest } = groups
+  return rest
+}

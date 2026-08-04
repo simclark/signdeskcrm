@@ -74,7 +74,7 @@ Celery **worker** and **beat** must be running or invites / trial warnings never
      --password '<temporary>'
    ```
 
-2. Confirm Form library starters exist (Platform tenant detail → **Refresh starter forms**, or `seed_form_library --tenant-slug …` if needed).
+2. Have them upload official board/partner PDFs → Templates → place fields, then **Add to library** for Shared library reuse.
 3. Add members via **Administration → Settings → Members** (invite, change role, deactivate).
 4. Agree commercial terms using [BETA_TERMS.md](./BETA_TERMS.md).
 5. Optionally customize email templates (CC notice, void, decline, completion) under Settings.

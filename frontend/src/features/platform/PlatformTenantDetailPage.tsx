@@ -205,30 +205,6 @@ export function PlatformTenantDetailPage() {
     if (ok) revokeInvite.mutate(inviteId)
   }
 
-  const seedForms = useMutation({
-    mutationFn: (replace: boolean) =>
-      api<{ created?: number; updated?: number; skipped?: number }>(
-        `/api/platform/tenants/${id}/seed-form-library/`,
-        {
-          method: 'POST',
-          json: { replace },
-        },
-      ),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['platform-ops-events'] })
-      notifications.show({
-        color: 'forest',
-        message: `Form library refreshed (created ${result.created ?? 0}, updated ${result.updated ?? 0}, skipped ${result.skipped ?? 0})`,
-      })
-    },
-    onError: (err) => {
-      notifications.show({
-        color: 'red',
-        message: err instanceof ApiError ? err.message : 'Could not seed forms',
-      })
-    },
-  })
-
   const supportSnapshot = useQuery({
     queryKey: ['platform-support-snapshot', id],
     queryFn: () => api<SupportSnapshot>(`/api/platform/tenants/${id}/support-snapshot/`),
@@ -346,13 +322,6 @@ export function PlatformTenantDetailPage() {
             Reactivate
           </Button>
         )}
-        <Button
-          variant="default"
-          loading={seedForms.isPending}
-          onClick={() => seedForms.mutate(false)}
-        >
-          Refresh starter forms
-        </Button>
         <Button variant="subtle" onClick={openSupport}>
           Support snapshot
         </Button>

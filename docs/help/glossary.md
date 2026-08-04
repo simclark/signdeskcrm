@@ -15,11 +15,11 @@ Terms as they appear in SignDesk for end users.
 | **CC** | Recipient who receives a copy and does not sign |
 | **Sequential routing** | Signers invited one after another in order |
 | **Parallel routing** | Signers invited at the same time |
-| **Document data** | Field values stamped onto the PDF when the envelope is sent |
-| **Merge tokens** | Placeholders filled from listing/deal/shared data |
+| **Complete before send** | Field values you enter on Prepare; stamped onto the PDF when the envelope is sent |
+| **Data source / merge token** | Optional binding so a field can pull from contact, company, Prefill record, deal, custom, or role data |
 | **Document** | A PDF stored in the workspace library |
 | **Template** | Reusable field layout on a document |
-| **Form library** | Shelf of SignDesk starters plus workspace-published templates |
+| **Shared library** | Shelf of workspace-published templates teammates can use and clone |
 | **Certificate of Completion** | Proof PDF with consent, hashes, and completion details |
 | **Audit trail** | Timeline of envelope events (sent, viewed, signed, and more) |
 | **Void** | Cancel an in-flight envelope |

@@ -112,9 +112,6 @@ def reset_demo_tenant(
     _wipe_tenant_operational_data(tenant)
 
     ensure_email_templates(tenant)
-    from apps.documents.form_library.ensure import ensure_form_library
-
-    ensure_form_library(tenant, replace=True)
 
     from apps.contacts.models import Contact
 

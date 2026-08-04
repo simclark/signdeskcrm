@@ -18,7 +18,7 @@ Use this script for live pitches. Goal: show a trustworthy **Buyer → Seller se
 
 ## Setup (once per machine, or before each pitch)
 
-Reset the reserved **`demo`** workspace (Sample Purchase Agreement + Buyer/Seller contacts). Prefer **Platform → Demo workspace** at http://platform.signdeskcrm.test:5173/demo (staff login; type `RESET` to confirm). Glance at **Platform → Health** before the pitch.
+Reset the reserved **`demo`** workspace (Buyer/Seller contacts + role accounts). Prefer **Platform → Demo workspace** at http://platform.signdeskcrm.test:5173/demo (staff login; type `RESET` to confirm). Glance at **Platform → Health** before the pitch.
 
 Break-glass CLI:
 
@@ -34,16 +34,11 @@ Reset seeds three accounts (shared password `demo-pass-123` unless you pass `--p
 | Admin | `admin@demo.signdeskcrm.test` | Day-to-day work + Settings (cannot change Owner) |
 | Member | `member@demo.signdeskcrm.test` | Envelopes, documents, templates, CRM — **no Settings** |
 
-Log in at http://demo.signdeskcrm.test:5173/login and confirm **Templates → Form library** has the sample purchase agreement. To show roles: Member has no Settings nav; Admin/Owner do.
+Log in at http://demo.signdeskcrm.test:5173/login. To show roles: Member has no Settings nav; Admin/Owner do.
 
 The `demo` slug is reserved for Platform reset — do not create it via signup.
 
-If the library is empty for an existing tenant:
-
-```bash
-docker compose exec api python manage.py seed_form_library --tenant-slug demo
-```
-
+For the pitch, upload a sample PDF under **Documents** / **Templates** (or use an existing workspace template). Shared library starts empty until an Admin publishes a template.
 ## Demo narrative (what to say)
 
 > SignDesk is multi-tenant e-sign with a light CRM. Watch a standard packet go from prepare → email invite → ESIGN consent → signature → flattened PDF and Certificate of Completion with an audit trail.
@@ -55,9 +50,10 @@ docker compose exec api python manage.py seed_form_library --tenant-slug demo
 - Open **Contacts** — **Buyer Ada** and **Seller Sam** are pre-seeded after `reset_demo_tenant` (or add manually)
 - Say: *“Recipients can be CRM contacts so follow-ups and history stay attached.”*
 
-### 2. Create envelope from Form library (60s)
+### 2. Create envelope from a template (60s)
 
-- **Templates** → **Form library** → open / clone the sample purchase agreement (or **Documents** → upload a familiar PDF)
+- **Templates** → create or open a template (or **Documents** → upload a familiar PDF → create template)
+- Optionally **Add to library** (Admin) so it appears under **Shared library**
 - **Envelopes** (or header **New envelope**)
   - Title: `Demo Purchase Agreement`
   - Recipients: Buyer Ada (order 1), Seller Sam (order 2), routing **Sequential**

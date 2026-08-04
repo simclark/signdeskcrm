@@ -29,84 +29,22 @@ class FormLibraryEnsureTests(TestCase):
     def setUp(self):
         self.tenant = Tenant.objects.create(name="Lib Co", slug="lib-co")
 
-    def test_ensure_creates_catalog_form(self):
+    def test_ensure_is_noop(self):
         stats = ensure_form_library(self.tenant)
-        self.assertEqual(stats["created"], 2)
-        self.assertEqual(stats["updated"], 0)
-        tpl = Template.objects.get(tenant=self.tenant, library_key="sample-purchase-agreement")
-        self.assertTrue(tpl.is_library)
-        self.assertTrue(tpl.field_layout)
-        initials = Template.objects.get(
-            tenant=self.tenant, library_key="optional-service-initials"
-        )
-        self.assertEqual(
-            sum(1 for f in initials.field_layout if f["field_type"] == "initials"),
-            20,
-        )
-        self.assertTrue(
-            all(
-                f["required"] is False
-                for f in initials.field_layout
-                if f["field_type"] == "initials"
-            )
+        self.assertEqual(stats, {"created": 0, "updated": 0, "skipped": 0})
+        self.assertFalse(
+            Template.objects.filter(tenant=self.tenant, library_key__isnull=False)
+            .exclude(library_key="")
+            .exists()
         )
 
-    def test_ensure_idempotent(self):
-        ensure_form_library(self.tenant)
-        stats = ensure_form_library(self.tenant)
-        self.assertEqual(stats["created"], 0)
-        self.assertEqual(stats["skipped"], 2)
-        self.assertEqual(
-            Template.objects.filter(
-                tenant=self.tenant, library_key="sample-purchase-agreement"
-            ).count(),
-            1,
-        )
-
-    def test_ensure_replace_refreshes_keyed_only(self):
-        ensure_form_library(self.tenant)
-        tpl = Template.objects.get(tenant=self.tenant, library_key="sample-purchase-agreement")
-        tpl.name = "Mutated"
-        tpl.save(update_fields=["name"])
-
-        doc = Document.objects.create(
-            tenant=self.tenant, title="Tenant Form", original_filename="t.pdf"
-        )
-        DocumentVersion.objects.create(
-            tenant=self.tenant,
-            document=doc,
-            version_number=1,
-            file=SimpleUploadedFile("t.pdf", _pdf_bytes(), content_type="application/pdf"),
-        )
-        tenant_lib = Template.objects.create(
-            tenant=self.tenant,
-            name="Our Listing Packet",
-            document=doc,
-            is_library=True,
-            library_key=None,
-        )
-
-        stats = ensure_form_library(self.tenant, replace=True)
-        self.assertEqual(stats["updated"], 2)
-        tpl.refresh_from_db()
-        self.assertEqual(tpl.name, "Sample Purchase Agreement")
-        tenant_lib.refresh_from_db()
-        self.assertEqual(tenant_lib.name, "Our Listing Packet")
-        self.assertTrue(tenant_lib.is_library)
-
-    def test_cli_all_tenants(self):
+    def test_cli_all_tenants_noop(self):
         other = Tenant.objects.create(name="Other", slug="other-lib")
         call_command("seed_form_library", all_tenants=True)
-        self.assertTrue(
-            Template.objects.filter(
-                tenant=self.tenant, library_key="sample-purchase-agreement"
-            ).exists()
+        self.assertFalse(
+            Template.objects.filter(library_key="sample-purchase-agreement").exists()
         )
-        self.assertTrue(
-            Template.objects.filter(
-                tenant=other, library_key="sample-purchase-agreement"
-            ).exists()
-        )
+        self.assertEqual(Template.objects.filter(tenant=other).count(), 0)
 
 
 @override_settings(
@@ -151,17 +89,15 @@ class FormLibraryApiTests(TestCase):
             is_library=False,
         )
 
-    def test_library_list_lazy_syncs_catalog(self):
+    def test_library_list_does_not_seed_starters(self):
+        res = self.client.get("/api/templates/?library=true", **self.kw)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["results"], [])
         self.assertFalse(
             Template.objects.filter(
                 tenant=self.tenant, library_key="sample-purchase-agreement"
             ).exists()
         )
-        res = self.client.get("/api/templates/?library=true", **self.kw)
-        self.assertEqual(res.status_code, 200)
-        keys = {row["library_key"] for row in res.data["results"]}
-        self.assertIn("sample-purchase-agreement", keys)
-        self.assertIn("optional-service-initials", keys)
 
     def test_promote_and_demote(self):
         res = self.client.post(
@@ -184,13 +120,33 @@ class FormLibraryApiTests(TestCase):
         )
         self.assertEqual(res.status_code, 403)
 
-    def test_platform_form_rejects_patch_and_archive(self):
-        ensure_form_library(self.tenant)
-        platform = Template.objects.get(
-            tenant=self.tenant, library_key="sample-purchase-agreement"
-        )
+    def test_merge_tokens_omit_listing_when_listings_disabled(self):
+        self.tenant.listings_enabled = False
+        self.tenant.save(update_fields=["listings_enabled"])
+        res = self.client.get("/api/templates/merge-tokens/", **self.kw)
+        self.assertEqual(res.status_code, 200)
+        tokens = res.data["tokens"]
+        self.assertTrue(any(t.startswith("deal.") for t in tokens))
+        self.assertTrue(any(t.startswith("role.") for t in tokens))
+        self.assertFalse(any(t.startswith("listing.") for t in tokens))
+        self.assertNotIn("listing", res.data["groups"])
+
+    def test_merge_tokens_include_listing_when_listings_enabled(self):
+        self.tenant.listings_enabled = True
+        self.tenant.save(update_fields=["listings_enabled"])
+        res = self.client.get("/api/templates/merge-tokens/", **self.kw)
+        self.assertEqual(res.status_code, 200)
+        tokens = res.data["tokens"]
+        self.assertTrue(any(t.startswith("listing.") for t in tokens))
+        self.assertEqual(res.data["groups"]["listing"], "Listing")
+
+    def test_member_cannot_edit_shared_library_template(self):
+        self.template.is_library = True
+        self.template.save(update_fields=["is_library"])
+
+        self.client.force_authenticate(self.member)
         res = self.client.patch(
-            f"/api/templates/{platform.id}/",
+            f"/api/templates/{self.template.id}/",
             {"field_layout": []},
             format="json",
             **self.kw,
@@ -198,30 +154,37 @@ class FormLibraryApiTests(TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn("Clone", res.data["detail"])
 
-        res = self.client.delete(f"/api/templates/{platform.id}/", **self.kw)
+        res = self.client.delete(f"/api/templates/{self.template.id}/", **self.kw)
         self.assertEqual(res.status_code, 400)
-        platform.refresh_from_db()
-        self.assertFalse(platform.is_archived)
+        self.template.refresh_from_db()
+        self.assertFalse(self.template.is_archived)
 
-    def test_platform_form_clone_succeeds(self):
-        ensure_form_library(self.tenant)
-        platform = Template.objects.get(
-            tenant=self.tenant, library_key="sample-purchase-agreement"
+    def test_member_can_clone_shared_library_template(self):
+        self.template.is_library = True
+        self.template.save(update_fields=["is_library"])
+
+        self.client.force_authenticate(self.member)
+        res = self.client.post(
+            f"/api/templates/{self.template.id}/clone/", {}, format="json", **self.kw
         )
-        res = self.client.post(f"/api/templates/{platform.id}/clone/", {}, format="json", **self.kw)
         self.assertEqual(res.status_code, 201)
         self.assertFalse(res.data["is_library"])
         self.assertIsNone(res.data["library_key"])
 
-    def test_cannot_remove_platform_from_library(self):
-        ensure_form_library(self.tenant)
-        platform = Template.objects.get(
-            tenant=self.tenant, library_key="sample-purchase-agreement"
+    def test_admin_can_edit_shared_library_template(self):
+        self.template.is_library = True
+        self.template.save(update_fields=["is_library"])
+
+        res = self.client.patch(
+            f"/api/templates/{self.template.id}/",
+            {"name": "Updated Shared Form"},
+            format="json",
+            **self.kw,
         )
-        res = self.client.post(
-            f"/api/templates/{platform.id}/remove-from-library/", **self.kw
-        )
-        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.status_code, 200)
+        self.template.refresh_from_db()
+        self.assertEqual(self.template.name, "Updated Shared Form")
+        self.assertTrue(self.template.is_library)
 
     def test_is_library_not_writable_via_patch(self):
         res = self.client.patch(
@@ -240,7 +203,7 @@ class FormLibraryApiTests(TestCase):
     PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
 )
 class SignupFormLibraryTests(TestCase):
-    def test_signup_seeds_form_library(self):
+    def test_signup_does_not_seed_starters(self):
         client = APIClient()
         res = client.post(
             "/api/auth/signup/",
@@ -253,8 +216,8 @@ class SignupFormLibraryTests(TestCase):
         )
         self.assertEqual(res.status_code, 201)
         tenant = Tenant.objects.get(slug="fresh-co")
-        self.assertTrue(
-            Template.objects.filter(
-                tenant=tenant, library_key="sample-purchase-agreement", is_library=True
-            ).exists()
+        self.assertFalse(
+            Template.objects.filter(tenant=tenant, library_key__isnull=False)
+            .exclude(library_key="")
+            .exists()
         )

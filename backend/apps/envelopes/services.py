@@ -208,7 +208,7 @@ def validate_envelope_for_send(envelope: Envelope) -> list[str]:
     for field in envelope.fields.filter(fill_mode=Field.FillMode.DOCUMENT, required=True):
         if not (field.value or "").strip():
             label = field.label or field.merge_token or field.field_type
-            errors.append(f"Document field '{label}' needs a value before send.")
+            errors.append(f"'{label}' needs a value before send.")
     if not envelope.document_version_id:
         version = envelope.document.current_version
         if not version:
@@ -296,6 +296,57 @@ def stamp_document_fields_pdf(envelope: Envelope) -> bytes | None:
     return _overlay_fields_on_pdf(version, fields)
 
 
+def is_stamped_document(document) -> bool:
+    """True when ``document`` is a private send-time stamp copy, not a library PDF."""
+    if not document:
+        return False
+    fname = document.original_filename or ""
+    title = document.title or ""
+    return fname.endswith("-stamped.pdf") or title.endswith(" (stamped)")
+
+
+def resolve_library_document_refs(envelope: Envelope):
+    """Return (document, version) for the clean PDF used before send stamping.
+
+    Prefers explicit ``library_document`` pointers set on send. Falls back to the
+    template's document for legacy stamped envelopes that lack those FKs.
+    """
+    if envelope.library_document_id:
+        doc = envelope.library_document
+        ver = envelope.library_document_version or (doc.current_version if doc else None)
+        return doc, ver
+
+    doc = envelope.document
+    ver = envelope.document_version
+    if is_stamped_document(doc):
+        template = envelope.template
+        if template is not None and template.document_id:
+            tdoc = template.document
+            return tdoc, tdoc.current_version
+    return doc, ver
+
+
+def heal_draft_stamped_pdf(envelope: Envelope) -> bool:
+    """If a draft still points at a stamped PDF, re-point it to the library file.
+
+    Duplicating a sent envelope used to copy the stamped private PDF, so moving
+    fields left burned-in "ghost" values behind. Returns True when healed.
+    """
+    if envelope.status != Envelope.Status.DRAFT:
+        return False
+    if not is_stamped_document(envelope.document):
+        return False
+    lib_doc, lib_ver = resolve_library_document_refs(envelope)
+    if not lib_doc or lib_doc.id == envelope.document_id:
+        return False
+    if is_stamped_document(lib_doc):
+        return False
+    envelope.document = lib_doc
+    envelope.document_version = lib_ver
+    envelope.save(update_fields=["document", "document_version", "updated_at"])
+    return True
+
+
 def create_stamped_document_version(envelope: Envelope, pdf_bytes: bytes):
     """Persist stamped PDF on an envelope-private Document copy (never on library docs).
 
@@ -342,6 +393,10 @@ def send_envelope(envelope: Envelope, request=None):
     version = envelope.document_version or envelope.document.current_version
     stamped_bytes = stamp_document_fields_pdf(envelope)
     if stamped_bytes:
+        # Remember the clean library PDF before swapping to the private stamp copy.
+        if not envelope.library_document_id:
+            envelope.library_document = envelope.document
+            envelope.library_document_version = version
         version = create_stamped_document_version(envelope, stamped_bytes)
         # Point the envelope at the private stamped document (leave library PDF alone)
         envelope.document = version.document

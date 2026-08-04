@@ -42,8 +42,8 @@ On the prepare screen you:
    - **Parallel** — all signers invited at once
 3. **Place fields** on the PDF (drag or click to add):
    - Signature, Initials, Date, Text, Checkbox
-4. Assign each field to a recipient (or use **Document data** for values stamped when you send).
-5. Optionally select a [Listing](listings.md) to prefill merge fields (if Prefill records is on).
+4. Assign each field to a recipient, or set fill mode to **Complete before send** for values you fill before sending (stamped into the PDF on send).
+5. On Prepare, type those values under **Complete before send**. Optionally **Pull from data** (Prefill record when enabled, contact/role/custom bindings) and **Apply from data**.
 6. Optionally apply a template layout or **Save as template** for reuse.
 7. **Save**.
 
@@ -83,9 +83,9 @@ When available:
 | Mode | Behavior |
 |---|---|
 | **Signer completes** | Recipient fills the field during signing |
-| **Document data** | Value is stamped from envelope/listing/merge data when you send |
+| **Complete before send** | You enter the value on Prepare; it is stamped into the PDF when you send |
 
-Merge tokens (for example deal price or listing address) can appear on templates and envelopes so shared data fills consistently. See [Templates](templates-and-form-library.md) and [Listings](listings.md).
+Optionally bind a complete-before-send field to a **data source** (merge token) so **Apply from data** can fill it from a Prefill record, contact, role, deal terms, or custom values. Prefill records are optional — see [Listings](listings.md). Typing values by hand always works.
 
 ## Tips
 

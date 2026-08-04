@@ -45,6 +45,22 @@ class Envelope(TenantOwnedModel):
         null=True,
         blank=True,
     )
+    # Clean library PDF before send stamps document-data onto a private copy.
+    # Kept so Duplicate / draft repair can restore an unstamped file.
+    library_document = models.ForeignKey(
+        "documents.Document",
+        on_delete=models.PROTECT,
+        related_name="library_envelopes",
+        null=True,
+        blank=True,
+    )
+    library_document_version = models.ForeignKey(
+        "documents.DocumentVersion",
+        on_delete=models.PROTECT,
+        related_name="library_envelopes",
+        null=True,
+        blank=True,
+    )
     template = models.ForeignKey(
         "documents.Template",
         on_delete=models.SET_NULL,

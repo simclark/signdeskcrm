@@ -473,6 +473,78 @@ class StampOnSendDocumentFieldsTests(TestCase):
         self.buyer.refresh_from_db()
         self.assertEqual(self.buyer.status, Recipient.Status.SENT)
 
+        # Library pointer retained for Duplicate / draft repair
+        self.assertEqual(self.envelope.library_document_id, self.document.id)
+        self.assertEqual(self.envelope.library_document_version_id, original_version_id)
+
+    def test_duplicate_after_send_uses_clean_library_pdf(self):
+        """Sent envelopes stamp document data into the PDF. Duplicate must not
+        carry that burned-in text — otherwise moved fields leave ghost values."""
+        from rest_framework.test import APIClient
+
+        from apps.envelopes.services import send_envelope
+
+        send_envelope(self.envelope)
+        self.envelope.refresh_from_db()
+        stamped_doc_id = self.envelope.document_id
+        self.assertNotEqual(stamped_doc_id, self.document.id)
+
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        res = client.post(
+            f"/api/envelopes/{self.envelope.id}/duplicate/",
+            HTTP_HOST=f"{self.tenant.slug}.signdeskcrm.test",
+            HTTP_X_TENANT_SLUG=self.tenant.slug,
+        )
+        self.assertEqual(res.status_code, 201, getattr(res, "data", res.content))
+        clone = Envelope.objects.get(pk=res.data["id"])
+        self.assertEqual(clone.status, Envelope.Status.DRAFT)
+        self.assertEqual(clone.document_id, self.document.id)
+        self.assertEqual(clone.document_version_id, self.version.id)
+        self.assertNotEqual(clone.document_id, stamped_doc_id)
+
+        # Document-data field values are kept for prepare overlays…
+        price = clone.fields.get(label="Purchase price")
+        self.assertEqual(price.value, "425000")
+        # …but the underlying PDF must not contain burned-in stamp text.
+        clean = PdfReader(clone.document_version.file.path)
+        clean_text = clean.pages[0].extract_text() or ""
+        self.assertNotIn("425000", clean_text)
+        self.assertNotIn("First National", clean_text)
+
+    def test_retrieve_heals_draft_pointing_at_stamped_pdf(self):
+        from rest_framework.test import APIClient
+
+        from apps.envelopes.services import send_envelope
+
+        send_envelope(self.envelope)
+        self.envelope.refresh_from_db()
+        stamped_doc_id = self.envelope.document_id
+
+        # Simulate the old duplicate bug: draft still attached to stamped PDF.
+        broken = Envelope.objects.create(
+            tenant=self.tenant,
+            title="Broken draft",
+            document=self.envelope.document,
+            document_version=self.envelope.document_version,
+            library_document=self.document,
+            library_document_version=self.version,
+            created_by=self.user,
+            status=Envelope.Status.DRAFT,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        res = client.get(
+            f"/api/envelopes/{broken.id}/",
+            HTTP_HOST=f"{self.tenant.slug}.signdeskcrm.test",
+            HTTP_X_TENANT_SLUG=self.tenant.slug,
+        )
+        self.assertEqual(res.status_code, 200, getattr(res, "data", res.content))
+        broken.refresh_from_db()
+        self.assertEqual(broken.document_id, self.document.id)
+        self.assertNotEqual(broken.document_id, stamped_doc_id)
+
     def test_prefill_resolves_role_name_onto_unassigned_document_field(self):
         from apps.envelopes.services import resolve_merge_values_for_envelope
 
