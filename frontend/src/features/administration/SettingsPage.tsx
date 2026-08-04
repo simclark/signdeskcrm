@@ -1681,9 +1681,32 @@ export function SettingsPage() {
               ) : null}
               <Text size="sm">
                 {entitlement?.billing_portal_available
-                  ? 'A billing portal link will open here once Stripe is connected.'
+                  ? 'Upgrade with Stripe Checkout or manage payment methods in the customer portal.'
                   : 'Credit card checkout is not enabled yet. Email support to activate a paid workspace or extend your trial.'}
               </Text>
+              {entitlement?.plan ? (
+                <Group gap="sm">
+                  <Text size="sm" c="dimmed" w={140}>
+                    Plan
+                  </Text>
+                  <Text size="sm" tt="capitalize">
+                    {entitlement.plan}
+                  </Text>
+                </Group>
+              ) : null}
+              {entitlement?.seats_used != null ? (
+                <Group gap="sm">
+                  <Text size="sm" c="dimmed" w={140}>
+                    Seats
+                  </Text>
+                  <Text size="sm">
+                    {entitlement.seats_used}
+                    {entitlement.seats_remaining != null
+                      ? ` used · ${entitlement.seats_remaining} remaining`
+                      : ' used'}
+                  </Text>
+                </Group>
+              ) : null}
               <Group>
                 <Button
                   component="a"
@@ -1692,8 +1715,46 @@ export function SettingsPage() {
                   Email support
                 </Button>
                 <Button
+                  variant="filled"
+                  disabled={!entitlement?.billing_portal_available}
+                  onClick={() => {
+                    void api<{ url: string }>('/api/tenant/billing/checkout/', {
+                      method: 'POST',
+                      json: {},
+                    })
+                      .then((res) => {
+                        if (res.url) window.location.assign(res.url)
+                      })
+                      .catch((err) => {
+                        notifications.show({
+                          color: 'red',
+                          message:
+                            err instanceof ApiError ? err.message : 'Checkout unavailable',
+                        })
+                      })
+                  }}
+                >
+                  Subscribe
+                </Button>
+                <Button
                   variant="default"
                   disabled={!entitlement?.billing_portal_available}
+                  onClick={() => {
+                    void api<{ url: string }>('/api/tenant/billing/portal/', {
+                      method: 'POST',
+                      json: {},
+                    })
+                      .then((res) => {
+                        if (res.url) window.location.assign(res.url)
+                      })
+                      .catch((err) => {
+                        notifications.show({
+                          color: 'red',
+                          message:
+                            err instanceof ApiError ? err.message : 'Portal unavailable',
+                        })
+                      })
+                  }}
                 >
                   Open billing portal
                 </Button>

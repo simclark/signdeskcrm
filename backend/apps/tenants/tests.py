@@ -735,6 +735,119 @@ class PlatformOpsTests(TestCase):
         self.assertEqual(res.data["owner_email"], result.owner_email)
         self.assertIn("workspace_url", res.data)
 
+    def test_viewer_cannot_provision(self):
+        viewer = User.objects.create_user(
+            email="viewer@signdesk.test",
+            password="password123",
+            is_staff=True,
+            platform_role="viewer",
+        )
+        self.client.force_authenticate(viewer)
+        res = self.client.post(
+            "/api/platform/tenants/",
+            {
+                "name": "Nope",
+                "slug": "nope-co",
+                "owner_email": "a@nope.test",
+                "owner_password": "password123",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_tenant_usage_and_export(self):
+        self.client.force_authenticate(self.staff)
+        tenant = Tenant.objects.create(name="Usage Co", slug="usage-co", plan="starter")
+        Membership.objects.create(
+            tenant=tenant, user=self.user, role=Membership.Role.OWNER
+        )
+        detail = self.client.get(f"/api/platform/tenants/{tenant.id}/")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn("usage", detail.data)
+        self.assertEqual(detail.data["usage"]["plan"], "starter")
+        export = self.client.get(f"/api/platform/tenants/{tenant.id}/export/")
+        self.assertEqual(export.status_code, 200)
+        self.assertEqual(export.data["tenant"]["slug"], "usage-co")
+        compliance = self.client.get(
+            f"/api/platform/tenants/{tenant.id}/compliance-export/"
+        )
+        self.assertEqual(compliance.status_code, 200)
+        self.assertIn("audit_events", compliance.data)
+
+    def test_impersonate_and_exchange(self):
+        self.client.force_authenticate(self.staff)
+        tenant = Tenant.objects.create(name="Imp Co", slug="imp-co")
+        Membership.objects.create(
+            tenant=tenant, user=self.user, role=Membership.Role.OWNER
+        )
+        res = self.client.post(
+            f"/api/platform/tenants/{tenant.id}/impersonate/",
+            {"user_id": self.user.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        token = res.data["token"]
+        exchange = self.client.post(
+            f"/api/auth/support-impersonate/{token}/",
+            {},
+            format="json",
+            HTTP_HOST="imp-co.signdeskcrm.test",
+            HTTP_X_TENANT_SLUG="imp-co",
+        )
+        self.assertEqual(exchange.status_code, 200, exchange.data)
+        self.assertIn("access", exchange.data)
+        self.assertEqual(exchange.data["user"]["email"], self.user.email)
+
+    def test_postmark_webhook_and_public_status(self):
+        status_res = self.client.get("/api/status/")
+        self.assertEqual(status_res.status_code, 200)
+        self.assertIn("slo", status_res.data)
+        with self.settings(POSTMARK_WEBHOOK_SECRET="secret"):
+            bad = self.client.post(
+                "/api/webhooks/postmark/",
+                {"RecordType": "Bounce", "Email": "bounce@example.com"},
+                format="json",
+            )
+            self.assertEqual(bad.status_code, 403)
+            ok = self.client.post(
+                "/api/webhooks/postmark/",
+                {"RecordType": "Bounce", "Email": "bounce@example.com", "Subject": "x"},
+                format="json",
+                HTTP_X_SIGNDESK_WEBHOOK_SECRET="secret",
+            )
+            self.assertEqual(ok.status_code, 200)
+        from apps.tenants.models import EmailDeliveryEvent
+
+        self.assertTrue(
+            EmailDeliveryEvent.objects.filter(
+                event_type=EmailDeliveryEvent.EventType.BOUNCE,
+                recipient="bounce@example.com",
+            ).exists()
+        )
+
+    def test_seat_quota_blocks_invite(self):
+        tenant = Tenant.objects.create(name="Quota Co", slug="quota-co", plan="starter")
+        owner = User.objects.create_user(email="qowner@quota.test", password="password123")
+        Membership.objects.create(tenant=tenant, user=owner, role=Membership.Role.OWNER)
+        # Fill starter seats (3)
+        for i in range(2):
+            u = User.objects.create_user(
+                email=f"seat{i}@quota.test", password="password123"
+            )
+            Membership.objects.create(
+                tenant=tenant, user=u, role=Membership.Role.MEMBER
+            )
+        self.client.force_authenticate(owner)
+        res = self.client.post(
+            "/api/tenant/invitations/",
+            {"email": "overflow@quota.test", "role": "member"},
+            format="json",
+            HTTP_HOST="quota-co.signdeskcrm.test",
+            HTTP_X_TENANT_SLUG="quota-co",
+        )
+        self.assertEqual(res.status_code, 400)
+
+
 @override_settings(
     PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
 )

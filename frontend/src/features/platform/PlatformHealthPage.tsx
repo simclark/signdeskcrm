@@ -28,7 +28,12 @@ import { ApiError, api } from '../../shared/api'
 type HealthPayload = {
   status: string
   service: string
-  checks: Record<string, string>
+  checks: Record<string, { ok?: boolean; detail?: string } | string>
+  slo?: {
+    checks_total: number
+    checks_passing: number
+    pass_rate: number
+  }
   config: {
     base_domain: string
     frontend_protocol: string
@@ -39,6 +44,7 @@ type HealthPayload = {
     support_email?: string
     tenant_allow_header_slug?: boolean
     billing_portal_available?: boolean
+    stripe_configured?: boolean
   }
   warnings: string[]
   demo_tenant: {
@@ -160,6 +166,18 @@ export function PlatformHealthPage() {
         </Alert>
       ) : null}
 
+      {data.slo ? (
+        <Paper p="md" withBorder radius="md">
+          <Group justify="space-between">
+            <Text fw={600}>SLO summary</Text>
+            <Badge color={data.slo.pass_rate >= 1 ? 'forest' : 'orange'} variant="light">
+              {data.slo.checks_passing}/{data.slo.checks_total} checks ·{' '}
+              {Math.round(data.slo.pass_rate * 100)}%
+            </Badge>
+          </Group>
+        </Paper>
+      ) : null}
+
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
         {Object.entries(data.checks).map(([key, value]) => {
           const meta = CHECK_META[key] || {
@@ -167,7 +185,8 @@ export function PlatformHealthPage() {
             icon: IconServer,
           }
           const Icon = meta.icon
-          const ok = String(value).startsWith('ok')
+          const label = typeof value === 'string' ? value : JSON.stringify(value)
+          const ok = label.startsWith('ok')
           return (
             <Paper key={key} p="lg" withBorder radius="md">
               <Group justify="space-between" align="flex-start" wrap="nowrap">
@@ -188,7 +207,7 @@ export function PlatformHealthPage() {
                   </Stack>
                 </Group>
                 <Badge color={ok ? 'forest' : 'red'} variant="light" tt="uppercase">
-                  {value}
+                  {label}
                 </Badge>
               </Group>
             </Paper>
@@ -230,6 +249,10 @@ export function PlatformHealthPage() {
                 <ConfigRow
                   label="BILLING_PORTAL_AVAILABLE"
                   value={String(data.config.billing_portal_available ?? false)}
+                />
+                <ConfigRow
+                  label="STRIPE_CONFIGURED"
+                  value={String(data.config.stripe_configured ?? false)}
                 />
                 <ConfigRow label="Signing host example" value={data.example_signing_host} />
               </Stack>

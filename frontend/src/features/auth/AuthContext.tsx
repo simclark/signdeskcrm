@@ -16,6 +16,11 @@ export type Entitlement = {
   days_remaining: number | null
   support_email?: string
   billing_portal_available?: boolean
+  plan?: string
+  seats_used?: number
+  seats_remaining?: number | null
+  envelopes_sent_this_month?: number
+  envelopes_remaining_this_month?: number | null
 }
 
 type User = {
@@ -25,6 +30,7 @@ type User = {
   last_name: string
   full_name: string
   is_staff?: boolean
+  platform_role?: string
 }
 
 type Tenant = {

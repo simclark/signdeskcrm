@@ -10,7 +10,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import generics, serializers, status, views
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.common.media_inventory import (
@@ -30,14 +30,41 @@ from apps.tenants.entitlements import (
     extend_trial,
     mark_subscription_active,
 )
+from apps.tenants.platform_permissions import (
+    CAP_ADMIN,
+    CAP_BILLING,
+    CAP_OPERATE,
+    CAP_READ,
+    CAP_SUPPORT,
+    HasPlatformCapability,
+    effective_platform_role,
+    has_platform_capability,
+    platform_capabilities,
+)
+from apps.tenants.plans import normalize_plan, usage_snapshot
 from apps.tenants.serializers import InvitationSerializer, MembershipSerializer
 from apps.tenants.services.demo import DEMO_SLUG, reset_demo_tenant
 from apps.tenants.services.ops_audit import log_platform_op
 from apps.tenants.services.provision import provision_tenant
+from apps.tenants.services.stripe_billing import billing_portal_available
 
 User = get_user_model()
 
 MEDIA_DELETE_CONFIRM = "DELETE ORPHANS"
+
+
+class PlatformListCreatePermission(BasePermission):
+    def has_permission(self, request, view):
+        if request.method == "POST":
+            return has_platform_capability(request.user, CAP_OPERATE)
+        return has_platform_capability(request.user, CAP_READ)
+
+
+class PlatformTenantMutatePermission(BasePermission):
+    def has_permission(self, request, view):
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return has_platform_capability(request.user, CAP_READ)
+        return has_platform_capability(request.user, CAP_SUPPORT)
 
 
 class PlatformTenantListSerializer(serializers.ModelSerializer):
@@ -56,6 +83,7 @@ class PlatformTenantListSerializer(serializers.ModelSerializer):
             "member_count",
             "subscription_status",
             "trial_ends_at",
+            "plan",
             "entitlement",
         )
 
@@ -69,6 +97,7 @@ class PlatformTenantDetailSerializer(serializers.ModelSerializer):
     workspace_url = serializers.SerializerMethodField()
     login_url = serializers.SerializerMethodField()
     entitlement = serializers.SerializerMethodField()
+    usage = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
@@ -88,7 +117,12 @@ class PlatformTenantDetailSerializer(serializers.ModelSerializer):
             "subscription_status",
             "trial_ends_at",
             "trial_warning_sent_at",
+            "plan",
+            "legal_hold",
+            "stripe_customer_id",
+            "stripe_subscription_id",
             "entitlement",
+            "usage",
             "member_count",
             "members",
             "workspace_url",
@@ -111,6 +145,9 @@ class PlatformTenantDetailSerializer(serializers.ModelSerializer):
 
     def get_entitlement(self, obj):
         return entitlement_payload(obj)
+
+    def get_usage(self, obj):
+        return usage_snapshot(obj)
 
 
 class PlatformProvisionSerializer(serializers.Serializer):
@@ -153,6 +190,10 @@ class PlatformTenantPatchSerializer(serializers.Serializer):
     primary_contact_email = serializers.EmailField(required=False, allow_blank=True)
     primary_contact_phone = serializers.CharField(max_length=64, required=False, allow_blank=True)
     listings_enabled = serializers.BooleanField(required=False)
+    plan = serializers.ChoiceField(
+        choices=["starter", "professional", "enterprise"], required=False
+    )
+    legal_hold = serializers.BooleanField(required=False)
     extend_trial_days = serializers.IntegerField(required=False, min_value=1, max_value=365)
     trial_ends_at = serializers.DateTimeField(required=False)
     mark_subscription_active = serializers.BooleanField(required=False)
@@ -172,6 +213,8 @@ class PlatformTenantPatchSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"trial_ends_at": "Trial end must be in the future."}
             )
+        if "plan" in attrs:
+            attrs["plan"] = normalize_plan(attrs["plan"])
         return attrs
 
     def update(self, instance, validated_data):
@@ -252,7 +295,7 @@ class PlatformOpsEventSerializer(serializers.ModelSerializer):
 
 
 class PlatformTenantListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, PlatformListCreatePermission]
 
     def get_queryset(self):
         qs = Tenant.objects.annotate(
@@ -313,7 +356,7 @@ class PlatformTenantListCreateView(generics.ListCreateAPIView):
 
 
 class PlatformTenantDetailView(generics.RetrieveUpdateAPIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, PlatformTenantMutatePermission]
     queryset = Tenant.objects.all()
     http_method_names = ["get", "patch", "head", "options"]
 
@@ -327,9 +370,40 @@ class PlatformTenantDetailView(generics.RetrieveUpdateAPIView):
         previous_status = tenant.status
         previous_subscription = tenant.subscription_status
         previous_trial_end = tenant.trial_ends_at
+        previous_plan = tenant.plan
         serializer = PlatformTenantPatchSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         validated = dict(serializer.validated_data)
+
+        if validated.get("mark_subscription_active") and not has_platform_capability(
+            request.user, CAP_BILLING
+        ):
+            return Response(
+                {"detail": "Billing capability required to mark subscription active."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if "plan" in validated and not has_platform_capability(request.user, CAP_BILLING):
+            return Response(
+                {"detail": "Billing capability required to change plan."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if validated.get("status") == Tenant.Status.SUSPENDED and not has_platform_capability(
+            request.user, CAP_OPERATE
+        ):
+            return Response(
+                {"detail": "Operator capability required to suspend."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if (
+            previous_status == Tenant.Status.SUSPENDED
+            and validated.get("status") == Tenant.Status.ACTIVE
+            and not has_platform_capability(request.user, CAP_OPERATE)
+        ):
+            return Response(
+                {"detail": "Operator capability required to reactivate."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         serializer.update(tenant, dict(validated))
         tenant.refresh_from_db()
         new_status = tenant.status
@@ -338,6 +412,9 @@ class PlatformTenantDetailView(generics.RetrieveUpdateAPIView):
         if validated.get("mark_subscription_active"):
             action = PlatformOpsEvent.Action.SUBSCRIPTION_ACTIVATED
             metadata = {"fields": fields}
+        elif "plan" in validated:
+            action = PlatformOpsEvent.Action.PLAN_CHANGED
+            metadata = {"fields": fields, "previous_plan": previous_plan, "plan": tenant.plan}
         elif "extend_trial_days" in validated or "trial_ends_at" in validated:
             action = PlatformOpsEvent.Action.TRIAL_EXTENDED
             metadata = {
@@ -372,7 +449,8 @@ class PlatformTenantDetailView(generics.RetrieveUpdateAPIView):
 
 
 class PlatformInviteOwnerView(views.APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, HasPlatformCapability]
+    platform_capability = CAP_SUPPORT
 
     def post(self, request, pk):
         try:
@@ -395,7 +473,8 @@ class PlatformInviteOwnerView(views.APIView):
 
 
 class PlatformTenantInvitationsView(views.APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, HasPlatformCapability]
+    platform_capability = CAP_READ
 
     def get(self, request, pk):
         try:
@@ -409,7 +488,8 @@ class PlatformTenantInvitationsView(views.APIView):
 
 
 class PlatformInvitationResendView(views.APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, HasPlatformCapability]
+    platform_capability = CAP_SUPPORT
 
     def post(self, request, pk, invite_id):
         try:
@@ -438,7 +518,8 @@ class PlatformInvitationResendView(views.APIView):
 
 
 class PlatformInvitationRevokeView(views.APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, HasPlatformCapability]
+    platform_capability = CAP_SUPPORT
 
     def delete(self, request, pk, invite_id):
         try:
@@ -462,7 +543,8 @@ class PlatformInvitationRevokeView(views.APIView):
 
 
 class PlatformDemoResetView(views.APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, HasPlatformCapability]
+    platform_capability = CAP_OPERATE
 
     def post(self, request):
         owner_email = (request.data.get("owner_email") or "").strip() or None
@@ -503,6 +585,9 @@ class PlatformMeView(views.APIView):
 
     def get(self, request):
         user = request.user
+        role = effective_platform_role(user)
+        if not role:
+            return Response({"detail": "Staff only."}, status=status.HTTP_403_FORBIDDEN)
         return Response(
             {
                 "user": {
@@ -512,13 +597,16 @@ class PlatformMeView(views.APIView):
                     "last_name": user.last_name,
                     "full_name": user.full_name,
                     "is_staff": user.is_staff,
+                    "platform_role": role,
+                    "capabilities": sorted(platform_capabilities(user)),
                 }
             }
         )
 
 
 class PlatformHealthView(views.APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, HasPlatformCapability]
+    platform_capability = CAP_READ
 
     def get(self, request):
         from apps.common.health import run_health_checks
@@ -550,11 +638,21 @@ class PlatformHealthView(views.APIView):
             warnings.append("SUPPORT_EMAIL is empty — trial banners have no contact channel.")
 
         demo = Tenant.objects.filter(slug=DEMO_SLUG).first()
+        check_values = list(checks.values()) if isinstance(checks, dict) else []
+        checks_total = len(check_values) or 1
+        checks_passing = sum(
+            1 for c in check_values if isinstance(c, str) and c.startswith("ok")
+        )
         return Response(
             {
                 "status": overall,
                 "service": "signdesk-api",
                 "checks": checks,
+                "slo": {
+                    "checks_total": checks_total,
+                    "checks_passing": checks_passing,
+                    "pass_rate": round(checks_passing / checks_total, 3),
+                },
                 "config": {
                     "base_domain": base_domain,
                     "frontend_protocol": frontend_protocol,
@@ -568,8 +666,9 @@ class PlatformHealthView(views.APIView):
                     "tenant_allow_header_slug": getattr(
                         settings, "TENANT_ALLOW_HEADER_SLUG", True
                     ),
-                    "billing_portal_available": bool(
-                        getattr(settings, "BILLING_PORTAL_AVAILABLE", False)
+                    "billing_portal_available": billing_portal_available(),
+                    "stripe_configured": bool(
+                        getattr(settings, "STRIPE_SECRET_KEY", "")
                     ),
                 },
                 "warnings": warnings,
@@ -596,7 +695,8 @@ class PlatformHealthView(views.APIView):
 
 
 class PlatformMediaOrphansView(views.APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, HasPlatformCapability]
+    platform_capability = CAP_OPERATE
 
     def get(self, request):
         prefixes = self._parse_prefixes(request.query_params.getlist("prefix"))
@@ -670,7 +770,8 @@ class PlatformMediaOrphansView(views.APIView):
 
 
 class PlatformSeedFormLibraryView(views.APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, HasPlatformCapability]
+    platform_capability = CAP_OPERATE
 
     def post(self, request, pk):
         try:
@@ -693,7 +794,8 @@ class PlatformSeedFormLibraryView(views.APIView):
 class PlatformSupportSnapshotView(views.APIView):
     """Read-only support diagnostics (no impersonation)."""
 
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, HasPlatformCapability]
+    platform_capability = CAP_SUPPORT
 
     def get(self, request, pk):
         try:
@@ -742,7 +844,8 @@ class PlatformSupportSnapshotView(views.APIView):
 
 
 class PlatformOpsEventListView(generics.ListAPIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated, HasPlatformCapability]
+    platform_capability = CAP_READ
     serializer_class = PlatformOpsEventSerializer
     pagination_class = None
 

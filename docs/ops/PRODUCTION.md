@@ -176,7 +176,7 @@ With Spaces enabled, those same paths are object keys in the bucket; the API sti
 
 ## Platform console (staff)
 
-Primary ops surface for partner lifecycle. Prefer Platform over CLI for routine work.
+Primary ops surface for partner lifecycle. Prefer Platform over CLI for routine work. Full playbook, staff roles, offboard, and billing ownership: [PLATFORM_OPS.md](./PLATFORM_OPS.md).
 
 1. Create a staff user (one-time bootstrap):
 
@@ -184,14 +184,30 @@ Primary ops surface for partner lifecycle. Prefer Platform over CLI for routine 
    docker compose -f docker-compose.prod.yml -f docker-compose.prod.do.yml exec api python manage.py createsuperuser
    ```
 
-2. Log in at **https://platform.yourdomain.com/login** (local: http://platform.signdeskcrm.test:5173/login). Apex `/platform` redirects there. Staff only.
-3. **Tenants** — provision partners, suspend/reactivate, edit contacts, send/resend/revoke admin invites, refresh starter forms, open a read-only support snapshot.
-4. **Health** — database/redis checks plus `BASE_DOMAIN` / signing-host warnings before pitches.
-5. **Media orphans** — report (and optionally delete) files on disk with no DB reference.
-6. **Audit log** — who provisioned, suspended, reset demo, deleted orphans, etc.
-7. **Demo workspace** — reset the reserved `demo` tenant before pitches.
+2. Log in at **https://platform.yourdomain.com/login** (local: http://platform.signdeskcrm.test:5173/login). Apex `/platform` redirects there. Staff only (`platform_role` defaults to Admin for superusers).
+3. **Tenants** — provision partners, suspend/reactivate, edit contacts, send/resend/revoke admin invites, usage/quotas, support snapshot, audited impersonation, export/offboard (Admin).
+4. **Health** — database/redis/Celery checks, config warnings, and SLO-style summary before pitches.
+5. **Email events** — Postmark bounce/complaint/delivery feed (webhook).
+6. **Media orphans** — report (and optionally delete) files on disk with no DB reference.
+7. **Audit log** — who provisioned, suspended, reset demo, impersonated, deleted orphans, etc.
+8. **Demo workspace** — reset the reserved `demo` tenant before pitches.
+9. **Team** (Admin) — assign Viewer / Support / Operator / Admin roles.
 
 Add `platform.yourdomain.com` to DNS (wildcard `*.yourdomain.com` covers it). Locally add `platform.signdeskcrm.test` to `/etc/hosts`.
+
+### Stripe billing (optional)
+
+Set `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` (or plan-specific price IDs). Point Stripe webhooks at `https://yourdomain.com/api/webhooks/stripe/`. Tenant Settings → Billing then offers Checkout and Customer Portal. Until Stripe is configured, Platform Admins mark subscriptions active / extend trials manually.
+
+### Postmark webhooks
+
+Point bounce/complaint/delivery webhooks at `https://yourdomain.com/api/webhooks/postmark/`.
+
+Auth (any one works):
+
+- **HTTP Basic** (Postmark UI): username any (e.g. `signdesk`), password = `POSTMARK_WEBHOOK_SECRET`
+- Header `X-SignDesk-Webhook-Secret: <POSTMARK_WEBHOOK_SECRET>`
+- Query `?secret=<POSTMARK_WEBHOOK_SECRET>` (avoid if logs capture query strings)
 
 ### Orphaned media (storage control)
 

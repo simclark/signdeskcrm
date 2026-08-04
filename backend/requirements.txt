@@ -1,3 +1,4 @@
+stripe==11.6.0
 amqp==5.3.1
 asgiref==3.11.1
 billiard==4.2.4

@@ -42,7 +42,10 @@ import { PlatformDemoPage } from './features/platform/PlatformDemoPage'
 import { PlatformHealthPage } from './features/platform/PlatformHealthPage'
 import { PlatformMediaPage } from './features/platform/PlatformMediaPage'
 import { PlatformAuditPage } from './features/platform/PlatformAuditPage'
+import { PlatformEmailEventsPage } from './features/platform/PlatformEmailEventsPage'
+import { PlatformStaffPage } from './features/platform/PlatformStaffPage'
 import { RedirectToPlatformHost } from './features/platform/RedirectToPlatformHost'
+import { SupportImpersonatePage } from './features/platform/SupportImpersonatePage'
 import { SigningPage } from './features/signing/SigningPage'
 import { isApexHost, isPlatformHost } from './shared/api'
 import { ConfirmProvider } from './shared/confirm'
@@ -63,9 +66,11 @@ const platformRouter = createBrowserRouter([
       { index: true, element: <PlatformTenantsPage /> },
       { path: 'tenants/:id', element: <PlatformTenantDetailPage /> },
       { path: 'health', element: <PlatformHealthPage /> },
+      { path: 'email', element: <PlatformEmailEventsPage /> },
       { path: 'media', element: <PlatformMediaPage /> },
       { path: 'audit', element: <PlatformAuditPage /> },
       { path: 'demo', element: <PlatformDemoPage /> },
+      { path: 'team', element: <PlatformStaffPage /> },
     ],
   },
   { path: '/login', element: <LoginPage /> },
@@ -78,6 +83,7 @@ const platformRouter = createBrowserRouter([
 
 const appRouter = createBrowserRouter([
   { path: '/', element: <RootEntry /> },
+  { path: '/support-impersonate/:token', element: <SupportImpersonatePage /> },
   { path: '/signup', element: <SignupPage /> },
   { path: '/login', element: <LoginPage /> },
   { path: '/privacy', element: <PrivacyPolicyPage /> },

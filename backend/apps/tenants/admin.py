@@ -5,14 +5,24 @@ from .models import EmailTemplate, Invitation, Membership, Tenant
 
 @admin.register(Tenant)
 class TenantAdmin(admin.ModelAdmin):
-    list_display = ("name", "slug", "status", "subscription_status", "trial_ends_at", "created_at")
+    list_display = (
+        "name",
+        "slug",
+        "status",
+        "subscription_status",
+        "plan",
+        "trial_ends_at",
+        "created_at",
+    )
     search_fields = ("name", "slug")
-    list_filter = ("status", "subscription_status")
+    list_filter = ("status", "subscription_status", "plan", "legal_hold")
     fields = (
         "name",
         "slug",
         "status",
         "subscription_status",
+        "plan",
+        "legal_hold",
         "trial_ends_at",
         "trial_warning_sent_at",
         "stripe_customer_id",

@@ -98,6 +98,16 @@ class Tenant(TimeStampedModel):
     # Stripe identifiers (populated when Checkout / webhooks are wired)
     stripe_customer_id = models.CharField(max_length=255, blank=True, db_index=True)
     stripe_subscription_id = models.CharField(max_length=255, blank=True, db_index=True)
+    plan = models.CharField(
+        max_length=32,
+        default="starter",
+        db_index=True,
+        help_text="starter | professional | enterprise — drives seat/envelope quotas.",
+    )
+    legal_hold = models.BooleanField(
+        default=False,
+        help_text="When on, retention purge skips this workspace (compliance).",
+    )
     # Account / company identity (who ordered this tenant)
     legal_name = models.CharField(max_length=255, blank=True)
     website = models.CharField(max_length=255, blank=True)
@@ -310,6 +320,12 @@ class PlatformOpsEvent(TimeStampedModel):
         SUPPORT_SNAPSHOT = "support_snapshot", "View support snapshot"
         TRIAL_EXTENDED = "trial_extended", "Extend free trial"
         SUBSCRIPTION_ACTIVATED = "subscription_activated", "Mark subscription active"
+        IMPERSONATE = "impersonate", "Start support impersonation"
+        EXPORT = "export", "Export tenant data"
+        COMPLIANCE_EXPORT = "compliance_export", "Compliance audit export"
+        DELETE = "delete", "Delete tenant workspace"
+        PLAN_CHANGED = "plan_changed", "Change tenant plan"
+        STAFF_ROLE = "staff_role", "Change platform staff role"
 
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -335,3 +351,83 @@ class PlatformOpsEvent(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.action} by {self.actor_email or '?'} @ {self.tenant_slug or '—'}"
+
+
+class SupportImpersonation(TimeStampedModel):
+    """One-time token allowing platform staff to assume a tenant membership."""
+
+    token = models.CharField(max_length=64, unique=True, blank=True, db_index=True)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="support_impersonations",
+    )
+    target_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="support_impersonations_received",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="support_impersonations_created",
+    )
+    actor_email = models.EmailField(blank=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def save(self, *args, **kwargs):
+        if not self.token:
+            self.token = secrets.token_urlsafe(32)
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(hours=1)
+        super().save(*args, **kwargs)
+
+    @property
+    def is_usable(self) -> bool:
+        if self.used_at is not None or self.revoked_at is not None:
+            return False
+        return timezone.now() < self.expires_at
+
+    def mark_used(self) -> None:
+        self.used_at = timezone.now()
+        self.save(update_fields=["used_at", "updated_at"])
+
+
+class EmailDeliveryEvent(TimeStampedModel):
+    """Inbound Postmark (or other ESP) delivery / bounce / complaint events."""
+
+    class EventType(models.TextChoices):
+        DELIVERY = "delivery", "Delivery"
+        BOUNCE = "bounce", "Bounce"
+        COMPLAINT = "complaint", "Spam complaint"
+        OPEN = "open", "Open"
+        CLICK = "click", "Click"
+        OTHER = "other", "Other"
+
+    event_type = models.CharField(max_length=32, choices=EventType.choices, db_index=True)
+    recipient = models.EmailField(blank=True, db_index=True)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="email_delivery_events",
+    )
+    tenant_slug = models.SlugField(max_length=63, blank=True, db_index=True)
+    message_id = models.CharField(max_length=255, blank=True, db_index=True)
+    subject = models.CharField(max_length=512, blank=True)
+    description = models.TextField(blank=True)
+    raw = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.event_type} → {self.recipient or '?'}"

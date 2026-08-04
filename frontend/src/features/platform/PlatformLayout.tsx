@@ -1,5 +1,6 @@
 import {
   AppShell,
+  Badge,
   Button,
   Group,
   NavLink,
@@ -13,16 +14,20 @@ import {
   IconFileSearch,
   IconHeartbeat,
   IconLogout,
+  IconMail,
   IconRefresh,
+  IconUsersGroup,
 } from '@tabler/icons-react'
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { isPlatformHost } from '../../shared/host'
 import { RedirectToPlatformHost } from './RedirectToPlatformHost'
+import { PlatformCapsProvider, usePlatformCaps } from './platformCaps'
 
-export function PlatformLayout() {
+function PlatformShell() {
   const { user, loading, logout } = useAuth()
   const location = useLocation()
+  const { can, role } = usePlatformCaps()
 
   if (!isPlatformHost()) {
     return <RedirectToPlatformHost />
@@ -43,6 +48,11 @@ export function PlatformLayout() {
             <Text c="dimmed" size="sm">
               Platform
             </Text>
+            {role ? (
+              <Badge size="sm" variant="light" tt="capitalize">
+                {role}
+              </Badge>
+            ) : null}
           </Group>
           <Group gap="sm">
             <Text size="sm" c="dimmed">
@@ -83,11 +93,20 @@ export function PlatformLayout() {
           />
           <NavLink
             component={Link}
-            to="/media"
-            label="Media orphans"
-            leftSection={<IconFileSearch size={18} />}
-            active={location.pathname === '/media'}
+            to="/email"
+            label="Email events"
+            leftSection={<IconMail size={18} />}
+            active={location.pathname === '/email'}
           />
+          {can('operate') ? (
+            <NavLink
+              component={Link}
+              to="/media"
+              label="Media orphans"
+              leftSection={<IconFileSearch size={18} />}
+              active={location.pathname === '/media'}
+            />
+          ) : null}
           <NavLink
             component={Link}
             to="/audit"
@@ -95,13 +114,29 @@ export function PlatformLayout() {
             leftSection={<IconActivity size={18} />}
             active={location.pathname === '/audit'}
           />
-          <NavLink
-            component={Link}
-            to="/demo"
-            label="Demo workspace"
-            leftSection={<IconRefresh size={18} />}
-            active={location.pathname === '/demo'}
-          />
+          {can('operate') ? (
+            <NavLink
+              component={Link}
+              to="/demo"
+              label="Demo workspace"
+              leftSection={<IconRefresh size={18} />}
+              active={location.pathname === '/demo'}
+            />
+          ) : null}
+          {can('admin') ? (
+            <>
+              <Title order={6} c="dimmed" tt="uppercase" fw={600} mt="md">
+                Administration
+              </Title>
+              <NavLink
+                component={Link}
+                to="/team"
+                label="Team"
+                leftSection={<IconUsersGroup size={18} />}
+                active={location.pathname === '/team'}
+              />
+            </>
+          ) : null}
         </Stack>
       </AppShell.Navbar>
 
@@ -109,5 +144,13 @@ export function PlatformLayout() {
         <Outlet />
       </AppShell.Main>
     </AppShell>
+  )
+}
+
+export function PlatformLayout() {
+  return (
+    <PlatformCapsProvider>
+      <PlatformShell />
+    </PlatformCapsProvider>
   )
 }

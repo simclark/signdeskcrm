@@ -383,6 +383,9 @@ class InvitationListCreateView(generics.ListCreateAPIView):
         return ctx
 
     def create(self, request, *args, **kwargs):
+        from apps.tenants.plans import assert_seat_available
+
+        assert_seat_available(request.tenant)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         invitation = serializer.save()
@@ -476,6 +479,16 @@ class AcceptInvitationView(views.APIView):
                 {"detail": "This invitation has expired or is no longer valid."},
                 status=status.HTTP_410_GONE,
             )
+        from apps.tenants.plans import assert_seat_available
+
+        try:
+            assert_seat_available(invitation.tenant)
+        except Exception as exc:
+            from rest_framework.exceptions import ValidationError
+
+            if isinstance(exc, ValidationError):
+                return Response(exc.detail, status=status.HTTP_402_PAYMENT_REQUIRED)
+            raise
         serializer = AcceptInvitationSerializer(
             data=request.data,
             context={"invitation": invitation, "request": request},

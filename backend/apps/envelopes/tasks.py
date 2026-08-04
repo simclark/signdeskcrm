@@ -193,6 +193,7 @@ def purge_expired_retained_documents():
             retention_purged_at__isnull=True,
             completed_at__isnull=False,
             tenant__document_retention_days__isnull=False,
+            tenant__legal_hold=False,
         )
         .select_related("tenant")
     )

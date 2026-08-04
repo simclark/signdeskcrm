@@ -111,16 +111,26 @@ def hours_remaining(tenant) -> int | None:
 
 
 def entitlement_payload(tenant) -> dict[str, Any]:
+    from apps.tenants.plans import usage_snapshot
+    from apps.tenants.services.stripe_billing import billing_portal_available
+
     sync_subscription_status(tenant)
+    usage = usage_snapshot(tenant)
     return {
         "subscription_status": tenant.subscription_status,
         "trial_ends_at": tenant.trial_ends_at.isoformat() if tenant.trial_ends_at else None,
         "is_write_locked": is_write_locked(tenant),
         "days_remaining": days_remaining(tenant),
         "support_email": getattr(settings, "SUPPORT_EMAIL", "support@signdeskcrm.com"),
-        "billing_portal_available": bool(
-            getattr(settings, "BILLING_PORTAL_AVAILABLE", False)
-        ),
+        "billing_portal_available": billing_portal_available(),
+        "plan": usage["plan"],
+        "limits": usage["limits"],
+        "seats_used": usage["seats_used"],
+        "seats_remaining": usage["seats_remaining"],
+        "envelopes_sent_this_month": usage["envelopes_sent_this_month"],
+        "envelopes_remaining_this_month": usage["envelopes_remaining_this_month"],
+        "seat_quota_exceeded": usage["seat_quota_exceeded"],
+        "envelope_quota_exceeded": usage["envelope_quota_exceeded"],
     }
 
 

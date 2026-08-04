@@ -6,6 +6,7 @@ import {
   Group,
   Modal,
   Paper,
+  Select,
   Stack,
   Switch,
   Text,
@@ -21,6 +22,7 @@ import { useEffect, useState } from 'react'
 import { ApiError, api } from '../../shared/api'
 import { useConfirm } from '../../shared/confirm'
 import { DataTable } from '../../shared/DataTable'
+import { usePlatformCaps } from './platformCaps'
 
 type PlatformTenantDetail = {
   id: number
@@ -31,6 +33,8 @@ type PlatformTenantDetail = {
   primary_contact_name: string
   primary_contact_phone: string
   listings_enabled: boolean
+  plan: string
+  legal_hold: boolean
   member_count: number
   workspace_url: string
   login_url: string
@@ -44,7 +48,20 @@ type PlatformTenantDetail = {
     is_write_locked: boolean
     days_remaining: number | null
   }
-  members: { id: number; full_name: string; email: string; role: string }[]
+  usage?: {
+    plan: string
+    seats_used: number
+    seats_remaining: number | null
+    envelopes_sent_this_month: number
+    envelopes_remaining_this_month: number | null
+    envelopes_last_30_days: number
+    document_count: number
+    limits: {
+      max_seats: number | null
+      max_envelopes_per_month: number | null
+    }
+  }
+  members: { id: number; user_id?: number; full_name: string; email: string; role: string }[]
 }
 
 type InvitationRow = {
@@ -80,10 +97,14 @@ export function PlatformTenantDetailPage() {
   const { id } = useParams()
   const queryClient = useQueryClient()
   const confirm = useConfirm()
+  const { can } = usePlatformCaps()
   const [inviteEmail, setInviteEmail] = useState('')
   const [suspendOpened, { open: openSuspend, close: closeSuspend }] = useDisclosure(false)
   const [suspendConfirm, setSuspendConfirm] = useState('')
   const [supportOpened, { open: openSupport, close: closeSupport }] = useDisclosure(false)
+  const [deleteOpened, { open: openDelete, close: closeDelete }] = useDisclosure(false)
+  const [deleteConfirm, setDeleteConfirm] = useState('')
+  const [plan, setPlan] = useState('starter')
 
   const { data, isLoading } = useQuery({
     queryKey: ['platform-tenant', id],
@@ -123,6 +144,7 @@ export function PlatformTenantDetailPage() {
       primary_contact_phone: data.primary_contact_phone || '',
       listings_enabled: data.listings_enabled,
     })
+    setPlan(data.plan || 'starter')
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when tenant payload changes
   }, [data?.id, data?.updated_at])
 
@@ -211,6 +233,69 @@ export function PlatformTenantDetailPage() {
     enabled: supportOpened && Boolean(id),
   })
 
+  const impersonate = useMutation({
+    mutationFn: (userId: number) =>
+      api<{ url: string; target_email: string }>(`/api/platform/tenants/${id}/impersonate/`, {
+        method: 'POST',
+        json: { user_id: userId },
+      }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['platform-ops-events'] })
+      notifications.show({
+        color: 'orange',
+        message: `Impersonation link ready for ${res.target_email}`,
+      })
+      window.open(res.url, '_blank', 'noopener,noreferrer')
+    },
+    onError: (err) => {
+      notifications.show({
+        color: 'red',
+        message: err instanceof ApiError ? err.message : 'Could not start impersonation',
+      })
+    },
+  })
+
+  const downloadExport = useMutation({
+    mutationFn: async (kind: 'export' | 'compliance-export') => {
+      const payload = await api<Record<string, unknown>>(
+        `/api/platform/tenants/${id}/${kind}/`,
+      )
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json',
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${data?.slug || 'tenant'}-${kind}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    },
+    onError: (err) => {
+      notifications.show({
+        color: 'red',
+        message: err instanceof ApiError ? err.message : 'Export failed',
+      })
+    },
+  })
+
+  const deleteTenant = useMutation({
+    mutationFn: () =>
+      api(`/api/platform/tenants/${id}/delete/`, {
+        method: 'POST',
+        json: { confirm: data?.slug, acknowledge: 'DELETE WORKSPACE' },
+      }),
+    onSuccess: () => {
+      notifications.show({ color: 'forest', message: 'Workspace deleted' })
+      window.location.assign('/')
+    },
+    onError: (err) => {
+      notifications.show({
+        color: 'red',
+        message: err instanceof ApiError ? err.message : 'Delete failed',
+      })
+    },
+  })
+
   if (isLoading || !data) {
     return <Text c="dimmed">Loading…</Text>
   }
@@ -260,8 +345,34 @@ export function PlatformTenantDetailPage() {
               Write locked
             </Badge>
           ) : null}
+          <Badge variant="outline" size="lg" tt="capitalize">
+            {data.plan || 'starter'}
+          </Badge>
         </Group>
       </Group>
+
+      {data.usage ? (
+        <Paper p="md" withBorder radius="md">
+          <Stack gap="xs">
+            <Title order={4}>Usage</Title>
+            <Text size="sm">
+              Seats: {data.usage.seats_used}
+              {data.usage.limits.max_seats != null
+                ? ` / ${data.usage.limits.max_seats}`
+                : ' (unlimited)'}
+              {' · '}
+              Envelopes this month: {data.usage.envelopes_sent_this_month}
+              {data.usage.limits.max_envelopes_per_month != null
+                ? ` / ${data.usage.limits.max_envelopes_per_month}`
+                : ' (unlimited)'}
+              {' · '}
+              Last 30 days: {data.usage.envelopes_last_30_days} envelopes
+              {' · '}
+              Documents: {data.usage.document_count}
+            </Text>
+          </Stack>
+        </Paper>
+      ) : null}
 
       <Paper p="md" withBorder radius="md">
         <Stack gap="sm">
@@ -288,7 +399,7 @@ export function PlatformTenantDetailPage() {
             >
               Extend +30 days
             </Button>
-            {data.subscription_status !== 'active' ? (
+            {data.subscription_status !== 'active' && can('billing') ? (
               <Button
                 loading={patchTenant.isPending}
                 onClick={() => patchTenant.mutate({ mark_subscription_active: true })}
@@ -297,6 +408,36 @@ export function PlatformTenantDetailPage() {
               </Button>
             ) : null}
           </Group>
+          {can('billing') ? (
+            <Group align="flex-end">
+              <Select
+                label="Plan"
+                w={220}
+                data={[
+                  { value: 'starter', label: 'Starter' },
+                  { value: 'professional', label: 'Professional' },
+                  { value: 'enterprise', label: 'Enterprise' },
+                ]}
+                value={plan}
+                onChange={(v) => setPlan(v || 'starter')}
+              />
+              <Button
+                variant="light"
+                loading={patchTenant.isPending}
+                disabled={plan === data.plan}
+                onClick={() => patchTenant.mutate({ plan })}
+              >
+                Save plan
+              </Button>
+              <Switch
+                label="Legal hold"
+                checked={data.legal_hold}
+                onChange={(e) =>
+                  patchTenant.mutate({ legal_hold: e.currentTarget.checked })
+                }
+              />
+            </Group>
+          ) : null}
         </Stack>
       </Paper>
 
@@ -325,6 +466,27 @@ export function PlatformTenantDetailPage() {
         <Button variant="subtle" onClick={openSupport}>
           Support snapshot
         </Button>
+        {can('admin') ? (
+          <>
+            <Button
+              variant="light"
+              loading={downloadExport.isPending}
+              onClick={() => downloadExport.mutate('export')}
+            >
+              Export JSON
+            </Button>
+            <Button
+              variant="light"
+              loading={downloadExport.isPending}
+              onClick={() => downloadExport.mutate('compliance-export')}
+            >
+              Compliance export
+            </Button>
+            <Button color="red" variant="outline" onClick={openDelete}>
+              Delete workspace
+            </Button>
+          </>
+        ) : null}
       </Group>
 
       <Paper p="md" withBorder radius="md">
@@ -378,6 +540,7 @@ export function PlatformTenantDetailPage() {
               <DataTable.Th>Name</DataTable.Th>
               <DataTable.Th>Email</DataTable.Th>
               <DataTable.Th>Role</DataTable.Th>
+              {can('support') ? <DataTable.Th /> : null}
             </DataTable.Tr>
           </DataTable.Thead>
           <DataTable.Tbody>
@@ -386,6 +549,21 @@ export function PlatformTenantDetailPage() {
                 <DataTable.Td className="sd-table-primary">{m.full_name}</DataTable.Td>
                 <DataTable.Td className="sd-table-muted">{m.email}</DataTable.Td>
                 <DataTable.Td tt="capitalize">{m.role}</DataTable.Td>
+                {can('support') ? (
+                  <DataTable.Td>
+                    <Button
+                      size="compact-xs"
+                      variant="light"
+                      loading={impersonate.isPending}
+                      onClick={() => {
+                        const uid = m.user_id
+                        if (uid) impersonate.mutate(uid)
+                      }}
+                    >
+                      Impersonate
+                    </Button>
+                  </DataTable.Td>
+                ) : null}
               </DataTable.Tr>
             ))}
           </DataTable.Tbody>
@@ -576,6 +754,34 @@ export function PlatformTenantDetailPage() {
               Could not load snapshot.
             </Text>
           )}
+        </Stack>
+      </Modal>
+
+      <Modal opened={deleteOpened} onClose={closeDelete} title="Delete workspace" centered>
+        <Stack gap="md">
+          <Text size="sm">
+            Permanently deletes this workspace and cascaded data. Export first. Type the slug{' '}
+            <Code>{data.slug}</Code> to confirm.
+          </Text>
+          <TextInput
+            label="Confirm slug"
+            value={deleteConfirm}
+            onChange={(e) => setDeleteConfirm(e.currentTarget.value)}
+            placeholder={data.slug}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={closeDelete}>
+              Cancel
+            </Button>
+            <Button
+              color="red"
+              disabled={deleteConfirm.trim() !== data.slug}
+              loading={deleteTenant.isPending}
+              onClick={() => deleteTenant.mutate()}
+            >
+              Delete forever
+            </Button>
+          </Group>
         </Stack>
       </Modal>
     </Stack>

@@ -22,6 +22,7 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
             "last_name": self.user.last_name,
             "full_name": self.user.full_name,
             "is_staff": self.user.is_staff,
+            "platform_role": getattr(self.user, "platform_role", "") or "",
         }
         return data
 
@@ -31,8 +32,22 @@ class ProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "email", "first_name", "last_name", "full_name", "is_staff")
-        read_only_fields = ("id", "email", "full_name", "is_staff")
+        fields = (
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "full_name",
+            "is_staff",
+            "platform_role",
+        )
+        read_only_fields = (
+            "id",
+            "email",
+            "full_name",
+            "is_staff",
+            "platform_role",
+        )
 
 
 class ChangePasswordSerializer(serializers.Serializer):

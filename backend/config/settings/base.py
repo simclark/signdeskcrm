@@ -237,8 +237,18 @@ TRIAL_WARNING_HOURS = int(os.getenv("TRIAL_WARNING_HOURS", "24"))
 
 # Platform support channel (trial banners, legal pages, billing placeholder)
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@signdeskcrm.com").strip()
-# Flip when Stripe Customer Portal is wired
+# Flip true to force portal UI; also auto-enables when STRIPE_* are set
 BILLING_PORTAL_AVAILABLE = os.getenv("BILLING_PORTAL_AVAILABLE", "false").lower() == "true"
+
+# Stripe (optional — self-serve billing)
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "").strip()
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "").strip()
+STRIPE_DEFAULT_PLAN = os.getenv("STRIPE_DEFAULT_PLAN", "professional").strip() or "professional"
+
+# Postmark inbound webhooks (bounce / complaint / delivery)
+POSTMARK_WEBHOOK_SECRET = os.getenv("POSTMARK_WEBHOOK_SECRET", "").strip()
 
 # Allow X-Tenant-Slug to override Host (needed for Vite proxy). Disable in production.
 TENANT_ALLOW_HEADER_SLUG = os.getenv("TENANT_ALLOW_HEADER_SLUG", "true").lower() == "true"

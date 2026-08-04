@@ -1,6 +1,6 @@
 # Design-partner pilot ops
 
-Checklist to run SignDesk with **real email** and a **hosted tenant URL** for Shapiro / Mitchell (or any Phase 0 partner). Pair with [README.md](./README.md), [BETA_TERMS.md](./BETA_TERMS.md), and [PILOT_CHECKLIST.md](./PILOT_CHECKLIST.md).
+Checklist to run SignDesk with **real email** and a **hosted tenant URL** for Shapiro / Mitchell (or any Phase 0 partner). Pair with [README.md](./README.md), [BETA_TERMS.md](./BETA_TERMS.md), [PILOT_CHECKLIST.md](./PILOT_CHECKLIST.md), and the Platform control-plane runbook [PLATFORM_OPS.md](../ops/PLATFORM_OPS.md) (staff roles, offboard, billing ownership).
 
 ## 1. Hosted environment
 
@@ -56,7 +56,7 @@ Before first live packet:
 - [ ] SPF / DKIM / DMARC for the From domain (configure in DNS + Postmark sender signature)
 - [ ] Send a test workspace invite and a practice envelope invite to the partner’s real inbox
 - [ ] Confirm links open on phone + desktop
-- [ ] Confirm bounce/complaint visibility in the Postmark stream (wire webhooks later)
+- [ ] Confirm bounce/complaint visibility in Postmark and Platform → Email events (webhook)
 
 Celery **worker** and **beat** must be running or invites / trial warnings never leave the queue. Platform → Health shows a Celery heartbeat check once beat has written within ~5 minutes.
 

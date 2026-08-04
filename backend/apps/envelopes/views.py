@@ -85,6 +85,16 @@ class EnvelopeViewSet(viewsets.ModelViewSet):
                 {"detail": "Only draft envelopes can be sent."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        from apps.tenants.plans import assert_envelope_send_allowed
+
+        try:
+            assert_envelope_send_allowed(request.tenant)
+        except Exception as exc:
+            from rest_framework.exceptions import ValidationError
+
+            if isinstance(exc, ValidationError):
+                return Response(exc.detail, status=status.HTTP_402_PAYMENT_REQUIRED)
+            raise
         try:
             send_envelope(envelope, request)
         except ValueError as exc:

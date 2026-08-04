@@ -50,6 +50,20 @@ from apps.tenants.platform_views import (
     PlatformTenantInvitationsView,
     PlatformTenantListCreateView,
 )
+from apps.tenants.platform_extra_views import (
+    PlatformEmailEventsView,
+    PlatformImpersonateView,
+    PlatformStaffListView,
+    PlatformTenantComplianceExportView,
+    PlatformTenantDeleteView,
+    PlatformTenantExportView,
+    PostmarkWebhookView,
+    PublicStatusView,
+    StripeWebhookView,
+    SupportImpersonateExchangeView,
+    TenantBillingCheckoutView,
+    TenantBillingPortalView,
+)
 from apps.tenants.views import (
     AcceptInvitationView,
     EmailTemplateDetailView,
@@ -98,6 +112,13 @@ router.register(r"dashboard", DashboardViewSet, basename="dashboard")
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/health/", health, name="health"),
+    path("api/status/", PublicStatusView.as_view(), name="public-status"),
+    path("api/webhooks/stripe/", StripeWebhookView.as_view(), name="stripe-webhook"),
+    path(
+        "api/webhooks/postmark/",
+        PostmarkWebhookView.as_view(),
+        name="postmark-webhook",
+    ),
     path("api/public/config/", PublicConfigView.as_view(), name="public-config"),
     path("api/media/<path:path>", ProtectedMediaView.as_view(), name="protected-media"),
     path("api/auth/signup/", SignupView.as_view(), name="signup"),
@@ -217,6 +238,51 @@ urlpatterns = [
         "api/platform/tenants/<int:pk>/support-snapshot/",
         PlatformSupportSnapshotView.as_view(),
         name="platform-support-snapshot",
+    ),
+    path(
+        "api/platform/tenants/<int:pk>/impersonate/",
+        PlatformImpersonateView.as_view(),
+        name="platform-impersonate",
+    ),
+    path(
+        "api/platform/tenants/<int:pk>/export/",
+        PlatformTenantExportView.as_view(),
+        name="platform-tenant-export",
+    ),
+    path(
+        "api/platform/tenants/<int:pk>/compliance-export/",
+        PlatformTenantComplianceExportView.as_view(),
+        name="platform-tenant-compliance-export",
+    ),
+    path(
+        "api/platform/tenants/<int:pk>/delete/",
+        PlatformTenantDeleteView.as_view(),
+        name="platform-tenant-delete",
+    ),
+    path(
+        "api/platform/email-events/",
+        PlatformEmailEventsView.as_view(),
+        name="platform-email-events",
+    ),
+    path(
+        "api/platform/staff/",
+        PlatformStaffListView.as_view(),
+        name="platform-staff",
+    ),
+    path(
+        "api/auth/support-impersonate/<str:token>/",
+        SupportImpersonateExchangeView.as_view(),
+        name="support-impersonate-exchange",
+    ),
+    path(
+        "api/tenant/billing/checkout/",
+        TenantBillingCheckoutView.as_view(),
+        name="tenant-billing-checkout",
+    ),
+    path(
+        "api/tenant/billing/portal/",
+        TenantBillingPortalView.as_view(),
+        name="tenant-billing-portal",
     ),
     path(
         "api/platform/demo/reset/",

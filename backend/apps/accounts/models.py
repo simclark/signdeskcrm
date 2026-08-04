@@ -18,6 +18,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     date_joined = models.DateTimeField(default=timezone.now)
+    # Platform console RBAC (only meaningful when is_staff=True)
+    platform_role = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        help_text="viewer | support | operator | admin (staff only)",
+    )
 
     objects = UserManager()
 

@@ -136,11 +136,12 @@ class TenantSerializer(serializers.ModelSerializer):
 class MembershipSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
     full_name = serializers.CharField(source="user.full_name", read_only=True)
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
 
     class Meta:
         model = Membership
-        fields = ("id", "email", "full_name", "role", "is_active", "created_at")
-        read_only_fields = ("id", "email", "full_name", "created_at")
+        fields = ("id", "user_id", "email", "full_name", "role", "is_active", "created_at")
+        read_only_fields = ("id", "user_id", "email", "full_name", "created_at")
 
 
 class MembershipUpdateSerializer(serializers.Serializer):

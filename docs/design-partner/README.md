@@ -13,7 +13,7 @@ SignDesk stays a **horizontal** e-sign + light CRM product. Shapiro Group is the
 
 1. Create a workspace for Shapiro (or invite Mitchell into an existing tenant).
 2. Agree commercial terms using [BETA_TERMS.md](./BETA_TERMS.md).
-3. Follow [PILOT_OPS.md](./PILOT_OPS.md) for hosted URL, real SMTP, and counsel review of disclosure / Certificate of Completion.
+3. Follow [PILOT_OPS.md](./PILOT_OPS.md) for hosted URL, real SMTP, and counsel review of disclosure / Certificate of Completion. Platform staff roles and offboard policy live in [PLATFORM_OPS.md](../ops/PLATFORM_OPS.md).
 4. Have them upload official TREC PDFs they already use → Templates → place fields, then **Add to library** so agents reuse the workspace’s published Shared library forms.
 5. Send 2–3 practice envelopes (Buyer + Seller sequential).
 6. Fill [PILOT_CHECKLIST.md](./PILOT_CHECKLIST.md) after each packet.
