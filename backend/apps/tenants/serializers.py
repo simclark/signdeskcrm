@@ -7,6 +7,7 @@ from rest_framework import serializers
 
 from apps.common.media import protected_media_url
 from apps.tenants.email_templates import DEFAULT_TEMPLATES, EmailTemplateKey
+from apps.tenants.entitlements import apply_new_tenant_trial, entitlement_payload
 from apps.tenants.models import (
     EmailTemplate,
     Invitation,
@@ -20,6 +21,8 @@ User = get_user_model()
 
 
 class TenantSerializer(serializers.ModelSerializer):
+    entitlement = serializers.SerializerMethodField()
+
     class Meta:
         model = Tenant
         fields = (
@@ -53,9 +56,24 @@ class TenantSerializer(serializers.ModelSerializer):
             "listings_enabled",
             "esign_acknowledgement",
             "esign_acknowledgement_version",
+            "subscription_status",
+            "trial_ends_at",
+            "entitlement",
             "created_at",
         )
-        read_only_fields = ("id", "slug", "status", "created_at", "esign_acknowledgement_version")
+        read_only_fields = (
+            "id",
+            "slug",
+            "status",
+            "created_at",
+            "esign_acknowledgement_version",
+            "subscription_status",
+            "trial_ends_at",
+            "entitlement",
+        )
+
+    def get_entitlement(self, obj):
+        return entitlement_payload(obj)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -163,6 +181,7 @@ class SignupSerializer(serializers.Serializer):
             name=validated_data["company_name"],
             slug=validated_data["slug"],
         )
+        apply_new_tenant_trial(tenant)
         user = User.objects.create_user(
             email=validated_data["email"],
             password=validated_data["password"],

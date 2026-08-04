@@ -25,6 +25,8 @@ type PlatformTenantRow = {
   status: string
   created_at: string
   member_count: number
+  subscription_status?: string
+  trial_ends_at?: string | null
 }
 
 type ProvisionResult = {
@@ -147,6 +149,7 @@ export function PlatformTenantsPage() {
             <DataTable.Th>Name</DataTable.Th>
             <DataTable.Th>Slug</DataTable.Th>
             <DataTable.Th>Status</DataTable.Th>
+            <DataTable.Th>Subscription</DataTable.Th>
             <DataTable.Th>Members</DataTable.Th>
             <DataTable.Th>Created</DataTable.Th>
           </DataTable.Tr>
@@ -154,13 +157,13 @@ export function PlatformTenantsPage() {
         <DataTable.Tbody>
           {isLoading ? (
             <DataTable.Tr>
-              <DataTable.Td colSpan={5}>
+              <DataTable.Td colSpan={6}>
                 <Text c="dimmed">Loading…</Text>
               </DataTable.Td>
             </DataTable.Tr>
           ) : rows.length === 0 ? (
             <DataTable.Tr>
-              <DataTable.Td colSpan={5}>
+              <DataTable.Td colSpan={6}>
                 <Text c="dimmed">No tenants yet.</Text>
               </DataTable.Td>
             </DataTable.Tr>
@@ -184,6 +187,21 @@ export function PlatformTenantsPage() {
                     tt="capitalize"
                   >
                     {row.status}
+                  </Badge>
+                </DataTable.Td>
+                <DataTable.Td>
+                  <Badge
+                    color={
+                      row.subscription_status === 'active'
+                        ? 'forest'
+                        : row.subscription_status === 'expired'
+                          ? 'orange'
+                          : 'blue'
+                    }
+                    variant="light"
+                    tt="capitalize"
+                  >
+                    {row.subscription_status || '—'}
                   </Badge>
                 </DataTable.Td>
                 <DataTable.Td>{row.member_count}</DataTable.Td>

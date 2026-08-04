@@ -35,6 +35,15 @@ type PlatformTenantDetail = {
   workspace_url: string
   login_url: string
   updated_at?: string
+  subscription_status: string
+  trial_ends_at: string | null
+  trial_warning_sent_at?: string | null
+  entitlement?: {
+    subscription_status: string
+    trial_ends_at: string | null
+    is_write_locked: boolean
+    days_remaining: number | null
+  }
   members: { id: number; full_name: string; email: string; role: string }[]
 }
 
@@ -247,15 +256,73 @@ export function PlatformTenantDetailPage() {
             {data.slug}
           </Text>
         </Stack>
-        <Badge
-          color={data.status === 'active' ? 'forest' : 'red'}
-          variant="light"
-          size="lg"
-          tt="capitalize"
-        >
-          {data.status}
-        </Badge>
+        <Group gap="xs">
+          <Badge
+            color={data.status === 'active' ? 'forest' : 'red'}
+            variant="light"
+            size="lg"
+            tt="capitalize"
+          >
+            {data.status}
+          </Badge>
+          <Badge
+            color={
+              data.subscription_status === 'active'
+                ? 'forest'
+                : data.subscription_status === 'expired'
+                  ? 'orange'
+                  : 'blue'
+            }
+            variant="light"
+            size="lg"
+            tt="capitalize"
+          >
+            {data.subscription_status}
+          </Badge>
+          {data.entitlement?.is_write_locked ? (
+            <Badge color="orange" variant="filled" size="lg">
+              Write locked
+            </Badge>
+          ) : null}
+        </Group>
       </Group>
+
+      <Paper p="md" withBorder radius="md">
+        <Stack gap="sm">
+          <Title order={4}>Free trial / subscription</Title>
+          <Text size="sm" c="dimmed">
+            Trial ends:{' '}
+            {data.trial_ends_at ? new Date(data.trial_ends_at).toLocaleString() : '—'}
+            {data.entitlement?.days_remaining != null
+              ? ` (${data.entitlement.days_remaining} day${data.entitlement.days_remaining === 1 ? '' : 's'} left)`
+              : ''}
+          </Text>
+          <Group>
+            <Button
+              variant="light"
+              loading={patchTenant.isPending}
+              onClick={() => patchTenant.mutate({ extend_trial_days: 15 })}
+            >
+              Extend +15 days
+            </Button>
+            <Button
+              variant="light"
+              loading={patchTenant.isPending}
+              onClick={() => patchTenant.mutate({ extend_trial_days: 30 })}
+            >
+              Extend +30 days
+            </Button>
+            {data.subscription_status !== 'active' ? (
+              <Button
+                loading={patchTenant.isPending}
+                onClick={() => patchTenant.mutate({ mark_subscription_active: true })}
+              >
+                Mark as active
+              </Button>
+            ) : null}
+          </Group>
+        </Stack>
+      </Paper>
 
       <Group>
         <Button

@@ -219,7 +219,16 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.contacts.tasks.process_follow_up_plan_enrollments",
         "schedule": 900.0,
     },
+    "process-trial-lifecycle": {
+        "task": "apps.tenants.tasks.process_trial_lifecycle",
+        "schedule": 3600.0,
+    },
 }
+
+# Free trial (Phase 1 — Stripe Checkout deferred)
+TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "15"))
+TRIAL_WARNING_HOURS = int(os.getenv("TRIAL_WARNING_HOURS", "24"))
+
 
 EMAIL_BACKEND = os.getenv(
     "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend"

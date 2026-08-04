@@ -1,5 +1,6 @@
 import {
   ActionIcon,
+  Alert,
   AppShell,
   Avatar,
   Burger,
@@ -7,12 +8,15 @@ import {
   Group,
   Image,
   Menu,
+  Modal,
   NavLink,
   Overlay,
+  Stack,
   Text,
   Tooltip,
 } from '@mantine/core'
 import { useDisclosure, useLocalStorage, useMediaQuery } from '@mantine/hooks'
+import { notifications } from '@mantine/notifications'
 import {
   IconBuilding,
   IconCalendarDue,
@@ -34,6 +38,7 @@ import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useEffect } from 'react'
 import { toAppMediaUrl } from '../shared/mediaUrl'
 import { setDocumentFavicon } from '../shared/favicon'
+import { TRIAL_EXPIRED_EVENT } from '../shared/api'
 import { useAuth } from '../features/auth/AuthContext'
 import { ProfileDialog } from '../features/auth/ProfileDialog'
 import { CreateEnvelopeProvider, useCreateEnvelope } from '../features/envelopes/CreateEnvelopeContext'
@@ -102,6 +107,7 @@ function isPathActive(pathname: string, to: string) {
 function AppShellContent() {
   const [mobileOpened, { toggle: toggleMobile, close: closeMobile }] = useDisclosure()
   const [profileOpened, { open: openProfile, close: closeProfile }] = useDisclosure()
+  const [subscribeOpened, { open: openSubscribe, close: closeSubscribe }] = useDisclosure()
   const [desktopCollapsed, setDesktopCollapsed] = useLocalStorage({
     key: 'sd-nav-collapsed',
     defaultValue: false,
@@ -109,13 +115,17 @@ function AppShellContent() {
   const isDesktop = useMediaQuery('(min-width: 48em)')
   // Collapsed icon rail is desktop-only; mobile drawer always shows labels.
   const navCollapsed = Boolean(isDesktop && desktopCollapsed)
-  const { user, tenant, membership, logout } = useAuth()
+  const { user, tenant, membership, entitlement, isWriteLocked, logout, refreshMe } = useAuth()
   const location = useLocation()
   const { openCreateEnvelope } = useCreateEnvelope()
 
   const isAdmin = membership?.role === 'owner' || membership?.role === 'admin'
   const iconUrl = toAppMediaUrl(tenant?.icon)
   const listingsEnabled = Boolean(tenant?.listings_enabled)
+  const showTrialBanner =
+    entitlement?.subscription_status === 'trial' ||
+    entitlement?.subscription_status === 'expired' ||
+    isWriteLocked
 
   const memberNavGroups = MEMBER_NAV_GROUPS.map((group) => ({
     ...group,
@@ -132,6 +142,19 @@ function AppShellContent() {
   useEffect(() => {
     closeMobile()
   }, [location.pathname, closeMobile])
+
+  useEffect(() => {
+    const onTrialExpired = () => {
+      notifications.show({
+        color: 'orange',
+        title: 'Free trial ended',
+        message: 'This workspace is read-only until you subscribe.',
+      })
+      void refreshMe().catch(() => undefined)
+    }
+    window.addEventListener(TRIAL_EXPIRED_EVENT, onTrialExpired)
+    return () => window.removeEventListener(TRIAL_EXPIRED_EVENT, onTrialExpired)
+  }, [refreshMe])
 
   const renderLink = (link: NavItem) => {
     const childActive = link.children?.some((child) => isPathActive(location.pathname, child.to))
@@ -290,10 +313,21 @@ function AppShellContent() {
             </Group>
           </Group>
           <Group wrap="nowrap" gap="sm">
-            <Button variant="filled" onClick={() => openCreateEnvelope()} visibleFrom="sm">
+            <Button
+              variant="filled"
+              onClick={() => openCreateEnvelope()}
+              visibleFrom="sm"
+              disabled={isWriteLocked}
+            >
               New envelope
             </Button>
-            <Button variant="filled" onClick={() => openCreateEnvelope()} hiddenFrom="sm" px="sm">
+            <Button
+              variant="filled"
+              onClick={() => openCreateEnvelope()}
+              hiddenFrom="sm"
+              px="sm"
+              disabled={isWriteLocked}
+            >
               New
             </Button>
             <Menu>
@@ -355,10 +389,47 @@ function AppShellContent() {
       </AppShell.Navbar>
 
       <AppShell.Main>
+        {showTrialBanner ? (
+          <Alert
+            mb="md"
+            color={isWriteLocked ? 'orange' : 'blue'}
+            title={
+              isWriteLocked
+                ? 'Free trial ended — workspace is read-only'
+                : entitlement?.days_remaining != null
+                  ? `${entitlement.days_remaining} day${entitlement.days_remaining === 1 ? '' : 's'} left in your free trial`
+                  : 'Free trial in progress'
+            }
+          >
+            <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+              <Text size="sm">
+                {isWriteLocked
+                  ? 'You can still view existing data. Subscribe to create and edit again.'
+                  : 'After the trial, this workspace becomes read-only until you subscribe.'}
+              </Text>
+              <Button size="xs" variant="light" color={isWriteLocked ? 'orange' : 'blue'} onClick={openSubscribe}>
+                Subscribe
+              </Button>
+            </Group>
+          </Alert>
+        ) : null}
         <Outlet />
       </AppShell.Main>
 
       <ProfileDialog opened={profileOpened} onClose={closeProfile} />
+      <Modal opened={subscribeOpened} onClose={closeSubscribe} title="Subscribe to SignDesk" centered>
+        <Stack gap="md">
+          <Text size="sm">
+            Credit card billing is coming soon. Contact support if you need help continuing
+            with SignDesk after your free trial.
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={closeSubscribe}>
+              Close
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </AppShell>
   )
 }

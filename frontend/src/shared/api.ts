@@ -41,6 +41,23 @@ export class ApiError extends Error {
   }
 }
 
+/** Dispatched when a mutating API call is rejected because the trial ended. */
+export const TRIAL_EXPIRED_EVENT = 'sd:trial-expired'
+
+function isTrialExpiredPayload(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false
+  const record = data as Record<string, unknown>
+  if (record.code === 'trial_expired') return true
+  if (
+    record.detail &&
+    typeof record.detail === 'object' &&
+    (record.detail as Record<string, unknown>).code === 'trial_expired'
+  ) {
+    return true
+  }
+  return false
+}
+
 let refreshInFlight: Promise<boolean> | null = null
 
 async function refreshAccessToken(): Promise<boolean> {
@@ -120,6 +137,9 @@ export async function api<T = unknown>(
   const text = await res.text()
   const data = text ? JSON.parse(text) : null
   if (!res.ok) {
+    if (res.status === 402 || isTrialExpiredPayload(data)) {
+      window.dispatchEvent(new CustomEvent(TRIAL_EXPIRED_EVENT, { detail: data }))
+    }
     throw new ApiError(apiErrorMessage(data), res.status, data)
   }
   return data as T
@@ -129,6 +149,13 @@ function apiErrorMessage(data: unknown): string {
   if (!data || typeof data !== 'object') return 'Request failed'
   const record = data as Record<string, unknown>
   if (typeof record.detail === 'string' && record.detail) return record.detail
+  if (
+    record.detail &&
+    typeof record.detail === 'object' &&
+    typeof (record.detail as Record<string, unknown>).detail === 'string'
+  ) {
+    return String((record.detail as Record<string, unknown>).detail)
+  }
   if (Array.isArray(record.detail) && record.detail[0]) return String(record.detail[0])
   for (const value of Object.values(record)) {
     if (Array.isArray(value) && value[0]) return String(value[0])

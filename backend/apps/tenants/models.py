@@ -61,10 +61,32 @@ class Tenant(TimeStampedModel):
         ACTIVE = "active", "Active"
         SUSPENDED = "suspended", "Suspended"
 
+    class SubscriptionStatus(models.TextChoices):
+        TRIAL = "trial", "Trial"
+        ACTIVE = "active", "Active"
+        EXPIRED = "expired", "Expired"
+
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=63, unique=True, validators=[validate_tenant_slug])
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE
+    )
+    # SaaS entitlement (workspace-level billing unit)
+    subscription_status = models.CharField(
+        max_length=20,
+        choices=SubscriptionStatus.choices,
+        default=SubscriptionStatus.TRIAL,
+        db_index=True,
+    )
+    trial_ends_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the free trial ends. Null for grandfathered/active subscriptions.",
+    )
+    trial_warning_sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the 24h trial-ending warning email was sent.",
     )
     # Account / company identity (who ordered this tenant)
     legal_name = models.CharField(max_length=255, blank=True)
@@ -268,6 +290,8 @@ class PlatformOpsEvent(TimeStampedModel):
         MEDIA_DELETE = "media_delete", "Delete media orphans"
         FORM_SEED = "form_seed", "Seed form library"
         SUPPORT_SNAPSHOT = "support_snapshot", "View support snapshot"
+        TRIAL_EXTENDED = "trial_extended", "Extend free trial"
+        SUBSCRIPTION_ACTIVATED = "subscription_activated", "Mark subscription active"
 
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,

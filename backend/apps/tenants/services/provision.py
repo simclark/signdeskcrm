@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils.text import slugify
 
+from apps.tenants.entitlements import apply_new_tenant_trial
 from apps.tenants.models import Invitation, Membership, Tenant, ensure_email_templates, validate_tenant_slug
 
 User = get_user_model()
@@ -56,6 +57,7 @@ def provision_tenant(
         primary_contact_email=owner_email,
         primary_contact_name=contact_name,
     )
+    apply_new_tenant_trial(tenant)
     ensure_email_templates(tenant)
     from apps.documents.form_library.ensure import ensure_form_library
 

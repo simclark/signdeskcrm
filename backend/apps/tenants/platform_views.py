@@ -26,6 +26,11 @@ from apps.tenants.models import (
     PlatformOpsEvent,
     Tenant,
 )
+from apps.tenants.entitlements import (
+    entitlement_payload,
+    extend_trial,
+    mark_subscription_active,
+)
 from apps.tenants.serializers import InvitationSerializer, MembershipSerializer
 from apps.tenants.services.demo import DEMO_SLUG, reset_demo_tenant
 from apps.tenants.services.ops_audit import log_platform_op
@@ -38,6 +43,7 @@ MEDIA_DELETE_CONFIRM = "DELETE ORPHANS"
 
 class PlatformTenantListSerializer(serializers.ModelSerializer):
     member_count = serializers.IntegerField(read_only=True)
+    entitlement = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
@@ -49,7 +55,13 @@ class PlatformTenantListSerializer(serializers.ModelSerializer):
             "created_at",
             "primary_contact_email",
             "member_count",
+            "subscription_status",
+            "trial_ends_at",
+            "entitlement",
         )
+
+    def get_entitlement(self, obj):
+        return entitlement_payload(obj)
 
 
 class PlatformTenantDetailSerializer(serializers.ModelSerializer):
@@ -57,6 +69,7 @@ class PlatformTenantDetailSerializer(serializers.ModelSerializer):
     members = serializers.SerializerMethodField()
     workspace_url = serializers.SerializerMethodField()
     login_url = serializers.SerializerMethodField()
+    entitlement = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
@@ -73,6 +86,10 @@ class PlatformTenantDetailSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "listings_enabled",
+            "subscription_status",
+            "trial_ends_at",
+            "trial_warning_sent_at",
+            "entitlement",
             "member_count",
             "members",
             "workspace_url",
@@ -92,6 +109,9 @@ class PlatformTenantDetailSerializer(serializers.ModelSerializer):
 
     def get_login_url(self, obj) -> str:
         return obj.frontend_url("/login")
+
+    def get_entitlement(self, obj):
+        return entitlement_payload(obj)
 
 
 class PlatformProvisionSerializer(serializers.Serializer):
@@ -134,11 +154,45 @@ class PlatformTenantPatchSerializer(serializers.Serializer):
     primary_contact_email = serializers.EmailField(required=False, allow_blank=True)
     primary_contact_phone = serializers.CharField(max_length=64, required=False, allow_blank=True)
     listings_enabled = serializers.BooleanField(required=False)
+    extend_trial_days = serializers.IntegerField(required=False, min_value=1, max_value=365)
+    trial_ends_at = serializers.DateTimeField(required=False)
+    mark_subscription_active = serializers.BooleanField(required=False)
+
+    def validate(self, attrs):
+        extend_days = attrs.get("extend_trial_days")
+        until = attrs.get("trial_ends_at")
+        mark_active = attrs.get("mark_subscription_active")
+        entitlement_ops = sum(
+            1 for v in (extend_days is not None, until is not None, mark_active is True) if v
+        )
+        if entitlement_ops > 1:
+            raise serializers.ValidationError(
+                "Provide only one of extend_trial_days, trial_ends_at, or mark_subscription_active."
+            )
+        if until is not None and until <= timezone.now():
+            raise serializers.ValidationError(
+                {"trial_ends_at": "Trial end must be in the future."}
+            )
+        return attrs
 
     def update(self, instance, validated_data):
+        extend_days = validated_data.pop("extend_trial_days", None)
+        until = validated_data.pop("trial_ends_at", None)
+        mark_active = validated_data.pop("mark_subscription_active", None)
+
         for key, value in validated_data.items():
             setattr(instance, key, value)
-        instance.save()
+        if validated_data:
+            instance.save()
+
+        if mark_active:
+            mark_subscription_active(instance)
+        elif extend_days is not None:
+            extend_trial(instance, days=extend_days)
+        elif until is not None:
+            extend_trial(instance, until=until)
+
+        instance.refresh_from_db()
         return instance
 
 
@@ -272,23 +326,48 @@ class PlatformTenantDetailView(generics.RetrieveUpdateAPIView):
     def patch(self, request, *args, **kwargs):
         tenant = self.get_object()
         previous_status = tenant.status
+        previous_subscription = tenant.subscription_status
+        previous_trial_end = tenant.trial_ends_at
         serializer = PlatformTenantPatchSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.update(tenant, serializer.validated_data)
+        validated = dict(serializer.validated_data)
+        serializer.update(tenant, dict(validated))
+        tenant.refresh_from_db()
         new_status = tenant.status
-        if "status" in serializer.validated_data and new_status != previous_status:
+        fields = sorted(validated.keys())
+
+        if validated.get("mark_subscription_active"):
+            action = PlatformOpsEvent.Action.SUBSCRIPTION_ACTIVATED
+            metadata = {"fields": fields}
+        elif "extend_trial_days" in validated or "trial_ends_at" in validated:
+            action = PlatformOpsEvent.Action.TRIAL_EXTENDED
+            metadata = {
+                "fields": fields,
+                "previous_trial_ends_at": (
+                    previous_trial_end.isoformat() if previous_trial_end else None
+                ),
+                "trial_ends_at": (
+                    tenant.trial_ends_at.isoformat() if tenant.trial_ends_at else None
+                ),
+                "extend_trial_days": validated.get("extend_trial_days"),
+                "previous_subscription_status": previous_subscription,
+            }
+        elif "status" in validated and new_status != previous_status:
             action = (
                 PlatformOpsEvent.Action.SUSPEND
                 if new_status == Tenant.Status.SUSPENDED
                 else PlatformOpsEvent.Action.REACTIVATE
             )
+            metadata = {"fields": fields}
         else:
             action = PlatformOpsEvent.Action.UPDATE
+            metadata = {"fields": fields}
+
         log_platform_op(
             actor=request.user,
             action=action,
             tenant=tenant,
-            metadata={"fields": sorted(serializer.validated_data.keys())},
+            metadata=metadata,
         )
         return Response(PlatformTenantDetailSerializer(tenant).data)
 

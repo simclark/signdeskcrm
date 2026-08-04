@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from django.contrib.auth import get_user_model
 from django.db import transaction
 
+from apps.tenants.entitlements import mark_subscription_active
 from apps.tenants.models import Invitation, Membership, Tenant, ensure_email_templates
 
 User = get_user_model()
@@ -106,6 +107,7 @@ def reset_demo_tenant(
     if tenant.status != Tenant.Status.ACTIVE:
         tenant.status = Tenant.Status.ACTIVE
     tenant.save()
+    mark_subscription_active(tenant)
 
     _wipe_tenant_operational_data(tenant)
 

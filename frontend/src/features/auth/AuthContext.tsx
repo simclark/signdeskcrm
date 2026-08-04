@@ -6,7 +6,15 @@ import {
   isPlatformHost,
   setTokens,
   getTenantSlug,
+  TRIAL_EXPIRED_EVENT,
 } from '../../shared/api'
+
+export type Entitlement = {
+  subscription_status: 'trial' | 'active' | 'expired' | string
+  trial_ends_at: string | null
+  is_write_locked: boolean
+  days_remaining: number | null
+}
 
 type User = {
   id: number
@@ -47,6 +55,9 @@ type Tenant = {
   esign_acknowledgement: string
   esign_acknowledgement_version: string
   listings_enabled: boolean
+  subscription_status?: string
+  trial_ends_at?: string | null
+  entitlement?: Entitlement
 }
 
 type Membership = {
@@ -58,8 +69,10 @@ type AuthState = {
   user: User | null
   tenant: Tenant | null
   membership: Membership | null
+  entitlement: Entitlement | null
   loading: boolean
   isStaff: boolean
+  isWriteLocked: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   refreshMe: () => Promise<void>
@@ -115,13 +128,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false))
   }, [])
 
+  useEffect(() => {
+    const onTrialExpired = () => {
+      void refreshMe().catch(() => undefined)
+    }
+    window.addEventListener(TRIAL_EXPIRED_EVENT, onTrialExpired)
+    return () => window.removeEventListener(TRIAL_EXPIRED_EVENT, onTrialExpired)
+  }, [])
+
+  const entitlement = tenant?.entitlement ?? null
+  const isWriteLocked = Boolean(entitlement?.is_write_locked)
+
   const value = useMemo<AuthState>(
     () => ({
       user,
       tenant,
       membership,
+      entitlement,
       loading,
       isStaff: Boolean(user?.is_staff),
+      isWriteLocked,
       refreshMe,
       logout: () => {
         clearTokens()
@@ -149,7 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await refreshMe()
       },
     }),
-    [user, tenant, membership, loading],
+    [user, tenant, membership, entitlement, loading, isWriteLocked],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -23,6 +23,7 @@ class EmailTemplateKey:
     COMPLETION = "completion"
     ENVELOPE_VOIDED = "envelope_voided"
     ENVELOPE_DECLINED = "envelope_declined"
+    TRIAL_ENDING = "trial_ending"
 
     CHOICES = (
         (WORKSPACE_INVITE, "Workspace invitation"),
@@ -33,6 +34,7 @@ class EmailTemplateKey:
         (COMPLETION, "Document completed"),
         (ENVELOPE_VOIDED, "Envelope voided"),
         (ENVELOPE_DECLINED, "Envelope declined"),
+        (TRIAL_ENDING, "Free trial ending"),
     )
 
     ALL = (
@@ -44,6 +46,7 @@ class EmailTemplateKey:
         COMPLETION,
         ENVELOPE_VOIDED,
         ENVELOPE_DECLINED,
+        TRIAL_ENDING,
     )
 
 
@@ -207,6 +210,25 @@ DEFAULT_TEMPLATES: dict[str, TemplateDefault] = {
             "action_url",
         ),
         "cta_label": "Open envelope",
+    },
+    EmailTemplateKey.TRIAL_ENDING: {
+        "label": "Free trial ending",
+        "description": "Sent about 24 hours before the free trial ends.",
+        "subject": "Your {{tenant_name}} free trial ends tomorrow",
+        "body": (
+            "Hello {{recipient_name}},\n\n"
+            "Your free trial of SignDesk for {{tenant_name}} ends on {{trial_ends_at}}.\n\n"
+            "After that, the workspace will become read-only until you subscribe.\n\n"
+            "Open your workspace to continue working while the trial is still active:\n\n"
+            "{{action_url}}"
+        ),
+        "placeholders": (
+            "recipient_name",
+            "tenant_name",
+            "trial_ends_at",
+            "action_url",
+        ),
+        "cta_label": "Open workspace",
     },
 }
 

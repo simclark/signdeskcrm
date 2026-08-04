@@ -88,6 +88,9 @@ class SignupTests(TestCase):
         self.assertEqual(res.status_code, 201)
         self.assertTrue(Tenant.objects.filter(slug="acme-esign").exists())
         self.assertEqual(res.data["redirect_host"].startswith("acme-esign."), True)
+        tenant = Tenant.objects.get(slug="acme-esign")
+        self.assertEqual(tenant.subscription_status, Tenant.SubscriptionStatus.TRIAL)
+        self.assertIsNotNone(tenant.trial_ends_at)
 
 
 @override_settings(
@@ -289,6 +292,7 @@ class EmailTemplateTests(TestCase):
                 "completion",
                 "envelope_voided",
                 "envelope_declined",
+                "trial_ending",
             ],
         )
         self.assertIn("available_placeholders", res.data[0])
@@ -662,3 +666,138 @@ class PlatformHostMiddlewareTests(TestCase):
         client.force_authenticate(staff)
         res = client.get("/api/platform/tenants/", HTTP_HOST="platform.signdeskcrm.test")
         self.assertEqual(res.status_code, 200)
+
+
+@override_settings(
+    CELERY_TASK_ALWAYS_EAGER=True,
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+    TRIAL_DAYS=15,
+    TRIAL_WARNING_HOURS=24,
+)
+class TrialEntitlementTests(TestCase):
+    def setUp(self):
+        from datetime import timedelta
+
+        from django.core import mail
+        from django.utils import timezone
+
+        from apps.tenants.entitlements import apply_new_tenant_trial, mark_subscription_active
+
+        mail.outbox.clear()
+        self.timezone = timezone
+        self.timedelta = timedelta
+        self.apply_new_tenant_trial = apply_new_tenant_trial
+        self.mark_subscription_active = mark_subscription_active
+
+        self.tenant = Tenant.objects.create(name="Trial Co", slug="trial-co")
+        self.apply_new_tenant_trial(self.tenant)
+        self.user = User.objects.create_user(email="owner@trial.test", password="password123")
+        Membership.objects.create(
+            tenant=self.tenant, user=self.user, role=Membership.Role.OWNER
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.headers = {
+            "HTTP_HOST": "trial-co.signdeskcrm.test",
+            "HTTP_X_TENANT_SLUG": "trial-co",
+        }
+
+    def test_writes_allowed_during_trial(self):
+        res = self.client.post(
+            "/api/contacts/",
+            {"first_name": "Pat", "last_name": "Buyer", "email": "pat@trial.test"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 201)
+
+    def test_expired_trial_blocks_writes_allows_reads(self):
+        self.tenant.subscription_status = Tenant.SubscriptionStatus.EXPIRED
+        self.tenant.trial_ends_at = self.timezone.now() - self.timedelta(hours=1)
+        self.tenant.save(
+            update_fields=["subscription_status", "trial_ends_at", "updated_at"]
+        )
+
+        read = self.client.get("/api/contacts/", **self.headers)
+        self.assertEqual(read.status_code, 200)
+
+        write = self.client.post(
+            "/api/contacts/",
+            {"first_name": "Pat", "last_name": "Buyer", "email": "pat@trial.test"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(write.status_code, 402)
+        self.assertEqual(write.data.get("code"), "trial_expired")
+
+        me = self.client.get("/api/tenant/me/", **self.headers)
+        self.assertEqual(me.status_code, 200)
+        self.assertTrue(me.data["tenant"]["entitlement"]["is_write_locked"])
+
+    def test_platform_extend_restores_writes(self):
+        self.tenant.subscription_status = Tenant.SubscriptionStatus.EXPIRED
+        self.tenant.trial_ends_at = self.timezone.now() - self.timedelta(days=1)
+        self.tenant.trial_warning_sent_at = self.timezone.now()
+        self.tenant.save()
+
+        staff = User.objects.create_user(
+            email="ops-trial@signdesk.test", password="password123", is_staff=True
+        )
+        platform = APIClient()
+        platform.force_authenticate(staff)
+        res = platform.patch(
+            f"/api/platform/tenants/{self.tenant.id}/",
+            {"extend_trial_days": 15},
+            format="json",
+            HTTP_HOST="platform.signdeskcrm.test",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.tenant.refresh_from_db()
+        self.assertEqual(self.tenant.subscription_status, Tenant.SubscriptionStatus.TRIAL)
+        self.assertIsNone(self.tenant.trial_warning_sent_at)
+        self.assertTrue(
+            PlatformOpsEvent.objects.filter(
+                action=PlatformOpsEvent.Action.TRIAL_EXTENDED, tenant=self.tenant
+            ).exists()
+        )
+
+        write = self.client.post(
+            "/api/contacts/",
+            {"first_name": "Pat", "last_name": "Buyer", "email": "pat2@trial.test"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(write.status_code, 201)
+
+    def test_trial_warning_sent_once(self):
+        from django.core import mail
+
+        from apps.tenants.tasks import process_trial_lifecycle
+
+        self.tenant.trial_ends_at = self.timezone.now() + self.timedelta(hours=12)
+        self.tenant.trial_warning_sent_at = None
+        self.tenant.primary_contact_email = self.user.email
+        self.tenant.save()
+
+        first = process_trial_lifecycle()
+        self.assertEqual(first["warned"], 1)
+        self.assertGreaterEqual(len(mail.outbox), 1)
+        count_after_first = len(mail.outbox)
+
+        second = process_trial_lifecycle()
+        self.assertEqual(second["warned"], 0)
+        self.assertEqual(len(mail.outbox), count_after_first)
+
+    def test_grandfathered_active_never_locks(self):
+        self.mark_subscription_active(self.tenant)
+        self.tenant.trial_ends_at = self.timezone.now() - self.timedelta(days=30)
+        self.tenant.save(update_fields=["trial_ends_at", "updated_at"])
+
+        write = self.client.post(
+            "/api/contacts/",
+            {"first_name": "Pat", "last_name": "Buyer", "email": "pat3@trial.test"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(write.status_code, 201)

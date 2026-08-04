@@ -5,13 +5,16 @@ from .models import EmailTemplate, Invitation, Membership, Tenant
 
 @admin.register(Tenant)
 class TenantAdmin(admin.ModelAdmin):
-    list_display = ("name", "slug", "status", "created_at")
+    list_display = ("name", "slug", "status", "subscription_status", "trial_ends_at", "created_at")
     search_fields = ("name", "slug")
-    list_filter = ("status",)
+    list_filter = ("status", "subscription_status")
     fields = (
         "name",
         "slug",
         "status",
+        "subscription_status",
+        "trial_ends_at",
+        "trial_warning_sent_at",
         "legal_name",
         "website",
         "address_line1",
@@ -39,7 +42,7 @@ class TenantAdmin(admin.ModelAdmin):
         "esign_acknowledgement",
         "esign_acknowledgement_version",
     )
-    readonly_fields = ("esign_acknowledgement_version",)
+    readonly_fields = ("esign_acknowledgement_version", "trial_warning_sent_at")
 
 
 @admin.register(Membership)
