@@ -38,7 +38,8 @@ Log in at http://demo.signdeskcrm.test:5173/login. To show roles: Member has no 
 
 The `demo` slug is reserved for Platform reset — do not create it via signup.
 
-For the pitch, upload a sample PDF under **Documents** / **Templates** (or use an existing workspace template). Shared library starts empty until an Admin publishes a template.
+Reset also seeds **Sample Purchase Agreement** (PDF + Buyer/Seller signature fields) into **Documents**, **Templates**, and the **Shared library**.
+
 ## Demo narrative (what to say)
 
 > SignDesk is multi-tenant e-sign with a light CRM. Watch a standard packet go from prepare → email invite → ESIGN consent → signature → flattened PDF and Certificate of Completion with an audit trail.
@@ -52,13 +53,12 @@ For the pitch, upload a sample PDF under **Documents** / **Templates** (or use a
 
 ### 2. Create envelope from a template (60s)
 
-- **Templates** → create or open a template (or **Documents** → upload a familiar PDF → create template)
-- Optionally **Add to library** (Admin) so it appears under **Shared library**
+- **Templates** (or Shared library) → open **Sample Purchase Agreement** (pre-seeded with Buyer/Seller fields)
 - **Envelopes** (or header **New envelope**)
   - Title: `Demo Purchase Agreement`
   - Recipients: Buyer Ada (order 1), Seller Sam (order 2), routing **Sequential**
   - Optional: add a CC to show copy-only notice (not “Review and sign”)
-- Place at least one **signature** (and ideally a **date**) per signer → **Save** → **Send for signature**
+- Confirm signature/date fields map to each signer → **Save** → **Send for signature**
 
 ### 3. Buyer signs via Mailpit (90s)
 

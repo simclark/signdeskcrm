@@ -670,11 +670,18 @@ class PlatformOpsTests(TestCase):
         result = reset_demo_tenant(owner_password="demo-pass-123")
         self.assertEqual(result.tenant.slug, "demo")
         self.assertTrue(result.password_set)
-        self.assertFalse(
-            Template.objects.filter(
-                tenant=result.tenant, library_key="sample-purchase-agreement"
-            ).exists()
+        sample = Template.objects.get(
+            tenant=result.tenant, library_key="sample-purchase-agreement"
         )
+        self.assertTrue(sample.is_library)
+        self.assertTrue(sample.is_active)
+        self.assertEqual(sample.name, "Sample Purchase Agreement")
+        self.assertGreaterEqual(len(sample.field_layout), 1)
+        self.assertEqual(
+            [r["key"] for r in sample.roles],
+            ["buyer", "seller"],
+        )
+        self.assertIsNotNone(sample.document.current_version)
         self.assertEqual(Contact.objects.filter(tenant=result.tenant).count(), 2)
 
         memberships = {

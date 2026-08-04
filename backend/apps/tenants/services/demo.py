@@ -113,6 +113,10 @@ def reset_demo_tenant(
 
     ensure_email_templates(tenant)
 
+    from apps.tenants.services.demo_forms import seed_demo_sample_purchase_agreement
+
+    seed_demo_sample_purchase_agreement(tenant)
+
     from apps.contacts.models import Contact
 
     for row in DEMO_CONTACTS:
