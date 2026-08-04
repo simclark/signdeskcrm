@@ -244,6 +244,9 @@ def _overlay_fields_on_pdf(version, fields) -> bytes:
                 Field.FieldType.SIGNATURE,
                 Field.FieldType.INITIALS,
             ):
+                # Leave blank optional/incomplete ink fields empty. Never fall back
+                # to the recipient's full name — that made unsigned initials boxes
+                # print the signer's name on the flattened PDF.
                 path = resolve_image_source(field.value)
                 if path:
                     try:
@@ -252,19 +255,12 @@ def _overlay_fields_on_pdf(version, fields) -> bytes:
                             img, x, y, width=w, height=h, mask="auto", preserveAspectRatio=True
                         )
                     except Exception:
-                        c.setFont("Helvetica-Oblique", max(8, h * 0.4))
-                        fallback = (
-                            field.recipient.name
-                            if field.recipient_id
-                            else (field.value or "")
-                        )
-                        c.drawString(x + 2, y + h / 3, fallback)
-                else:
+                        # Broken image: skip rather than drawing the recipient name.
+                        pass
+                elif field.value:
+                    # Legacy / test values stored as plain text (e.g. "AS").
                     c.setFont("Helvetica-Oblique", max(8, h * 0.45))
-                    fallback = field.value or (
-                        field.recipient.name if field.recipient_id else ""
-                    )
-                    c.drawString(x + 2, y + h / 3, fallback)
+                    c.drawString(x + 2, y + h / 3, field.value[:80])
             elif field.field_type == Field.FieldType.CHECKBOX:
                 c.rect(x, y, min(w, h), min(w, h))
                 if field.value.lower() in ("1", "true", "yes", "on"):

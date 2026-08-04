@@ -136,6 +136,49 @@ class FlattenFieldTypesTests(TestCase):
         reader = PdfReader(io.BytesIO(pdf_bytes))
         self.assertEqual(len(reader.pages), 2)
 
+    def test_flatten_skips_blank_optional_initials_without_recipient_name(self):
+        """Unsigned optional initials must stay blank — not the signer's full name."""
+        self.recipient.name = "Buyer Ada Full Name"
+        self.recipient.save(update_fields=["name", "updated_at"])
+
+        self._add_field(Field.FieldType.INITIALS, 1, 0.1, 0.7, 0.12, 0.05, "BA")
+        Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.recipient,
+            field_type=Field.FieldType.INITIALS,
+            page=1,
+            x=0.1,
+            y=0.6,
+            w=0.12,
+            h=0.05,
+            required=False,
+            label="Optional service",
+            value="",
+            completed_at=None,
+        )
+        Field.objects.create(
+            tenant=self.tenant,
+            envelope=self.envelope,
+            recipient=self.recipient,
+            field_type=Field.FieldType.SIGNATURE,
+            page=1,
+            x=0.1,
+            y=0.1,
+            w=0.28,
+            h=0.06,
+            required=True,
+            label="Signature",
+            value="SigMark",
+            completed_at=timezone.now(),
+        )
+
+        pdf_bytes = flatten_envelope_pdf(self.envelope)
+        text = (PdfReader(io.BytesIO(pdf_bytes)).pages[0].extract_text() or "")
+        self.assertIn("BA", text)
+        self.assertIn("SigMark", text)
+        self.assertNotIn("Buyer Ada Full Name", text)
+
 
 class NextCopyTitleTests(TestCase):
     def test_first_copy_appends_copy(self):

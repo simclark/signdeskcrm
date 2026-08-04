@@ -9,13 +9,17 @@ from django.core.files import File
 from django.db import transaction
 
 from apps.documents.form_library.definitions import LIBRARY_FORMS
-from apps.documents.form_library.pdfs import write_sample_purchase_agreement_pdf
+from apps.documents.form_library.pdfs import (
+    write_optional_service_initials_pdf,
+    write_sample_purchase_agreement_pdf,
+)
 from apps.documents.models import Document, DocumentVersion, Template
 from apps.tenants.models import Tenant
 
 # Map library_key → PDF writer. Extend when adding catalog forms.
 _PDF_WRITERS = {
     "sample-purchase-agreement": write_sample_purchase_agreement_pdf,
+    "optional-service-initials": write_optional_service_initials_pdf,
 }
 
 

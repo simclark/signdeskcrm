@@ -160,4 +160,62 @@ SAMPLE_PURCHASE_AGREEMENT = {
     ],
 }
 
-LIBRARY_FORMS = [SAMPLE_PURCHASE_AGREEMENT]
+
+def _optional_service_initials_layout() -> list[dict]:
+    """20 optional initials (service choices) + required signature for send/finish."""
+    fields: list[dict] = []
+    for i in range(20):
+        row = i % 10
+        col = i // 10
+        fields.append(
+            {
+                "field_type": "initials",
+                "page": 1,
+                "x": 0.42 + col * 0.45,
+                "y": 0.82 - row * 0.065,
+                "w": 0.10,
+                "h": 0.04,
+                "required": False,
+                "label": f"Service {i + 1} initials",
+                "recipient_index": 0,
+                "role_key": "client",
+                "merge_token": "",
+                "fill_mode": "signer",
+                "prefill_editable": False,
+            }
+        )
+    fields.append(
+        {
+            "field_type": "signature",
+            "page": 1,
+            "x": 0.12,
+            "y": 0.08,
+            "w": 0.35,
+            "h": 0.06,
+            "required": True,
+            "label": "Client signature",
+            "recipient_index": 0,
+            "role_key": "client",
+            "merge_token": "",
+            "fill_mode": "signer",
+            "prefill_editable": False,
+        }
+    )
+    return fields
+
+
+OPTIONAL_SERVICE_INITIALS = {
+    "library_key": "optional-service-initials",
+    "name": "Optional Service Initials (Bug Repro)",
+    "category": "general",
+    "description": (
+        "QA form: 20 optional initials boxes (services you may elect) plus one "
+        "required signature. Use to reproduce initials rendering as full name."
+    ),
+    "roles": [
+        {"key": "client", "label": "Client", "order": 1},
+    ],
+    "field_layout": _optional_service_initials_layout(),
+}
+
+LIBRARY_FORMS = [SAMPLE_PURCHASE_AGREEMENT, OPTIONAL_SERVICE_INITIALS]

@@ -31,17 +31,31 @@ class FormLibraryEnsureTests(TestCase):
 
     def test_ensure_creates_catalog_form(self):
         stats = ensure_form_library(self.tenant)
-        self.assertEqual(stats["created"], 1)
+        self.assertEqual(stats["created"], 2)
         self.assertEqual(stats["updated"], 0)
         tpl = Template.objects.get(tenant=self.tenant, library_key="sample-purchase-agreement")
         self.assertTrue(tpl.is_library)
         self.assertTrue(tpl.field_layout)
+        initials = Template.objects.get(
+            tenant=self.tenant, library_key="optional-service-initials"
+        )
+        self.assertEqual(
+            sum(1 for f in initials.field_layout if f["field_type"] == "initials"),
+            20,
+        )
+        self.assertTrue(
+            all(
+                f["required"] is False
+                for f in initials.field_layout
+                if f["field_type"] == "initials"
+            )
+        )
 
     def test_ensure_idempotent(self):
         ensure_form_library(self.tenant)
         stats = ensure_form_library(self.tenant)
         self.assertEqual(stats["created"], 0)
-        self.assertEqual(stats["skipped"], 1)
+        self.assertEqual(stats["skipped"], 2)
         self.assertEqual(
             Template.objects.filter(
                 tenant=self.tenant, library_key="sample-purchase-agreement"
@@ -73,7 +87,7 @@ class FormLibraryEnsureTests(TestCase):
         )
 
         stats = ensure_form_library(self.tenant, replace=True)
-        self.assertEqual(stats["updated"], 1)
+        self.assertEqual(stats["updated"], 2)
         tpl.refresh_from_db()
         self.assertEqual(tpl.name, "Sample Purchase Agreement")
         tenant_lib.refresh_from_db()
@@ -147,6 +161,7 @@ class FormLibraryApiTests(TestCase):
         self.assertEqual(res.status_code, 200)
         keys = {row["library_key"] for row in res.data["results"]}
         self.assertIn("sample-purchase-agreement", keys)
+        self.assertIn("optional-service-initials", keys)
 
     def test_promote_and_demote(self):
         res = self.client.post(
