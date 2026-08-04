@@ -657,8 +657,15 @@ class PlatformOpsTests(TestCase):
         self.assertTrue(any(r["action"] == PlatformOpsEvent.Action.PROVISION for r in rows))
 
     def test_reset_demo_tenant(self):
-        from apps.contacts.models import Contact
+        from apps.contacts.models import (
+            Company,
+            Contact,
+            FollowUpPlan,
+            FollowUpTask,
+            Listing,
+        )
         from apps.documents.models import Template
+        from apps.envelopes.models import Envelope, Recipient
         from apps.tenants.models import Membership
         from apps.tenants.services.demo import (
             DEMO_ADMIN_EMAIL,
@@ -683,6 +690,29 @@ class PlatformOpsTests(TestCase):
         )
         self.assertIsNotNone(sample.document.current_version)
         self.assertEqual(Contact.objects.filter(tenant=result.tenant).count(), 2)
+        self.assertEqual(Company.objects.filter(tenant=result.tenant).count(), 2)
+        self.assertEqual(FollowUpPlan.objects.filter(tenant=result.tenant).count(), 2)
+        self.assertEqual(FollowUpTask.objects.filter(tenant=result.tenant).count(), 2)
+        self.assertEqual(Listing.objects.filter(tenant=result.tenant).count(), 1)
+        envelope = Envelope.objects.get(tenant=result.tenant)
+        self.assertEqual(envelope.title, "Demo Purchase Agreement")
+        self.assertEqual(envelope.status, Envelope.Status.DRAFT)
+        self.assertIsNotNone(envelope.follow_up_plan_id)
+        self.assertIsNotNone(envelope.listing_id)
+        self.assertEqual(
+            list(
+                envelope.recipients.order_by("routing_order").values_list(
+                    "role_key", "email"
+                )
+            ),
+            [("buyer", "buyer@example.com"), ("seller", "seller@example.com")],
+        )
+        self.assertGreaterEqual(envelope.fields.count(), 1)
+        self.assertTrue(
+            Recipient.objects.filter(
+                envelope=envelope, contact__email="buyer@example.com"
+            ).exists()
+        )
 
         memberships = {
             m.user.email.lower(): m.role

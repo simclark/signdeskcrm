@@ -18,7 +18,7 @@ Use this script for live pitches. Goal: show a trustworthy **Buyer → Seller se
 
 ## Setup (once per machine, or before each pitch)
 
-Reset the reserved **`demo`** workspace (Buyer/Seller contacts + role accounts). Prefer **Platform → Demo workspace** at http://platform.signdeskcrm.test:5173/demo (staff login; type `RESET` to confirm). Glance at **Platform → Health** before the pitch.
+Reset the reserved **`demo`** workspace (CRM + draft envelope + role accounts). Prefer **Platform → Demo workspace** at http://platform.signdeskcrm.test:5173/demo (staff login; type `RESET` to confirm). Glance at **Platform → Health** before the pitch.
 
 Break-glass CLI:
 
@@ -38,7 +38,17 @@ Log in at http://demo.signdeskcrm.test:5173/login. To show roles: Member has no 
 
 The `demo` slug is reserved for Platform reset — do not create it via signup.
 
-Reset also seeds **Sample Purchase Agreement** (PDF + Buyer/Seller signature fields) into **Documents**, **Templates**, and the **Shared library**.
+Reset also seeds:
+
+| Area | What’s included |
+|---|---|
+| **Sample Purchase Agreement** | PDF + Buyer/Seller fields in Documents, Templates, Shared library |
+| **Companies** | Maple Street Buyers LLC, Oak Ridge Homes |
+| **Contacts** | Buyer Ada + Seller Sam (linked to companies) |
+| **Listing / prefill** | 742 Evergreen Terrace |
+| **Follow-up plans** | Stalled signer nudge + Post-close thank you |
+| **Follow-ups** | Open task on Ada; completed task on Sam |
+| **Envelope** | Draft **Demo Purchase Agreement** (Ada → Sam sequential, stalled plan attached) |
 
 ## Demo narrative (what to say)
 
@@ -46,18 +56,18 @@ Reset also seeds **Sample Purchase Agreement** (PDF + Buyer/Seller signature fie
 
 ## Walkthrough
 
-### 1. Contacts (30s)
+### 1. CRM glance (45s)
 
-- Open **Contacts** — **Buyer Ada** and **Seller Sam** are pre-seeded after `reset_demo_tenant` (or add manually)
-- Say: *“Recipients can be CRM contacts so follow-ups and history stay attached.”*
+- **Companies** — Maple Street Buyers LLC / Oak Ridge Homes
+- **Contacts** — **Buyer Ada** and **Seller Sam** (linked to those companies)
+- **Follow-ups** — open task on Ada; say: *“Manual tasks for people work; plans automate envelope-driven email.”*
+- **Follow-up plans** — stalled nudge + post-close thank you
 
-### 2. Create envelope from a template (60s)
+### 2. Open the draft envelope (60s)
 
-- **Templates** (or Shared library) → open **Sample Purchase Agreement** (pre-seeded with Buyer/Seller fields)
-- **Envelopes** (or header **New envelope**)
-  - Title: `Demo Purchase Agreement`
-  - Recipients: Buyer Ada (order 1), Seller Sam (order 2), routing **Sequential**
-  - Optional: add a CC to show copy-only notice (not “Review and sign”)
+- **Envelopes** → open pre-seeded **Demo Purchase Agreement** (or create from **Sample Purchase Agreement** if you want to show New envelope)
+- Recipients: Buyer Ada (order 1), Seller Sam (order 2), routing **Sequential**
+- Follow-up plan: **Stalled signer nudge** already attached
 - Confirm signature/date fields map to each signer → **Save** → **Send for signature**
 
 ### 3. Buyer signs via Mailpit (90s)

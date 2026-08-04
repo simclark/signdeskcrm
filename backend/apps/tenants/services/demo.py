@@ -18,10 +18,6 @@ DEMO_OWNER_EMAIL_DEFAULT = "owner@demo.signdeskcrm.test"
 DEMO_ADMIN_EMAIL = "admin@demo.signdeskcrm.test"
 DEMO_MEMBER_EMAIL = "member@demo.signdeskcrm.test"
 DEMO_PASSWORD_DEFAULT = "demo-pass-123"
-DEMO_CONTACTS = (
-    {"first_name": "Ada", "last_name": "Buyer", "email": "buyer@example.com"},
-    {"first_name": "Sam", "last_name": "Seller", "email": "seller@example.com"},
-)
 
 
 @dataclass
@@ -91,8 +87,8 @@ def reset_demo_tenant(
     """Reset the reserved ``demo`` workspace to a single-contract pitch state.
 
     Hard-gated to slug ``demo`` only. Deletes operational data, reseeds the
-    Sample Purchase Agreement and Buyer/Seller contacts, and ensures Owner,
-    Admin, and Member demo users.
+    Sample Purchase Agreement, CRM (companies/contacts/follow-ups/plans), a
+    ready draft envelope, and Owner / Admin / Member demo users.
     """
     owner_email = (owner_email or DEMO_OWNER_EMAIL_DEFAULT).lower().strip()
     password = owner_password or DEMO_PASSWORD_DEFAULT
@@ -115,20 +111,7 @@ def reset_demo_tenant(
 
     from apps.tenants.services.demo_forms import seed_demo_sample_purchase_agreement
 
-    seed_demo_sample_purchase_agreement(tenant)
-
-    from apps.contacts.models import Contact
-
-    for row in DEMO_CONTACTS:
-        Contact.objects.update_or_create(
-            tenant=tenant,
-            email=row["email"],
-            defaults={
-                "first_name": row["first_name"],
-                "last_name": row["last_name"],
-                "is_archived": False,
-            },
-        )
+    template = seed_demo_sample_purchase_agreement(tenant)
 
     seed_users = (
         {
@@ -162,11 +145,16 @@ def reset_demo_tenant(
         user__email__in=seed_emails
     ).update(is_active=False)
 
+    owner = User.objects.get(email__iexact=owner_email)
+    from apps.tenants.services.demo_crm import seed_demo_crm
+
+    seed_demo_crm(tenant, owner=owner, template=template)
+
     return ResetDemoResult(tenant=tenant, owner_email=owner_email, password_set=True)
 
 
 def _wipe_tenant_operational_data(tenant: Tenant) -> None:
-    """Delete envelopes, docs, contacts, and invites for a tenant (demo only)."""
+    """Delete envelopes, CRM, docs, and invites for a tenant (demo only)."""
     if tenant.slug != DEMO_SLUG:
         raise ValueError("Refusing to wipe a non-demo tenant.")
 
