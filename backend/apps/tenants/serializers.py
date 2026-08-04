@@ -15,6 +15,7 @@ from apps.tenants.models import (
     Tenant,
     ensure_email_templates,
     validate_tenant_slug,
+    validate_tenant_slug_format,
 )
 
 User = get_user_model()
@@ -205,7 +206,9 @@ class SlugAvailabilitySerializer(serializers.Serializer):
 
     def validate_slug(self, value):
         value = slugify(value)
-        validate_tenant_slug(value)
+        # Format only — reserved slugs (e.g. demo) may already exist as tenants
+        # and must remain look-uppable for apex "continue to workspace" login.
+        validate_tenant_slug_format(value)
         return value
 
 

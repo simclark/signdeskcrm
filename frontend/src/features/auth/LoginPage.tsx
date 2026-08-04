@@ -161,11 +161,11 @@ function ApexWorkspaceLogin() {
             const slug = normalizeSlug(values.slug)
             setLoading(true)
             try {
-              const check = await api<{ slug: string; available: boolean }>(
+              const check = await api<{ slug: string; available: boolean; exists: boolean }>(
                 `/api/auth/slug-check/?slug=${encodeURIComponent(slug)}`,
                 { public: true },
               )
-              if (check.available) {
+              if (!check.exists) {
                 form.setFieldError(
                   'slug',
                   'No workspace found with that name. Check the spelling or create one.',

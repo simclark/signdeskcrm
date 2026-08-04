@@ -45,15 +45,20 @@ RESERVED_SLUGS = frozenset(
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
-def validate_tenant_slug(value: str) -> None:
-    if value in RESERVED_SLUGS:
-        raise ValidationError("This subdomain is reserved.")
+def validate_tenant_slug_format(value: str) -> None:
+    """Format rules only — reserved names are allowed for lookup of existing tenants."""
     if not SLUG_RE.match(value):
         raise ValidationError(
             "Slug must be lowercase letters, numbers, and hyphens only."
         )
     if len(value) < 2 or len(value) > 63:
         raise ValidationError("Slug must be between 2 and 63 characters.")
+
+
+def validate_tenant_slug(value: str) -> None:
+    if value in RESERVED_SLUGS:
+        raise ValidationError("This subdomain is reserved.")
+    validate_tenant_slug_format(value)
 
 
 class Tenant(TimeStampedModel):

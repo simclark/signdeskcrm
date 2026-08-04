@@ -127,6 +127,31 @@ class SignupTests(TestCase):
         self.assertTrue(user.has_usable_password())
         self.assertTrue(user.check_password("newpassword99"))
 
+    def test_slug_check_reports_exists_for_taken_workspace(self):
+        Tenant.objects.create(name="Acme", slug="acme-esign")
+        client = APIClient()
+        res = client.get("/api/auth/slug-check/", {"slug": "acme-esign"})
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.data["available"])
+        self.assertTrue(res.data["exists"])
+
+    def test_slug_check_allows_lookup_of_reserved_demo_tenant(self):
+        # Bypass model.clean validators; demo is provisioned via platform reset.
+        Tenant.objects.create(name="Demo Realty", slug="demo")
+        client = APIClient()
+        res = client.get("/api/auth/slug-check/", {"slug": "demo"})
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertFalse(res.data["available"])
+        self.assertTrue(res.data["exists"])
+
+    def test_slug_check_reserved_without_tenant_is_not_claimable(self):
+        client = APIClient()
+        res = client.get("/api/auth/slug-check/", {"slug": "platform"})
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertFalse(res.data["available"])
+        self.assertFalse(res.data["exists"])
+        self.assertNotEqual(res.data["suggested"], "platform")
+
 
 @override_settings(
     CELERY_TASK_ALWAYS_EAGER=True,

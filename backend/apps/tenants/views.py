@@ -106,20 +106,30 @@ class SlugCheckView(views.APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
+        from apps.tenants.models import RESERVED_SLUGS
         from apps.tenants.serializers import SlugAvailabilitySerializer
 
         serializer = SlugAvailabilitySerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
         slug = serializer.validated_data["slug"]
-        available = not Tenant.objects.filter(slug=slug).exists()
+        exists = Tenant.objects.filter(slug=slug).exists()
+        # Reserved names are never claimable, even when no tenant row exists yet.
+        available = not exists and slug not in RESERVED_SLUGS
         suggested = slug
         if not available:
             base = slug
             i = 2
-            while Tenant.objects.filter(slug=f"{base}-{i}").exists():
+            while Tenant.objects.filter(slug=f"{base}-{i}").exists() or f"{base}-{i}" in RESERVED_SLUGS:
                 i += 1
             suggested = f"{base}-{i}"
-        return Response({"slug": slug, "available": available, "suggested": suggested})
+        return Response(
+            {
+                "slug": slug,
+                "available": available,
+                "exists": exists,
+                "suggested": suggested,
+            }
+        )
 
 
 class TenantMeView(views.APIView):
