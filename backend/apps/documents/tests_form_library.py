@@ -233,7 +233,6 @@ class SignupFormLibraryTests(TestCase):
                 "company_name": "Fresh Co",
                 "slug": "fresh-co",
                 "email": "owner@fresh-co.test",
-                "password": "password123",
             },
             format="json",
         )

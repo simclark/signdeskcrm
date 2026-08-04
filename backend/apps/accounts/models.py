@@ -48,6 +48,9 @@ class PasswordResetToken(models.Model):
         "tenants.Tenant",
         on_delete=models.CASCADE,
         related_name="password_reset_tokens",
+        null=True,
+        blank=True,
+        help_text="Workspace for tenant resets; null for platform staff resets.",
     )
     token = models.CharField(max_length=64, unique=True, blank=True)
     expires_at = models.DateTimeField()
@@ -58,7 +61,12 @@ class PasswordResetToken(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"Password reset for {self.user_id} @ {self.tenant_id}"
+        scope = self.tenant_id if self.tenant_id is not None else "platform"
+        return f"Password reset for {self.user_id} @ {scope}"
+
+    @property
+    def is_platform(self) -> bool:
+        return self.tenant_id is None
 
     def save(self, *args, **kwargs):
         if not self.token:

@@ -69,6 +69,8 @@ const platformRouter = createBrowserRouter([
     ],
   },
   { path: '/login', element: <LoginPage /> },
+  { path: '/forgot-password', element: <ForgotPasswordPage /> },
+  { path: '/reset-password/:token', element: <ResetPasswordPage /> },
   { path: '/platform', element: <Navigate to="/" replace /> },
   { path: '/platform/*', element: <Navigate to="/" replace /> },
   { path: '*', element: <Navigate to="/" replace /> },

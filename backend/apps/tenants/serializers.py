@@ -159,7 +159,6 @@ class SignupSerializer(serializers.Serializer):
     company_name = serializers.CharField(max_length=255)
     slug = serializers.SlugField(max_length=63)
     email = serializers.EmailField()
-    password = serializers.CharField(min_length=8, write_only=True)
     first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
 
@@ -182,9 +181,10 @@ class SignupSerializer(serializers.Serializer):
             slug=validated_data["slug"],
         )
         apply_new_tenant_trial(tenant)
+        # Password is set after the owner confirms email via the setup link.
         user = User.objects.create_user(
             email=validated_data["email"],
-            password=validated_data["password"],
+            password=None,
             first_name=validated_data.get("first_name", ""),
             last_name=validated_data.get("last_name", ""),
         )

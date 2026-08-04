@@ -63,17 +63,23 @@ class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
     def save(self, **kwargs):
-        """Issue a reset when the email has an active membership on this tenant.
+        """Issue a reset for platform staff or an active member of the current tenant.
 
         Always succeeds from the caller's perspective — the view returns a generic
         message so we do not leak whether the account exists.
         """
-        tenant = self.context["tenant"]
         email = self.validated_data["email"].lower().strip()
         try:
             user = User.objects.get(email__iexact=email, is_active=True)
         except User.DoesNotExist:
             return None
+
+        if self.context.get("platform"):
+            if not user.is_staff:
+                return None
+            return issue_password_reset(user=user, tenant=None)
+
+        tenant = self.context["tenant"]
         from apps.tenants.models import Membership
 
         if not Membership.objects.filter(

@@ -17,6 +17,7 @@ class TemplateDefault(TypedDict):
 class EmailTemplateKey:
     WORKSPACE_INVITE = "workspace_invite"
     PASSWORD_RESET = "password_reset"
+    SIGNUP_CONFIRM = "signup_confirm"
     SIGNING_INVITE = "signing_invite"
     SIGNING_REMINDER = "signing_reminder"
     CC_NOTICE = "cc_notice"
@@ -28,6 +29,7 @@ class EmailTemplateKey:
     CHOICES = (
         (WORKSPACE_INVITE, "Workspace invitation"),
         (PASSWORD_RESET, "Password reset"),
+        (SIGNUP_CONFIRM, "Signup confirmation"),
         (SIGNING_INVITE, "Signing invitation"),
         (SIGNING_REMINDER, "Signing reminder"),
         (CC_NOTICE, "CC copy notice"),
@@ -40,6 +42,7 @@ class EmailTemplateKey:
     ALL = (
         WORKSPACE_INVITE,
         PASSWORD_RESET,
+        SIGNUP_CONFIRM,
         SIGNING_INVITE,
         SIGNING_REMINDER,
         CC_NOTICE,
@@ -89,6 +92,25 @@ DEFAULT_TEMPLATES: dict[str, TemplateDefault] = {
             "action_url",
         ),
         "cta_label": "Reset password",
+    },
+    EmailTemplateKey.SIGNUP_CONFIRM: {
+        "label": "Signup confirmation",
+        "description": "Sent after public signup to confirm email and set the owner password.",
+        "subject": "Confirm your email and set up {{tenant_name}}",
+        "body": (
+            "Hello {{user_name}},\n\n"
+            "Thanks for creating {{tenant_name}} on SignDesk.\n\n"
+            "Confirm your email and choose a password using the link below. "
+            "This link expires in 24 hours.\n\n"
+            "{{action_url}}\n\n"
+            "If you did not create this workspace, you can ignore this email."
+        ),
+        "placeholders": (
+            "tenant_name",
+            "user_name",
+            "action_url",
+        ),
+        "cta_label": "Set password",
     },
     EmailTemplateKey.SIGNING_INVITE: {
         "label": "Signing invitation",

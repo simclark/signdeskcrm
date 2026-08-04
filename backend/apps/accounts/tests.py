@@ -96,3 +96,94 @@ class PasswordResetTests(TestCase):
             **self.headers,
         )
         self.assertEqual(res.status_code, 410)
+
+    def test_tenant_token_rejected_on_wrong_host(self):
+        reset = PasswordResetToken.objects.create(user=self.user, tenant=self.tenant)
+        res = self.client.get(
+            f"/api/auth/password-reset/{reset.token}/",
+            HTTP_HOST="platform.signdeskcrm.test",
+        )
+        self.assertEqual(res.status_code, 404)
+
+
+@override_settings(
+    CELERY_TASK_ALWAYS_EAGER=True,
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class PlatformPasswordResetTests(TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user(
+            email="ops@signdesk.test",
+            password="oldpassword1",
+            is_staff=True,
+        )
+        self.member = User.objects.create_user(
+            email="member@acme.test",
+            password="oldpassword1",
+        )
+        self.client = APIClient()
+        self.headers = {"HTTP_HOST": "platform.signdeskcrm.test"}
+
+    def test_request_sends_email_for_staff(self):
+        res = self.client.post(
+            "/api/auth/password-reset/",
+            {"email": "ops@signdesk.test"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(PasswordResetToken.objects.count(), 1)
+        reset = PasswordResetToken.objects.get()
+        self.assertIsNone(reset.tenant_id)
+        self.assertTrue(reset.is_platform)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(reset.token, mail.outbox[0].body)
+        self.assertIn("platform.signdeskcrm.test", mail.outbox[0].body)
+
+    def test_request_non_staff_is_opaque(self):
+        res = self.client.post(
+            "/api/auth/password-reset/",
+            {"email": "member@acme.test"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(PasswordResetToken.objects.count(), 0)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_confirm_sets_new_password(self):
+        self.client.post(
+            "/api/auth/password-reset/",
+            {"email": "ops@signdesk.test"},
+            format="json",
+            **self.headers,
+        )
+        reset = PasswordResetToken.objects.get()
+        detail = self.client.get(
+            f"/api/auth/password-reset/{reset.token}/",
+            **self.headers,
+        )
+        self.assertEqual(detail.status_code, 200)
+        self.assertTrue(detail.data["is_platform"])
+        self.assertEqual(detail.data["tenant_name"], "SignDesk Platform")
+
+        confirm = self.client.post(
+            f"/api/auth/password-reset/{reset.token}/confirm/",
+            {"password": "newpassword99"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(confirm.status_code, 200)
+        self.staff.refresh_from_db()
+        self.assertTrue(self.staff.check_password("newpassword99"))
+
+    def test_platform_token_rejected_on_tenant_host(self):
+        reset = PasswordResetToken.objects.create(user=self.staff, tenant=None)
+        Tenant.objects.create(name="Acme", slug="acme-plat")
+        res = self.client.get(
+            f"/api/auth/password-reset/{reset.token}/",
+            HTTP_HOST="acme-plat.signdeskcrm.test",
+            HTTP_X_TENANT_SLUG="acme-plat",
+        )
+        self.assertEqual(res.status_code, 404)

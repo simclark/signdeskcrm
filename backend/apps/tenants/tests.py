@@ -68,10 +68,15 @@ class TenantIsolationTests(TestCase):
 
 @override_settings(
     CELERY_TASK_ALWAYS_EAGER=True,
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
 )
 class SignupTests(TestCase):
     def test_signup_creates_tenant_and_owner(self):
+        from django.core import mail
+
+        from apps.accounts.models import PasswordResetToken
+
         client = APIClient()
         res = client.post(
             "/api/auth/signup/",
@@ -79,18 +84,48 @@ class SignupTests(TestCase):
                 "company_name": "Acme Esign, Inc",
                 "slug": "acme-esign",
                 "email": "owner@acme.test",
-                "password": "password123",
                 "first_name": "Pat",
                 "last_name": "Owner",
             },
             format="json",
         )
         self.assertEqual(res.status_code, 201)
+        self.assertNotIn("tokens", res.data)
+        self.assertIn("confirm", res.data["detail"].lower())
         self.assertTrue(Tenant.objects.filter(slug="acme-esign").exists())
         self.assertEqual(res.data["redirect_host"].startswith("acme-esign."), True)
         tenant = Tenant.objects.get(slug="acme-esign")
         self.assertEqual(tenant.subscription_status, Tenant.SubscriptionStatus.TRIAL)
         self.assertIsNotNone(tenant.trial_ends_at)
+
+        user = User.objects.get(email="owner@acme.test")
+        self.assertFalse(user.has_usable_password())
+        self.assertEqual(PasswordResetToken.objects.count(), 1)
+        self.assertEqual(len(mail.outbox), 1)
+        reset = PasswordResetToken.objects.get()
+        self.assertIn(reset.token, mail.outbox[0].body)
+        self.assertIn("Confirm your email", mail.outbox[0].subject)
+
+        headers = {
+            "HTTP_HOST": "acme-esign.signdeskcrm.test",
+            "HTTP_X_TENANT_SLUG": "acme-esign",
+        }
+        detail = client.get(f"/api/auth/password-reset/{reset.token}/", **headers)
+        self.assertEqual(detail.status_code, 200)
+        self.assertTrue(detail.data["is_setup"])
+
+        confirm = client.post(
+            f"/api/auth/password-reset/{reset.token}/confirm/",
+            {"password": "newpassword99"},
+            format="json",
+            **headers,
+        )
+        self.assertEqual(confirm.status_code, 200)
+        self.assertTrue(confirm.data["is_setup"])
+        self.assertIn("tokens", confirm.data)
+        user.refresh_from_db()
+        self.assertTrue(user.has_usable_password())
+        self.assertTrue(user.check_password("newpassword99"))
 
 
 @override_settings(
@@ -360,7 +395,6 @@ class EmailTemplateTests(TestCase):
                 "company_name": "Mail Co",
                 "slug": "mail-co",
                 "email": "owner@mail-co.test",
-                "password": "password123",
             },
             format="json",
         )

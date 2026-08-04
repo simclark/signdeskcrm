@@ -9,8 +9,8 @@ This page walks you from first signup to a usable workspace.
 3. Enter:
    - **Company name** — display name for your organization
    - **Subdomain** — the short slug that becomes `https://your-slug.signdeskcrm.com`
-   - Your name, email, and password
-4. After signup you are the **Owner** and land in the app at `/app`.
+   - Your name and work email
+4. Check your inbox for a confirmation email. Open the link on your workspace subdomain, set a password, and you land in the app as **Owner** at `/app`.
 
 Bookmark your workspace URL. Teammates and signers use the same subdomain for app login and signing links.
 

@@ -12,18 +12,38 @@ import { useForm } from '@mantine/form'
 import { notifications } from '@mantine/notifications'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
-import { api, ApiError, BASE_DOMAIN, getTenantSlug, isApexHost } from '../../shared/api'
+import {
+  api,
+  ApiError,
+  BASE_DOMAIN,
+  getTenantSlug,
+  isApexHost,
+  isPlatformHost,
+  setTokens,
+} from '../../shared/api'
+import { useAuth } from './AuthContext'
 
 type ResetInfo = {
   email: string
   tenant_name: string
-  tenant_slug: string
+  tenant_slug: string | null
+  is_platform?: boolean
+  is_setup?: boolean
   expires_at: string
+}
+
+type ConfirmResult = {
+  ok: boolean
+  is_setup?: boolean
+  tokens?: { access: string; refresh: string }
+  redirect_host?: string
 }
 
 export function ResetPasswordPage() {
   const { token } = useParams<{ token: string }>()
   const navigate = useNavigate()
+  const platform = isPlatformHost()
+  const { refreshMe } = useAuth()
 
   const resetQuery = useQuery({
     queryKey: ['password-reset', token],
@@ -47,12 +67,23 @@ export function ResetPasswordPage() {
 
   const confirm = useMutation({
     mutationFn: (values: { password: string }) =>
-      api<{ ok: boolean }>(`/api/auth/password-reset/${token}/confirm/`, {
+      api<ConfirmResult>(`/api/auth/password-reset/${token}/confirm/`, {
         method: 'POST',
         json: { password: values.password },
         public: true,
       }),
-    onSuccess: () => {
+    onSuccess: async (data) => {
+      if (data.is_setup && data.tokens) {
+        setTokens(data.tokens.access, data.tokens.refresh)
+        await refreshMe()
+        notifications.show({
+          color: 'forest',
+          title: 'Workspace ready',
+          message: 'Your email is confirmed. Opening your workspace…',
+        })
+        navigate('/app')
+        return
+      }
       notifications.show({
         color: 'forest',
         title: 'Password updated',
@@ -117,6 +148,7 @@ export function ResetPasswordPage() {
   }
 
   const info = resetQuery.data!
+  const isSetup = Boolean(info.is_setup)
 
   return (
     <Container size={420} py={80}>
@@ -124,13 +156,15 @@ export function ResetPasswordPage() {
         <Text style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 36, fontWeight: 700 }}>
           SignDesk
         </Text>
-        <Title order={2}>Choose a new password</Title>
+        <Title order={2}>{isSetup ? 'Confirm email & set password' : 'Choose a new password'}</Title>
         <Text c="dimmed">
           {info.tenant_name} · {info.email}
         </Text>
-        <Text size="sm" c="dimmed">
-          {getTenantSlug()}.{BASE_DOMAIN}
-        </Text>
+        {!platform && (
+          <Text size="sm" c="dimmed">
+            {getTenantSlug()}.{BASE_DOMAIN}
+          </Text>
+        )}
       </Stack>
       <Paper p="xl" radius="lg" withBorder style={{ background: 'rgba(255,255,255,0.85)' }}>
         <form
@@ -139,8 +173,13 @@ export function ResetPasswordPage() {
           )}
         >
           <Stack>
+            {isSetup && (
+              <Text size="sm" c="dimmed">
+                Confirm your email by choosing a password for this workspace.
+              </Text>
+            )}
             <PasswordInput
-              label="New password"
+              label={isSetup ? 'Password' : 'New password'}
               description="At least 8 characters"
               required
               {...form.getInputProps('password')}
@@ -151,11 +190,13 @@ export function ResetPasswordPage() {
               {...form.getInputProps('confirm_password')}
             />
             <Button type="submit" fullWidth loading={confirm.isPending}>
-              Update password
+              {isSetup ? 'Confirm & continue' : 'Update password'}
             </Button>
-            <Anchor component={Link} to="/login" size="sm">
-              Back to login
-            </Anchor>
+            {!isSetup && (
+              <Anchor component={Link} to="/login" size="sm">
+                Back to login
+              </Anchor>
+            )}
           </Stack>
         </form>
       </Paper>

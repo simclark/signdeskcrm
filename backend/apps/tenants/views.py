@@ -55,21 +55,17 @@ class SignupView(generics.CreateAPIView):
         result = serializer.save()
         tenant = result["tenant"]
         user = result["user"]
-        refresh = RefreshToken.for_user(user)
+        from apps.accounts.services import issue_password_reset
+
+        issue_password_reset(user=user, tenant=tenant)
         return Response(
             {
+                "detail": (
+                    "Check your email to confirm your address and set a password "
+                    "for your new workspace."
+                ),
+                "email": user.email,
                 "tenant": TenantSerializer(tenant).data,
-                "user": {
-                    "id": user.id,
-                    "email": user.email,
-                    "first_name": user.first_name,
-                    "last_name": user.last_name,
-                    "full_name": user.full_name,
-                },
-                "tokens": {
-                    "refresh": str(refresh),
-                    "access": str(refresh.access_token),
-                },
                 "redirect_host": tenant.host(),
             },
             status=status.HTTP_201_CREATED,

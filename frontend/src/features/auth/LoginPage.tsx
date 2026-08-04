@@ -118,6 +118,9 @@ function PlatformStaffLogin() {
           <Stack>
             <TextInput label="Staff email" type="email" required {...form.getInputProps('email')} />
             <PasswordInput label="Password" required {...form.getInputProps('password')} />
+            <Anchor component={Link} to="/forgot-password" size="sm">
+              Forgot password?
+            </Anchor>
             <Button type="submit" fullWidth loading={submitting}>
               Log in
             </Button>

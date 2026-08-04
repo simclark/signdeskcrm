@@ -12,9 +12,17 @@ import { useForm } from '@mantine/form'
 import { notifications } from '@mantine/notifications'
 import { useMutation } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { api, ApiError, BASE_DOMAIN, getTenantSlug, isApexHost } from '../../shared/api'
+import {
+  api,
+  ApiError,
+  BASE_DOMAIN,
+  getTenantSlug,
+  isApexHost,
+  isPlatformHost,
+} from '../../shared/api'
 
 export function ForgotPasswordPage() {
+  const platform = isPlatformHost()
   const form = useForm({
     initialValues: { email: '' },
     validate: {
@@ -71,16 +79,23 @@ export function ForgotPasswordPage() {
         </Text>
         <Title order={2}>Forgot password</Title>
         <Text c="dimmed">
-          {getTenantSlug()}.{BASE_DOMAIN}
+          {platform ? 'Platform staff' : `${getTenantSlug()}.${BASE_DOMAIN}`}
         </Text>
       </Stack>
       <Paper p="xl" radius="lg" withBorder style={{ background: 'rgba(255,255,255,0.85)' }}>
         <form onSubmit={form.onSubmit((values) => requestReset.mutate(values))}>
           <Stack>
             <Text size="sm" c="dimmed">
-              Enter your email and we&apos;ll send a reset link if you have access to this workspace.
+              {platform
+                ? "Enter your staff email and we'll send a reset link if you have platform access."
+                : "Enter your email and we'll send a reset link if you have access to this workspace."}
             </Text>
-            <TextInput label="Email" type="email" required {...form.getInputProps('email')} />
+            <TextInput
+              label={platform ? 'Staff email' : 'Email'}
+              type="email"
+              required
+              {...form.getInputProps('email')}
+            />
             <Button type="submit" fullWidth loading={requestReset.isPending}>
               Send reset link
             </Button>
