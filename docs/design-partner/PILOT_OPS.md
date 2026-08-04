@@ -28,9 +28,18 @@ Checklist to run SignDesk with **real email** and a **hosted tenant URL** for Sh
 
 Signing links are built as `{tenant.frontend_url}/sign/{token}`. If `BASE_DOMAIN` or protocol is wrong, Mailpit-style demos still work locally but partner inboxes get broken links.
 
-## 2. Real SMTP (replace Mailpit)
+## 2. Real email (Postmark preferred)
 
-Configure a transactional provider (Postmark, SendGrid, Amazon SES, etc.):
+Preferred on DigitalOcean (outbound :587 often blocked) — HTTP API on :443:
+
+```env
+SMTP_PROVIDER=postmark
+POSTMARK_SERVER_TOKEN=<server-api-token>
+DEFAULT_FROM_EMAIL=SignDesk <noreply@signdeskcrm.com>
+SUPPORT_EMAIL=support@signdeskcrm.com
+```
+
+SMTP alternative:
 
 ```env
 EMAIL_HOST=smtp.example.com
@@ -39,15 +48,17 @@ EMAIL_USE_TLS=true
 EMAIL_HOST_USER=...
 EMAIL_HOST_PASSWORD=...
 DEFAULT_FROM_EMAIL=SignDesk <noreply@yourdomain.com>
+SUPPORT_EMAIL=support@yourdomain.com
 ```
 
 Before first live packet:
 
-- [ ] SPF / DKIM / DMARC for the From domain
+- [ ] SPF / DKIM / DMARC for the From domain (configure in DNS + Postmark sender signature)
 - [ ] Send a test workspace invite and a practice envelope invite to the partner’s real inbox
 - [ ] Confirm links open on phone + desktop
+- [ ] Confirm bounce/complaint visibility in the Postmark stream (wire webhooks later)
 
-Celery **worker** must be running or invites never leave the queue.
+Celery **worker** and **beat** must be running or invites / trial warnings never leave the queue. Platform → Health shows a Celery heartbeat check once beat has written within ~5 minutes.
 
 ## 3. Partner workspace
 

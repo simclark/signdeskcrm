@@ -10,10 +10,12 @@ import {
 } from '../../shared/api'
 
 export type Entitlement = {
-  subscription_status: 'trial' | 'active' | 'expired' | string
+  subscription_status: 'trial' | 'active' | 'past_due' | 'canceled' | 'expired' | string
   trial_ends_at: string | null
   is_write_locked: boolean
   days_remaining: number | null
+  support_email?: string
+  billing_portal_available?: boolean
 }
 
 type User = {
@@ -74,7 +76,7 @@ type AuthState = {
   isStaff: boolean
   isWriteLocked: boolean
   login: (email: string, password: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   refreshMe: () => Promise<void>
 }
 
@@ -149,7 +151,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isStaff: Boolean(user?.is_staff),
       isWriteLocked,
       refreshMe,
-      logout: () => {
+      logout: async () => {
+        const { refresh } = getTokens()
+        try {
+          if (refresh) {
+            await api('/api/auth/logout/', {
+              method: 'POST',
+              json: { refresh },
+              public: true,
+            })
+          }
+        } catch {
+          // Client still clears tokens even if blacklist fails.
+        }
         clearTokens()
         setUser(null)
         setTenant(null)

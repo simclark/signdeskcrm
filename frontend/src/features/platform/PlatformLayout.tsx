@@ -52,7 +52,9 @@ export function PlatformLayout() {
               variant="subtle"
               size="compact-sm"
               leftSection={<IconLogout size={16} />}
-              onClick={logout}
+              onClick={() => {
+                void logout()
+              }}
             >
               Log out
             </Button>

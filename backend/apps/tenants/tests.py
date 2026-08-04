@@ -801,3 +801,33 @@ class TrialEntitlementTests(TestCase):
             **self.headers,
         )
         self.assertEqual(write.status_code, 201)
+
+    def test_past_due_and_canceled_write_lock(self):
+        from apps.tenants.entitlements import (
+            mark_subscription_canceled,
+            mark_subscription_past_due,
+        )
+
+        mark_subscription_past_due(self.tenant)
+        past_due = self.client.post(
+            "/api/contacts/",
+            {"first_name": "Past", "last_name": "Due", "email": "past@trial.test"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(past_due.status_code, 402)
+
+        mark_subscription_canceled(self.tenant)
+        canceled = self.client.post(
+            "/api/contacts/",
+            {"first_name": "Can", "last_name": "Celed", "email": "canceled@trial.test"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(canceled.status_code, 402)
+
+    def test_public_config_exposes_support_email(self):
+        res = self.client.get("/api/public/config/")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("support_email", res.data)
+        self.assertIn("billing_portal_available", res.data)

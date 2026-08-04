@@ -36,6 +36,9 @@ type HealthPayload = {
     frontend_port: string
     debug: boolean
     celery_task_always_eager: boolean
+    support_email?: string
+    tenant_allow_header_slug?: boolean
+    billing_portal_available?: boolean
   }
   warnings: string[]
   demo_tenant: {
@@ -49,6 +52,7 @@ type HealthPayload = {
 const CHECK_META: Record<string, { label: string; icon: typeof IconDatabase }> = {
   database: { label: 'Database', icon: IconDatabase },
   redis: { label: 'Redis', icon: IconServer },
+  celery: { label: 'Celery', icon: IconServer },
 }
 
 function ConfigRow({ label, value }: { label: string; value: string }) {
@@ -163,7 +167,7 @@ export function PlatformHealthPage() {
             icon: IconServer,
           }
           const Icon = meta.icon
-          const ok = value === 'ok'
+          const ok = String(value).startsWith('ok')
           return (
             <Paper key={key} p="lg" withBorder radius="md">
               <Group justify="space-between" align="flex-start" wrap="nowrap">
@@ -214,6 +218,18 @@ export function PlatformHealthPage() {
                 <ConfigRow
                   label="CELERY_TASK_ALWAYS_EAGER"
                   value={String(data.config.celery_task_always_eager)}
+                />
+                <ConfigRow
+                  label="SUPPORT_EMAIL"
+                  value={data.config.support_email || '(unset)'}
+                />
+                <ConfigRow
+                  label="TENANT_ALLOW_HEADER_SLUG"
+                  value={String(data.config.tenant_allow_header_slug ?? '')}
+                />
+                <ConfigRow
+                  label="BILLING_PORTAL_AVAILABLE"
+                  value={String(data.config.billing_portal_available ?? false)}
                 />
                 <ConfigRow label="Signing host example" value={data.example_signing_host} />
               </Stack>

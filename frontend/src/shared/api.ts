@@ -8,6 +8,7 @@ export {
   getTenantSlug,
   isApexHost,
   isPlatformHost,
+  marketingHomeUrl,
   platformOrigin,
   platformUrl,
 } from './host'

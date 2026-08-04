@@ -114,6 +114,8 @@ def finalize_envelope(envelope_id: int):
 
 @shared_task
 def send_due_reminders():
+    from apps.tenants.entitlements import write_unlocked_tenant_q
+
     now = timezone.now()
     qs = (
         Recipient.objects.filter(
@@ -123,6 +125,7 @@ def send_due_reminders():
             envelope__expires_at__gt=now,
             tenant__reminders_enabled=True,
         )
+        .filter(write_unlocked_tenant_q())
         .select_related("envelope", "envelope__follow_up_plan", "tenant")
     )
     for recipient in qs:

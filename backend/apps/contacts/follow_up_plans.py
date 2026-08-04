@@ -238,6 +238,8 @@ def _maybe_create_handoff(enrollment: FollowUpPlanEnrollment, now) -> None:
 
 
 def process_due_follow_up_plan_enrollments() -> int:
+    from apps.tenants.entitlements import is_write_locked
+
     now = timezone.now()
     due = (
         FollowUpPlanEnrollment.objects.filter(
@@ -258,6 +260,8 @@ def process_due_follow_up_plan_enrollments() -> int:
     )
     sent = 0
     for enrollment in due:
+        if is_write_locked(enrollment.tenant):
+            continue
         plan = enrollment.plan
         recipient = enrollment.recipient
         envelope = enrollment.envelope

@@ -53,6 +53,9 @@ class ChangePasswordSerializer(serializers.Serializer):
         user = self.context["request"].user
         user.set_password(self.validated_data["new_password"])
         user.save(update_fields=["password"])
+        from apps.accounts.tokens import blacklist_user_outstanding_tokens
+
+        blacklist_user_outstanding_tokens(user)
         return user
 
 
@@ -98,4 +101,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         PasswordResetToken.objects.filter(
             user=user, used_at__isnull=True
         ).exclude(pk=reset.pk).update(used_at=timezone.now())
+        from apps.accounts.tokens import blacklist_user_outstanding_tokens
+
+        blacklist_user_outstanding_tokens(user)
         return user

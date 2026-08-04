@@ -17,6 +17,15 @@ export function platformUrl(path = '/'): string {
   return `${platformOrigin()}${normalized}`
 }
 
+/** Public marketing site (www). Prefer this over bare apex for home links. */
+export function apexOrigin(): string {
+  return `${window.location.protocol}//www.${BASE_DOMAIN}${getHostPort()}`
+}
+
+export function marketingHomeUrl(): string {
+  return `${apexOrigin()}/`
+}
+
 export function isPlatformHost(): boolean {
   const host = window.location.hostname.toLowerCase()
   return host === `${PLATFORM_SUBDOMAIN}.${BASE_DOMAIN}`

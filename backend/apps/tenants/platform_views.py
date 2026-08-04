@@ -6,7 +6,6 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import connection
 from django.db.models import Count, Q
 from django.utils import timezone
 from django.utils.text import slugify
@@ -522,22 +521,11 @@ class PlatformHealthView(views.APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request):
-        checks: dict[str, str] = {"database": "ok", "redis": "ok"}
-        overall = "ok"
-        try:
-            connection.ensure_connection()
-        except Exception as exc:  # noqa: BLE001
-            checks["database"] = f"error: {exc.__class__.__name__}"
-            overall = "degraded"
-        try:
-            import redis
+        from apps.common.health import run_health_checks
 
-            client = redis.from_url(settings.CELERY_BROKER_URL)
-            if client.ping() is not True:
-                raise RuntimeError("ping failed")
-        except Exception as exc:  # noqa: BLE001
-            checks["redis"] = f"error: {exc.__class__.__name__}"
-            overall = "degraded"
+        base = run_health_checks(include_celery=True)
+        checks = base["checks"]
+        overall = base["status"]
 
         base_domain = settings.BASE_DOMAIN
         frontend_protocol = settings.FRONTEND_PROTOCOL
@@ -557,6 +545,9 @@ class PlatformHealthView(views.APIView):
                 "DEBUG is on but BASE_DOMAIN does not end with .test — "
                 "partner signing links may point at the wrong host."
             )
+        support_email = getattr(settings, "SUPPORT_EMAIL", "")
+        if not support_email:
+            warnings.append("SUPPORT_EMAIL is empty — trial banners have no contact channel.")
 
         demo = Tenant.objects.filter(slug=DEMO_SLUG).first()
         return Response(
@@ -572,6 +563,13 @@ class PlatformHealthView(views.APIView):
                     "debug": settings.DEBUG,
                     "celery_task_always_eager": getattr(
                         settings, "CELERY_TASK_ALWAYS_EAGER", False
+                    ),
+                    "support_email": support_email,
+                    "tenant_allow_header_slug": getattr(
+                        settings, "TENANT_ALLOW_HEADER_SLUG", True
+                    ),
+                    "billing_portal_available": bool(
+                        getattr(settings, "BILLING_PORTAL_AVAILABLE", False)
                     ),
                 },
                 "warnings": warnings,

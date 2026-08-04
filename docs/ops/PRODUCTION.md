@@ -46,9 +46,18 @@ EMAIL_HOST_PASSWORD=...
 DEFAULT_FROM_EMAIL=SignDesk <noreply@signdeskcrm.com>
 
 # Preferred on DigitalOcean (Postmark HTTPS API — avoids blocked :587):
-# SMTP_PROVIDER=postmark
-# POSTMARK_SERVER_TOKEN=<server-api-token>
-# DEFAULT_FROM_EMAIL=SignDesk <noreply@signdeskcrm.com>
+SMTP_PROVIDER=postmark
+POSTMARK_SERVER_TOKEN=<server-api-token>
+DEFAULT_FROM_EMAIL=SignDesk <noreply@signdeskcrm.com>
+SUPPORT_EMAIL=support@signdeskcrm.com
+
+# Optional Redis auth (also set matching CELERY_* URLs):
+# REDIS_PASSWORD=<strong>
+# CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+# CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/0
+
+# Production Host-only tenant resolution (default when DJANGO_SETTINGS_ENV=production):
+# TENANT_ALLOW_HEADER_SLUG=false
 
 BASE_DOMAIN=signdeskcrm.com
 FRONTEND_PROTOCOL=https
@@ -210,6 +219,8 @@ docker compose exec api python manage.py reset_demo_tenant
 
 ## Backups
 
+See [BACKUP_RESTORE.md](./BACKUP_RESTORE.md) for managed MySQL, Spaces, and restore drills.
+
 ```bash
 chmod +x deploy/backup.sh
 ./deploy/backup.sh ./backups
@@ -220,9 +231,10 @@ Schedule daily via cron. Store off-host. Test restore before launch. For managed
 ## Observability
 
 - Set `SENTRY_DSN` to enable error tracking (Django + Celery).
-- Scrape `/api/health/` from uptime monitoring (Platform → Health also surfaces checks).
+- Scrape `/api/health/` from uptime monitoring (database + Redis). Example: UptimeRobot / Better Stack HTTP monitor every 60s expecting HTTP 200 and `"status":"ok"`.
+- Platform → Health also surfaces **Celery heartbeat**, `SUPPORT_EMAIL`, and config warnings (beat must be running for Celery to stay green).
 - Keep Celery worker + beat logs attached to your log drain.
 
 ## Admin
 
-Restrict `/admin/` at the network layer when possible; use a strong owner password.
+Restrict `/admin/` with [deploy/admin-acl.conf](../../deploy/admin-acl.conf) (mounted into nginx). Default allows all; add `allow`/`deny` lines for office/VPN IPs, then reload nginx. Use strong staff passwords.

@@ -6,6 +6,7 @@ from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 
 
@@ -39,12 +40,43 @@ def is_write_locked(tenant) -> bool:
     from apps.tenants.models import Tenant
 
     sync_subscription_status(tenant)
-    if tenant.subscription_status == Tenant.SubscriptionStatus.EXPIRED:
+    locked_statuses = {
+        Tenant.SubscriptionStatus.EXPIRED,
+        Tenant.SubscriptionStatus.PAST_DUE,
+        Tenant.SubscriptionStatus.CANCELED,
+    }
+    if tenant.subscription_status in locked_statuses:
         return True
     if tenant.subscription_status == Tenant.SubscriptionStatus.TRIAL:
         if tenant.trial_ends_at and timezone.now() >= tenant.trial_ends_at:
             return True
     return False
+
+
+def write_unlocked_tenant_q(*, prefix: str = "tenant") -> Q:
+    """ORM filter for tenants that may send outbound automation email.
+
+    ``prefix`` is the FK path to Tenant (e.g. ``\"tenant\"`` on Recipient).
+    """
+    from apps.tenants.models import Tenant
+
+    now = timezone.now()
+    p = f"{prefix}__" if prefix else ""
+    return Q(**{f"{p}status": Tenant.Status.ACTIVE}) & (
+        Q(**{f"{p}subscription_status": Tenant.SubscriptionStatus.ACTIVE})
+        | Q(
+            **{
+                f"{p}subscription_status": Tenant.SubscriptionStatus.TRIAL,
+                f"{p}trial_ends_at__gt": now,
+            }
+        )
+        | Q(
+            **{
+                f"{p}subscription_status": Tenant.SubscriptionStatus.TRIAL,
+                f"{p}trial_ends_at__isnull": True,
+            }
+        )
+    )
 
 
 def days_remaining(tenant) -> int | None:
@@ -77,6 +109,7 @@ def hours_remaining(tenant) -> int | None:
         return 0
     return max(0, math.ceil(seconds / 3600))
 
+
 def entitlement_payload(tenant) -> dict[str, Any]:
     sync_subscription_status(tenant)
     return {
@@ -84,6 +117,10 @@ def entitlement_payload(tenant) -> dict[str, Any]:
         "trial_ends_at": tenant.trial_ends_at.isoformat() if tenant.trial_ends_at else None,
         "is_write_locked": is_write_locked(tenant),
         "days_remaining": days_remaining(tenant),
+        "support_email": getattr(settings, "SUPPORT_EMAIL", "support@signdeskcrm.com"),
+        "billing_portal_available": bool(
+            getattr(settings, "BILLING_PORTAL_AVAILABLE", False)
+        ),
     }
 
 
@@ -146,3 +183,20 @@ def mark_subscription_active(tenant) -> None:
             "updated_at",
         ]
     )
+
+
+def mark_subscription_past_due(tenant) -> None:
+    """Stripe webhook: payment failed — workspace becomes write-locked."""
+    from apps.tenants.models import Tenant
+
+    tenant.subscription_status = Tenant.SubscriptionStatus.PAST_DUE
+    tenant.save(update_fields=["subscription_status", "updated_at"])
+
+
+def mark_subscription_canceled(tenant) -> None:
+    """Stripe webhook: subscription canceled — workspace becomes write-locked."""
+    from apps.tenants.models import Tenant
+
+    tenant.subscription_status = Tenant.SubscriptionStatus.CANCELED
+    tenant.trial_ends_at = None
+    tenant.save(update_fields=["subscription_status", "trial_ends_at", "updated_at"])

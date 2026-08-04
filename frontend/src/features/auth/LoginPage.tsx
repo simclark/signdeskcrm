@@ -20,7 +20,7 @@ import {
   getTenantSlug,
   isApexHost,
   isPlatformHost,
-  platformUrl,
+  marketingHomeUrl,
 } from '../../shared/api'
 
 function workspaceHost(slug: string) {
@@ -35,6 +35,47 @@ function normalizeSlug(raw: string) {
     .replace(/[^a-z0-9-]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
+}
+
+function SignDeskLogo() {
+  const home = marketingHomeUrl()
+  const onMarketingHost = isApexHost()
+
+  if (onMarketingHost) {
+    return (
+      <Text
+        component={Link}
+        to="/"
+        style={{
+          fontFamily: 'Fraunces, Georgia, serif',
+          fontSize: 36,
+          fontWeight: 700,
+          textDecoration: 'none',
+          color: 'inherit',
+          display: 'inline-block',
+        }}
+      >
+        SignDesk
+      </Text>
+    )
+  }
+
+  return (
+    <Text
+      component="a"
+      href={home}
+      style={{
+        fontFamily: 'Fraunces, Georgia, serif',
+        fontSize: 36,
+        fontWeight: 700,
+        textDecoration: 'none',
+        color: 'inherit',
+        display: 'inline-block',
+      }}
+    >
+      SignDesk
+    </Text>
+  )
 }
 
 function PlatformStaffLogin() {
@@ -52,9 +93,7 @@ function PlatformStaffLogin() {
   return (
     <Container size={420} py={80}>
       <Stack gap="xs" mb="xl">
-        <Text style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 36, fontWeight: 700 }}>
-          SignDesk
-        </Text>
+        <SignDeskLogo />
         <Title order={2}>Platform login</Title>
         <Text c="dimmed">Staff access for tenant ops and demo reset.</Text>
       </Stack>
@@ -106,25 +145,12 @@ function ApexWorkspaceLogin() {
     },
   })
 
-  const slugPreview = normalizeSlug(form.values.slug)
-  const hostPreview = slugPreview
-    ? workspaceHost(slugPreview)
-    : `<workspace>.${BASE_DOMAIN}${window.location.port ? `:${window.location.port}` : ''}`
-
   return (
     <Container size={480} py={80}>
       <Stack gap="xs" mb="xl">
-        <Text style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 36, fontWeight: 700 }}>
-          SignDesk
-        </Text>
+        <SignDeskLogo />
         <Title order={2}>Log in to your workspace</Title>
-        <Text c="dimmed">
-          Enter your workspace subdomain to continue. Example:{' '}
-          <Text span ff="monospace" size="sm">
-            acme-esign.{BASE_DOMAIN}
-            {window.location.port ? `:${window.location.port}` : ''}
-          </Text>
-        </Text>
+        <Text c="dimmed">Enter your workspace name to continue.</Text>
       </Stack>
       <Paper p="xl" radius="lg" withBorder style={{ background: 'rgba(255,255,255,0.85)' }}>
         <form
@@ -159,14 +185,7 @@ function ApexWorkspaceLogin() {
           <Stack>
             <TextInput
               label="Workspace name"
-              placeholder="acme-esign"
-              description="This becomes your login URL"
-              rightSectionWidth={Math.min(220, 24 + BASE_DOMAIN.length * 8)}
-              rightSection={
-                <Text size="xs" c="dimmed" pr="sm" style={{ whiteSpace: 'nowrap' }}>
-                  .{BASE_DOMAIN}
-                </Text>
-              }
+              placeholder="your-company"
               required
               autoFocus
               {...form.getInputProps('slug')}
@@ -178,21 +197,14 @@ function ApexWorkspaceLogin() {
                 }
               }}
             />
-            <Text size="sm" c="dimmed" ff="monospace">
-              {hostPreview}/login
-            </Text>
             <Button type="submit" fullWidth loading={loading}>
-              Continue to login
+              Continue
             </Button>
             <Text size="sm" ta="center">
               New here?{' '}
               <Anchor component={Link} to="/signup">
                 Create a workspace
               </Anchor>
-            </Text>
-            <Text size="sm" ta="center" c="dimmed">
-              SignDesk staff?{' '}
-              <Anchor href={platformUrl('/login')}>Open platform login</Anchor>
             </Text>
           </Stack>
         </form>
@@ -223,9 +235,7 @@ export function LoginPage() {
   return (
     <Container size={420} py={80}>
       <Stack gap="xs" mb="xl">
-        <Text style={{ fontFamily: 'Fraunces, Georgia, serif', fontSize: 36, fontWeight: 700 }}>
-          SignDesk
-        </Text>
+        <SignDeskLogo />
         <Title order={2}>Welcome back</Title>
         <Text c="dimmed">
           {getTenantSlug()}.{BASE_DOMAIN}

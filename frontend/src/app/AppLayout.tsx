@@ -118,14 +118,29 @@ function AppShellContent() {
   const { user, tenant, membership, entitlement, isWriteLocked, logout, refreshMe } = useAuth()
   const location = useLocation()
   const { openCreateEnvelope } = useCreateEnvelope()
+  const supportEmail =
+    entitlement?.support_email || 'support@signdeskcrm.com'
+  const supportMailto = `mailto:${supportEmail}?subject=${encodeURIComponent('SignDesk subscription help')}`
+  const showTrialBanner =
+    entitlement?.subscription_status === 'trial' ||
+    entitlement?.subscription_status === 'expired' ||
+    entitlement?.subscription_status === 'past_due' ||
+    entitlement?.subscription_status === 'canceled' ||
+    isWriteLocked
+  const billingLabel =
+    entitlement?.subscription_status === 'past_due'
+      ? 'Payment past due — workspace is read-only'
+      : entitlement?.subscription_status === 'canceled'
+        ? 'Subscription canceled — workspace is read-only'
+        : isWriteLocked
+          ? 'Free trial ended — workspace is read-only'
+          : entitlement?.days_remaining != null
+            ? `${entitlement.days_remaining} day${entitlement.days_remaining === 1 ? '' : 's'} left in your free trial`
+            : 'Free trial in progress'
 
   const isAdmin = membership?.role === 'owner' || membership?.role === 'admin'
   const iconUrl = toAppMediaUrl(tenant?.icon)
   const listingsEnabled = Boolean(tenant?.listings_enabled)
-  const showTrialBanner =
-    entitlement?.subscription_status === 'trial' ||
-    entitlement?.subscription_status === 'expired' ||
-    isWriteLocked
 
   const memberNavGroups = MEMBER_NAV_GROUPS.map((group) => ({
     ...group,
@@ -352,7 +367,12 @@ function AppShellContent() {
                   Help
                 </Menu.Item>
                 <Menu.Divider />
-                <Menu.Item leftSection={<IconLogout size={14} />} onClick={logout}>
+                <Menu.Item
+                  leftSection={<IconLogout size={14} />}
+                  onClick={() => {
+                    void logout()
+                  }}
+                >
                   Log out
                 </Menu.Item>
               </Menu.Dropdown>
@@ -393,39 +413,79 @@ function AppShellContent() {
           <Alert
             mb="md"
             color={isWriteLocked ? 'orange' : 'blue'}
-            title={
-              isWriteLocked
-                ? 'Free trial ended — workspace is read-only'
-                : entitlement?.days_remaining != null
-                  ? `${entitlement.days_remaining} day${entitlement.days_remaining === 1 ? '' : 's'} left in your free trial`
-                  : 'Free trial in progress'
-            }
+            title={billingLabel}
           >
             <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
               <Text size="sm">
                 {isWriteLocked
-                  ? 'You can still view existing data. Subscribe to create and edit again.'
+                  ? `You can still view existing data. Subscribe or email ${supportEmail} to restore editing.`
                   : 'After the trial, this workspace becomes read-only until you subscribe.'}
               </Text>
-              <Button size="xs" variant="light" color={isWriteLocked ? 'orange' : 'blue'} onClick={openSubscribe}>
-                Subscribe
-              </Button>
+              <Group gap="xs">
+                <Button
+                  size="xs"
+                  variant="light"
+                  color={isWriteLocked ? 'orange' : 'blue'}
+                  component="a"
+                  href={supportMailto}
+                >
+                  Contact support
+                </Button>
+                <Button
+                  size="xs"
+                  variant="light"
+                  color={isWriteLocked ? 'orange' : 'blue'}
+                  onClick={openSubscribe}
+                >
+                  Subscribe
+                </Button>
+              </Group>
             </Group>
           </Alert>
         ) : null}
-        <Outlet />
+        <div style={{ position: 'relative' }}>
+          {isWriteLocked ? (
+            <Overlay
+              color="#F7F5F0"
+              backgroundOpacity={0.35}
+              zIndex={5}
+              style={{ cursor: 'not-allowed' }}
+              onClick={openSubscribe}
+            />
+          ) : null}
+          <div
+            style={
+              isWriteLocked
+                ? { pointerEvents: 'none', userSelect: 'none', opacity: 0.92 }
+                : undefined
+            }
+            aria-disabled={isWriteLocked || undefined}
+          >
+            <Outlet />
+          </div>
+        </div>
       </AppShell.Main>
 
       <ProfileDialog opened={profileOpened} onClose={closeProfile} />
       <Modal opened={subscribeOpened} onClose={closeSubscribe} title="Subscribe to SignDesk" centered>
         <Stack gap="md">
           <Text size="sm">
-            Credit card billing is coming soon. Contact support if you need help continuing
-            with SignDesk after your free trial.
+            {entitlement?.billing_portal_available
+              ? 'Open the billing portal to manage your subscription.'
+              : 'Self-serve checkout is coming soon. Until then, email support and we will activate your paid workspace.'}
+          </Text>
+          <Text size="sm" c="dimmed">
+            Current status:{' '}
+            <Text span fw={600}>
+              {entitlement?.subscription_status || 'unknown'}
+            </Text>
           </Text>
           <Group justify="flex-end">
             <Button variant="default" onClick={closeSubscribe}>
               Close
+            </Button>
+            <Button component="a" href={supportMailto}>
+              Email {supportEmail}
             </Button>
           </Group>
         </Stack>

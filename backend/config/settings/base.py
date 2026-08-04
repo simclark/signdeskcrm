@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "django_filters",
     "apps.common.apps.CommonConfig",
     "apps.accounts",
@@ -182,9 +183,10 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(hours=12),
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=1),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
 }
 
 CORS_ALLOW_CREDENTIALS = True
@@ -199,6 +201,10 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "false").lower() == "true"
 CELERY_BEAT_SCHEDULE = {
+    "celery-heartbeat": {
+        "task": "apps.common.tasks.celery_heartbeat",
+        "schedule": 60.0,
+    },
     "send-envelope-reminders": {
         "task": "apps.envelopes.tasks.send_due_reminders",
         "schedule": 3600.0,
@@ -229,6 +235,13 @@ CELERY_BEAT_SCHEDULE = {
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "15"))
 TRIAL_WARNING_HOURS = int(os.getenv("TRIAL_WARNING_HOURS", "24"))
 
+# Platform support channel (trial banners, legal pages, billing placeholder)
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@signdeskcrm.com").strip()
+# Flip when Stripe Customer Portal is wired
+BILLING_PORTAL_AVAILABLE = os.getenv("BILLING_PORTAL_AVAILABLE", "false").lower() == "true"
+
+# Allow X-Tenant-Slug to override Host (needed for Vite proxy). Disable in production.
+TENANT_ALLOW_HEADER_SLUG = os.getenv("TENANT_ALLOW_HEADER_SLUG", "true").lower() == "true"
 
 EMAIL_BACKEND = os.getenv(
     "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend"

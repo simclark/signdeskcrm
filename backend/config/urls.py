@@ -1,12 +1,12 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.db import connection
 from django.http import JsonResponse
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from apps.accounts.public_views import LogoutView, PublicConfigView
 from apps.accounts.views import (
     ChangePasswordView,
     PasswordResetConfirmView,
@@ -14,6 +14,7 @@ from apps.accounts.views import (
     PasswordResetRequestView,
     ProfileView,
 )
+from apps.common.health import run_health_checks
 from apps.common.media import ProtectedMediaView
 from apps.contacts.views import (
     CompanyViewSet,
@@ -72,27 +73,9 @@ from apps.tenants.views import (
 
 
 def health(_request):
-    checks = {"database": "ok", "redis": "ok"}
-    status_code = 200
-    try:
-        connection.ensure_connection()
-    except Exception as exc:  # noqa: BLE001 — health must never raise
-        checks["database"] = f"error: {exc.__class__.__name__}"
-        status_code = 503
-    try:
-        import redis
-
-        client = redis.from_url(settings.CELERY_BROKER_URL)
-        if client.ping() is not True:
-            raise RuntimeError("ping failed")
-    except Exception as exc:  # noqa: BLE001
-        checks["redis"] = f"error: {exc.__class__.__name__}"
-        status_code = 503
-    payload = {
-        "status": "ok" if status_code == 200 else "degraded",
-        "service": "signdesk-api",
-        "checks": checks,
-    }
+    # Public/LB probe: database + Redis only. Celery heartbeat is on Platform → Health.
+    payload = run_health_checks(include_celery=False)
+    status_code = 200 if payload["status"] == "ok" else 503
     return JsonResponse(payload, status=status_code)
 
 
@@ -115,9 +98,11 @@ router.register(r"dashboard", DashboardViewSet, basename="dashboard")
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/health/", health, name="health"),
+    path("api/public/config/", PublicConfigView.as_view(), name="public-config"),
     path("api/media/<path:path>", ProtectedMediaView.as_view(), name="protected-media"),
     path("api/auth/signup/", SignupView.as_view(), name="signup"),
     path("api/auth/login/", ThrottledTokenObtainPairView.as_view(), name="login"),
+    path("api/auth/logout/", LogoutView.as_view(), name="logout"),
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("api/auth/slug-check/", SlugCheckView.as_view(), name="slug-check"),
     path("api/auth/suggest-slug/", SuggestSlugView.as_view(), name="suggest-slug"),

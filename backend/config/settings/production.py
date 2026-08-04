@@ -2,6 +2,8 @@ from .base import *  # noqa: F401,F403
 import os
 
 DEBUG = False
+# Prefer Host subdomain in production; Vite proxy header override is local-only.
+TENANT_ALLOW_HEADER_SLUG = os.getenv("TENANT_ALLOW_HEADER_SLUG", "false").lower() == "true"
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True

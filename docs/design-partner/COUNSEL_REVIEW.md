@@ -45,3 +45,17 @@ Generate one completed practice envelope and provide counsel:
 4. Current disclosure text from Settings (or defaults)
 
 Track outcomes in [PILOT_CHECKLIST.md](./PILOT_CHECKLIST.md) under “Certificate + audit comfort”.
+
+## Sign-off tracker
+
+Counsel must complete this before treating production packets as evidence-grade. Product/engineering cannot mark these done unilaterally.
+
+| Item | Owner | Status | Date | Notes |
+|------|-------|--------|------|-------|
+| Disclosure wording approved (or tenant override applied) | Counsel | Pending | | |
+| Consumer vs commercial scope confirmed | Counsel | Pending | | |
+| Certificate of Completion sample approved | Counsel | Pending | | |
+| Signer auth (magic link) accepted for packet types | Counsel | Pending | | |
+| Retention / legal-hold policy documented | Partner + counsel | Pending | | |
+
+When all rows are **Approved**, update [PILOT_OPS.md](./PILOT_OPS.md) §5 and record the counsel name/date in the partner workspace notes.

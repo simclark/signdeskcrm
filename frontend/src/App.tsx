@@ -16,6 +16,8 @@ import { AcceptInvitePage } from './features/auth/AcceptInvitePage'
 import { ForgotPasswordPage } from './features/auth/ForgotPasswordPage'
 import { ResetPasswordPage } from './features/auth/ResetPasswordPage'
 import { LandingPage } from './features/marketing/LandingPage'
+import { PrivacyPolicyPage } from './features/marketing/PrivacyPolicyPage'
+import { TermsOfServicePage } from './features/marketing/TermsOfServicePage'
 import { DashboardPage } from './features/dashboard/DashboardPage'
 import { ContactsPage } from './features/contacts/ContactsPage'
 import { ContactDetailPage } from './features/contacts/ContactDetailPage'
@@ -76,6 +78,8 @@ const appRouter = createBrowserRouter([
   { path: '/', element: <RootEntry /> },
   { path: '/signup', element: <SignupPage /> },
   { path: '/login', element: <LoginPage /> },
+  { path: '/privacy', element: <PrivacyPolicyPage /> },
+  { path: '/terms', element: <TermsOfServicePage /> },
   { path: '/forgot-password', element: <ForgotPasswordPage /> },
   { path: '/reset-password/:token', element: <ResetPasswordPage /> },
   { path: '/invite/:token', element: <AcceptInvitePage /> },

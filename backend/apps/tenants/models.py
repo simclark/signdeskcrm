@@ -64,6 +64,8 @@ class Tenant(TimeStampedModel):
     class SubscriptionStatus(models.TextChoices):
         TRIAL = "trial", "Trial"
         ACTIVE = "active", "Active"
+        PAST_DUE = "past_due", "Past due"
+        CANCELED = "canceled", "Canceled"
         EXPIRED = "expired", "Expired"
 
     name = models.CharField(max_length=255)
@@ -88,6 +90,9 @@ class Tenant(TimeStampedModel):
         blank=True,
         help_text="When the 24h trial-ending warning email was sent.",
     )
+    # Stripe identifiers (populated when Checkout / webhooks are wired)
+    stripe_customer_id = models.CharField(max_length=255, blank=True, db_index=True)
+    stripe_subscription_id = models.CharField(max_length=255, blank=True, db_index=True)
     # Account / company identity (who ordered this tenant)
     legal_name = models.CharField(max_length=255, blank=True)
     website = models.CharField(max_length=255, blank=True)

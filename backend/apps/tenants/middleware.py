@@ -62,13 +62,14 @@ class TenantMiddleware:
 
         host = request.get_host()
         slug = extract_subdomain(host, settings.BASE_DOMAIN)
-        # Prefer X-Tenant-Slug when present (Vite proxy / API clients). Accept a
-        # bare slug or a full host — never treat "demo.example.com" as a slug.
-        header_slug = normalize_tenant_slug(
-            request.headers.get("X-Tenant-Slug"), settings.BASE_DOMAIN
-        )
-        if header_slug:
-            slug = header_slug
+        # Prefer X-Tenant-Slug when allowed (Vite proxy / local API clients).
+        # Production defaults TENANT_ALLOW_HEADER_SLUG=false so Host wins.
+        if getattr(settings, "TENANT_ALLOW_HEADER_SLUG", True):
+            header_slug = normalize_tenant_slug(
+                request.headers.get("X-Tenant-Slug"), settings.BASE_DOMAIN
+            )
+            if header_slug:
+                slug = header_slug
 
         if slug == PLATFORM_SUBDOMAIN:
             # Reserved ops console host — not a tenant workspace.

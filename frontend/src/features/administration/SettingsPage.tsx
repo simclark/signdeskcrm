@@ -28,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   IconBuilding,
   IconCheck,
+  IconCreditCard,
   IconMail,
   IconPalette,
   IconPencil,
@@ -265,7 +266,7 @@ function EmailPreviewIframe({ srcDoc }: { srcDoc: string }) {
 }
 
 export function SettingsPage() {
-  const { tenant, membership, refreshMe } = useAuth()
+  const { tenant, membership, entitlement, refreshMe } = useAuth()
   const queryClient = useQueryClient()
   const confirm = useConfirm()
   const isAdmin = membership?.role === 'owner' || membership?.role === 'admin'
@@ -812,6 +813,9 @@ export function SettingsPage() {
           </Tabs.Tab>
           <Tabs.Tab value="members" leftSection={<IconUsers size={16} stroke={1.5} />}>
             Members
+          </Tabs.Tab>
+          <Tabs.Tab value="billing" leftSection={<IconCreditCard size={16} stroke={1.5} />}>
+            Billing
           </Tabs.Tab>
         </Tabs.List>
 
@@ -1620,6 +1624,60 @@ export function SettingsPage() {
               </Stack>
             </form>
           </Modal>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="billing" pt="lg">
+          <SettingsSection
+            title="Subscription"
+            description="Workspace billing status and upgrade path. Self-serve Stripe checkout will appear here when enabled."
+          >
+            <Stack gap="md" maw={520}>
+              <Group gap="sm">
+                <Text size="sm" c="dimmed" w={140}>
+                  Status
+                </Text>
+                <Badge
+                  variant="light"
+                  color={
+                    entitlement?.is_write_locked
+                      ? 'orange'
+                      : entitlement?.subscription_status === 'active'
+                        ? 'forest'
+                        : 'blue'
+                  }
+                >
+                  {entitlement?.subscription_status || tenant?.subscription_status || 'unknown'}
+                </Badge>
+              </Group>
+              {entitlement?.trial_ends_at ? (
+                <Group gap="sm">
+                  <Text size="sm" c="dimmed" w={140}>
+                    Trial ends
+                  </Text>
+                  <Text size="sm">{new Date(entitlement.trial_ends_at).toLocaleString()}</Text>
+                </Group>
+              ) : null}
+              <Text size="sm">
+                {entitlement?.billing_portal_available
+                  ? 'A billing portal link will open here once Stripe is connected.'
+                  : 'Credit card checkout is not enabled yet. Email support to activate a paid workspace or extend your trial.'}
+              </Text>
+              <Group>
+                <Button
+                  component="a"
+                  href={`mailto:${entitlement?.support_email || 'support@signdeskcrm.com'}?subject=${encodeURIComponent('SignDesk billing')}`}
+                >
+                  Email support
+                </Button>
+                <Button
+                  variant="default"
+                  disabled={!entitlement?.billing_portal_available}
+                >
+                  Open billing portal
+                </Button>
+              </Group>
+            </Stack>
+          </SettingsSection>
         </Tabs.Panel>
       </Tabs>
     </Stack>

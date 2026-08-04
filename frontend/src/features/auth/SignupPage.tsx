@@ -117,6 +117,17 @@ export function SignupPage() {
               required
               {...form.getInputProps('password')}
             />
+            <Text size="xs" c="dimmed">
+              By creating a workspace you agree to the{' '}
+              <Anchor component={Link} to="/terms" size="xs">
+                Terms of Service
+              </Anchor>{' '}
+              and{' '}
+              <Anchor component={Link} to="/privacy" size="xs">
+                Privacy Policy
+              </Anchor>
+              .
+            </Text>
             <Button type="submit" loading={checking} fullWidth>
               Create workspace
             </Button>

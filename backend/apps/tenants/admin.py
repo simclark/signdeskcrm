@@ -15,6 +15,8 @@ class TenantAdmin(admin.ModelAdmin):
         "subscription_status",
         "trial_ends_at",
         "trial_warning_sent_at",
+        "stripe_customer_id",
+        "stripe_subscription_id",
         "legal_name",
         "website",
         "address_line1",

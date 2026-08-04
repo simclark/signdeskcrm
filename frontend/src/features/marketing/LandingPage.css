@@ -1,0 +1,677 @@
+.sd-marketing {
+  --mk-ink: #102a23;
+  --mk-forest: #0b6e4f;
+  --mk-forest-deep: #074b36;
+  --mk-mint: #d8f3e7;
+  --mk-sand: #f3efe6;
+  --mk-surface: #f7f5f0;
+  --mk-line: rgba(16, 42, 35, 0.1);
+  color: var(--mk-ink);
+  overflow-x: clip;
+  background: var(--mk-surface);
+}
+
+/* Keep plain links on brand ink; do not paint Mantine buttons. */
+.sd-marketing a.sd-marketing-brand,
+.sd-marketing a.sd-marketing-nav-link,
+.sd-marketing-footer-links a {
+  color: inherit;
+}
+
+/* White label on forest filled CTAs (Button-as-Link otherwise inherits ink). */
+.sd-marketing .mantine-Button-root:not([data-variant='default']):not([data-variant='subtle']):not([data-variant='light']):not([data-variant='outline']):not([data-variant='transparent']) {
+  color: #ffffff !important;
+  --button-color: #ffffff;
+}
+
+.sd-marketing .mantine-Button-root:not([data-variant='default']):not([data-variant='subtle']):not([data-variant='light']):not([data-variant='outline']):not([data-variant='transparent']) .mantine-Button-label {
+  color: #ffffff !important;
+}
+
+.sd-marketing .mantine-Button-root[data-variant='default'] {
+  color: var(--mk-ink);
+}
+
+/* —— Motion —— */
+@keyframes sd-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sd-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes sd-draw-line {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.sd-anim {
+  animation: sd-fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sd-anim-delay-1 {
+  animation-delay: 0.08s;
+}
+
+.sd-anim-delay-2 {
+  animation-delay: 0.16s;
+}
+
+.sd-anim-delay-3 {
+  animation-delay: 0.24s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-anim,
+  .sd-marketing-mock {
+    animation: none !important;
+  }
+}
+
+.sd-marketing-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-inline: 1.25rem;
+}
+
+/* —— Top bar —— */
+.sd-marketing-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  max-width: 1180px;
+  margin: 0 auto;
+  background: color-mix(in srgb, var(--mk-surface) 90%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.sd-marketing-brand {
+  font-family: Fraunces, Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+  color: var(--mk-ink);
+}
+
+.sd-marketing-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.sd-marketing-nav-link {
+  font-size: 0.92rem;
+  font-weight: 500;
+  text-decoration: none;
+  color: var(--mk-ink);
+  opacity: 0.72;
+  padding: 0.35rem 0.55rem;
+}
+
+.sd-marketing-nav-link:hover {
+  opacity: 1;
+}
+
+/* —— Hero —— */
+.sd-marketing-hero {
+  position: relative;
+  padding: 1.25rem 0 0;
+}
+
+.sd-marketing-hero-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.75rem;
+  align-items: stretch;
+  padding: 1.75rem 1.25rem 0;
+  border-radius: 20px 20px 0 0;
+  background:
+    radial-gradient(ellipse 70% 80% at 0% 0%, rgba(11, 110, 79, 0.14), transparent 55%),
+    radial-gradient(ellipse 50% 60% at 100% 10%, rgba(216, 243, 231, 0.7), transparent 50%),
+    linear-gradient(180deg, #fff 0%, color-mix(in srgb, var(--mk-sand) 55%, #fff) 100%);
+  border: 1px solid var(--mk-line);
+  border-bottom: none;
+  overflow: hidden;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+@media (min-width: 900px) {
+  .sd-marketing-hero-panel {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    gap: 1.5rem 2rem;
+    padding: 2rem 2rem 0;
+    align-items: end;
+  }
+}
+
+.sd-marketing-hero-copy {
+  max-width: 32rem;
+  padding-bottom: 1.5rem;
+  align-self: end;
+}
+
+@media (min-width: 900px) {
+  .sd-marketing-hero-copy {
+    padding-bottom: 2.25rem;
+  }
+}
+
+.sd-marketing-hero-brand {
+  font-family: Fraunces, Georgia, serif;
+  font-size: clamp(2.75rem, 6.5vw, 4.25rem);
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  margin: 0 0 0.85rem;
+}
+
+.sd-marketing-hero-title {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: clamp(1.15rem, 2.1vw, 1.4rem);
+  font-weight: 500;
+  line-height: 1.35;
+  margin: 0 0 0.65rem;
+  color: var(--mk-ink);
+}
+
+.sd-marketing-hero-lede {
+  font-size: 1rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--mk-ink) 68%, transparent);
+  margin: 0 0 1.25rem;
+  max-width: 28rem;
+}
+
+.sd-marketing-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.sd-marketing-accent-line {
+  display: block;
+  width: 3.75rem;
+  height: 3px;
+  margin: 0 0 1rem;
+  background: var(--mk-forest);
+  transform-origin: left center;
+  animation: sd-draw-line 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
+}
+
+/* —— Product mock (hero visual) —— */
+.sd-marketing-mock-wrap {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: 0;
+}
+
+.sd-marketing-mock {
+  position: relative;
+  width: 100%;
+  border-radius: 14px 14px 0 0;
+  background: #fff;
+  border: 1px solid var(--mk-line);
+  border-bottom: none;
+  box-shadow:
+    0 18px 40px rgba(16, 42, 35, 0.1),
+    0 2px 0 rgba(255, 255, 255, 0.8) inset;
+  overflow: hidden;
+  animation: sd-float 7s ease-in-out infinite;
+}
+
+.sd-marketing-mock-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 0.9rem;
+  background: color-mix(in srgb, var(--mk-sand) 70%, #fff);
+  border-bottom: 1px solid var(--mk-line);
+}
+
+.sd-marketing-mock-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(16, 42, 35, 0.18);
+}
+
+.sd-marketing-mock-dot:nth-child(1) {
+  background: #e07a5f;
+}
+
+.sd-marketing-mock-dot:nth-child(2) {
+  background: #d4a017;
+}
+
+.sd-marketing-mock-dot:nth-child(3) {
+  background: var(--mk-forest);
+}
+
+.sd-marketing-mock-title {
+  margin-left: 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--mk-ink) 55%, transparent);
+}
+
+.sd-marketing-mock-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  min-height: 220px;
+}
+
+@media (min-width: 520px) {
+  .sd-marketing-mock-body {
+    grid-template-columns: 0.36fr 0.64fr;
+    min-height: 280px;
+  }
+}
+
+@media (min-width: 900px) {
+  .sd-marketing-mock-body {
+    min-height: 320px;
+  }
+}
+
+.sd-marketing-mock-side {
+  padding: 1rem 0.9rem;
+  background: color-mix(in srgb, var(--mk-mint) 40%, #fff);
+  border-right: 1px solid var(--mk-line);
+}
+
+.sd-marketing-mock-side-label {
+  font-size: 0.66rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mk-forest);
+  margin-bottom: 0.7rem;
+}
+
+.sd-marketing-mock-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.45rem;
+  margin-bottom: 0.3rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+.sd-marketing-mock-row.is-active {
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(16, 42, 35, 0.06);
+  font-weight: 600;
+}
+
+.sd-marketing-mock-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--mk-forest);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.sd-marketing-mock-avatar.buyer {
+  background: #2a6f97;
+}
+
+.sd-marketing-mock-doc {
+  padding: 1rem 1.1rem 1.25rem;
+  background: linear-gradient(180deg, #fff 0%, color-mix(in srgb, var(--mk-sand) 35%, #fff) 100%);
+  display: flex;
+  flex-direction: column;
+}
+
+.sd-marketing-mock-doc-heading {
+  font-family: Fraunces, Georgia, serif;
+  font-size: 1rem;
+  font-weight: 650;
+  margin: 0 0 0.3rem;
+}
+
+.sd-marketing-mock-doc-meta {
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--mk-ink) 50%, transparent);
+  margin-bottom: 0.85rem;
+}
+
+.sd-marketing-mock-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: auto;
+  padding-bottom: 1rem;
+}
+
+.sd-marketing-mock-line {
+  height: 7px;
+  border-radius: 4px;
+  background: rgba(16, 42, 35, 0.08);
+}
+
+.sd-marketing-mock-line.w-90 {
+  width: 90%;
+}
+
+.sd-marketing-mock-line.w-75 {
+  width: 75%;
+}
+
+.sd-marketing-mock-line.w-60 {
+  width: 60%;
+}
+
+.sd-marketing-mock-sig {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.7rem;
+  border-top: 1px dashed rgba(16, 42, 35, 0.15);
+}
+
+.sd-marketing-mock-sig-label {
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--mk-ink) 45%, transparent);
+}
+
+.sd-marketing-mock-sig-name {
+  font-family: 'Great Vibes', cursive;
+  font-size: 1.55rem;
+  color: var(--mk-forest-deep);
+  line-height: 1;
+}
+
+.sd-marketing-mock-badge {
+  font-size: 0.66rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mk-forest);
+  background: var(--mk-mint);
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+}
+
+/* —— Sections —— */
+.sd-marketing-band {
+  max-width: 1180px;
+  margin: 0 auto;
+  border-inline: 1px solid var(--mk-line);
+}
+
+.sd-marketing-band--mint {
+  background: color-mix(in srgb, var(--mk-mint) 42%, #fff);
+}
+
+.sd-marketing-band--sand {
+  background: color-mix(in srgb, var(--mk-sand) 65%, #fff);
+}
+
+.sd-marketing-section {
+  padding: 2.25rem 1.25rem;
+}
+
+@media (min-width: 900px) {
+  .sd-marketing-section {
+    padding: 2.5rem 2rem;
+  }
+}
+
+.sd-marketing-section-head {
+  display: grid;
+  gap: 0.35rem 2rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (min-width: 760px) {
+  .sd-marketing-section-head {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    align-items: end;
+    margin-bottom: 1.75rem;
+  }
+}
+
+.sd-marketing-section-kicker {
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mk-forest);
+  margin: 0 0 0.4rem;
+}
+
+.sd-marketing-section-title {
+  font-family: Fraunces, Georgia, serif;
+  font-size: clamp(1.55rem, 2.8vw, 2.05rem);
+  font-weight: 650;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0;
+  max-width: 18ch;
+}
+
+.sd-marketing-section-lede {
+  font-size: 0.98rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--mk-ink) 65%, transparent);
+  margin: 0;
+  max-width: 34rem;
+}
+
+.sd-marketing-steps {
+  display: grid;
+  gap: 1rem;
+  counter-reset: step;
+}
+
+@media (min-width: 760px) {
+  .sd-marketing-steps {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+}
+
+.sd-marketing-step {
+  position: relative;
+  padding: 1.1rem 1.15rem;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid color-mix(in srgb, var(--mk-line) 80%, transparent);
+  border-radius: 14px;
+}
+
+.sd-marketing-step::before {
+  counter-increment: step;
+  content: counter(step, decimal-leading-zero);
+  display: block;
+  font-family: Fraunces, Georgia, serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--mk-forest);
+  margin-bottom: 0.55rem;
+  letter-spacing: -0.02em;
+}
+
+.sd-marketing-step h3 {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 1.02rem;
+  font-weight: 650;
+  margin: 0 0 0.35rem;
+}
+
+.sd-marketing-step p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--mk-ink) 65%, transparent);
+}
+
+.sd-marketing-features {
+  display: grid;
+  gap: 0;
+}
+
+@media (min-width: 760px) {
+  .sd-marketing-features {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.sd-marketing-feature {
+  padding: 1.15rem 0;
+  border-top: 1px solid var(--mk-line);
+}
+
+@media (min-width: 760px) {
+  .sd-marketing-feature {
+    padding: 1.25rem 1.35rem 1.25rem 0;
+  }
+
+  .sd-marketing-feature:nth-child(odd) {
+    padding-right: 1.75rem;
+    border-right: 1px solid var(--mk-line);
+  }
+
+  .sd-marketing-feature:nth-child(even) {
+    padding-left: 1.75rem;
+  }
+
+  .sd-marketing-feature:nth-child(-n + 2) {
+    border-top: none;
+    padding-top: 0;
+  }
+}
+
+.sd-marketing-feature h3 {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 1.02rem;
+  font-weight: 650;
+  margin: 0 0 0.3rem;
+}
+
+.sd-marketing-feature p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--mk-ink) 65%, transparent);
+}
+
+/* —— Closing CTA —— */
+.sd-marketing-close {
+  max-width: 1180px;
+  margin: 0 auto;
+  border-inline: 1px solid var(--mk-line);
+  border-bottom: 1px solid var(--mk-line);
+  border-radius: 0 0 20px 20px;
+  background:
+    linear-gradient(120deg, rgba(11, 110, 79, 0.12), transparent 45%),
+    #fff;
+  padding: 2rem 1.25rem;
+  text-align: center;
+}
+
+@media (min-width: 900px) {
+  .sd-marketing-close {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    text-align: left;
+    padding: 1.75rem 2rem;
+  }
+}
+
+.sd-marketing-close-copy h2 {
+  font-family: Fraunces, Georgia, serif;
+  font-size: clamp(1.45rem, 2.6vw, 1.85rem);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.35rem;
+}
+
+.sd-marketing-close-copy p {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--mk-ink) 65%, transparent);
+}
+
+.sd-marketing-close .sd-marketing-cta-row {
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+@media (min-width: 900px) {
+  .sd-marketing-close .sd-marketing-cta-row {
+    justify-content: flex-end;
+  }
+}
+
+/* —— Footer —— */
+.sd-marketing-footer {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 1.15rem 1.25rem 1.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.sd-marketing-footer-brand {
+  font-family: Fraunces, Georgia, serif;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.sd-marketing-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.1rem;
+}
+
+.sd-marketing-footer-links a {
+  font-size: 0.88rem;
+  text-decoration: none;
+  color: color-mix(in srgb, var(--mk-ink) 55%, transparent);
+}
+
+.sd-marketing-footer-links a:hover {
+  color: var(--mk-ink);
+}
